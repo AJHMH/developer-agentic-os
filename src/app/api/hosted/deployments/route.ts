@@ -50,8 +50,6 @@ export async function POST(request: Request) {
   const action = typeof body.action === "string" ? body.action : "";
   if (!action || (!workspaceId && action !== "resolve"))
     return NextResponse.json({ error: "workspaceId and action are required." }, { status: 400 });
-  if (action === "resolve" && process.env.HOSTED_AUTH_FIXTURE_MODE !== "true")
-    return resolveGitHubActionsDeployment(request);
   const identity = await hostedIdentity(request);
   if (identity instanceof NextResponse) return identity;
   try {
@@ -179,7 +177,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function resolveGitHubActionsDeployment(request: Request): Promise<NextResponse> {
+export async function resolveGitHubActionsDeployment(request: Request): Promise<NextResponse> {
   const authorization = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
   if (!authorization)
     return NextResponse.json(
