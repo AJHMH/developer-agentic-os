@@ -58,6 +58,11 @@ CREATE TABLE IF NOT EXISTS developer_agentic_os_github_repository_registration (
   created_at timestamptz NOT NULL,
   UNIQUE (owner, repository)
 );`;
+const webhookSchema = `
+ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS webhook_secret_reference text;
+ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_reference text;
+ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_expires_at timestamptz;
+`;
 
 const emptyHostedState = (): HostedState => ({
   repositories: {},
@@ -106,6 +111,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
   private readonly pool = new Pool({ connectionString: hostedDatabaseUrl() });
   private readonly transactionClient = new AsyncLocalStorage<PoolClient>();
   private ready: Promise<void> | undefined;
+  private deploymentReady: Promise<void> | undefined;
 
   constructor(private readonly tenantId: string) {
     if (!tenantId.trim()) throw new Error("Hosted persistence requires a tenant ID.");
@@ -228,6 +234,17 @@ export class NeonHostedStateProvider implements HostedStateProvider {
         ]
       );
   }
+  async rotateVercelWebhookSecret(input: {
+    projectId: string;
+    activeReference: string;
+  }): Promise<void> {
+    await this.ensureDeploymentSchema();
+    const client = this.transactionClient.getStore() ?? this.pool;
+    await client.query(
+      "UPDATE developer_agentic_os_vercel_project_mapping SET previous_webhook_secret_reference = webhook_secret_reference, previous_webhook_secret_expires_at = now() + interval '15 minutes', webhook_secret_reference = $1, updated_at = now() WHERE tenant_id = $2 AND project_id = $3",
+      [input.activeReference, this.tenantId, input.projectId]
+    );
+  }
   async withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
     await this.ensureSchema();
     const client = await this.pool.connect();
@@ -253,7 +270,9 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     return (this.ready ??= this.pool.query(schema).then(() => undefined));
   }
   private ensureDeploymentSchema(): Promise<void> {
-    return this.pool.query(deploymentSchema).then(() => undefined);
+    return (this.deploymentReady ??= this.pool
+      .query(`${deploymentSchema}${webhookSchema}`)
+      .then(() => undefined));
   }
 }
 

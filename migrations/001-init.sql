@@ -114,7 +114,9 @@ CREATE TABLE IF NOT EXISTS vercel_projects (
   vercel_project_id VARCHAR(255) NOT NULL,
   vercel_team_id VARCHAR(255),
   domain VARCHAR(255),
-  webhook_secret VARCHAR(255),
+  webhook_secret_reference VARCHAR(512),
+  previous_webhook_secret_reference VARCHAR(512),
+  previous_webhook_secret_expires_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW(),
   UNIQUE (tenant_id, vercel_project_id)
@@ -134,13 +136,55 @@ CREATE TABLE IF NOT EXISTS deployment_events (
   url VARCHAR(255),
   commit_sha VARCHAR(255),
   environment VARCHAR(50) DEFAULT 'production',
+  delivery_id VARCHAR(255),
+  payload JSONB,
+  occurred_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE (tenant_id, vercel_deployment_id)
+  UNIQUE (tenant_id, vercel_project_id, vercel_deployment_id, event_type)
 );
 
 CREATE INDEX IF NOT EXISTS idx_deployment_events_tenant_id ON deployment_events(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_events_vercel_project_id ON deployment_events(vercel_project_id);
 CREATE INDEX IF NOT EXISTS idx_deployment_events_created_at ON deployment_events(created_at);
+
+-- Hosted webhook ingestion, projection, and audit history
+CREATE TABLE IF NOT EXISTS vercel_webhook_events (
+  tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  vercel_project_id VARCHAR(255) NOT NULL,
+  vercel_deployment_id VARCHAR(255) NOT NULL,
+  event_type VARCHAR(100) NOT NULL,
+  delivery_id VARCHAR(255),
+  status VARCHAR(50),
+  url VARCHAR(255),
+  commit_sha VARCHAR(255),
+  payload JSONB NOT NULL,
+  occurred_at TIMESTAMP NOT NULL,
+  raw_expires_at TIMESTAMP NOT NULL,
+  received_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (vercel_project_id, vercel_deployment_id, event_type)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id
+  ON vercel_webhook_events(delivery_id) WHERE delivery_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS vercel_deployment_projections (
+  tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  vercel_project_id VARCHAR(255) NOT NULL,
+  vercel_deployment_id VARCHAR(255) NOT NULL,
+  event_type VARCHAR(100) NOT NULL,
+  status VARCHAR(50),
+  url VARCHAR(255),
+  commit_sha VARCHAR(255),
+  occurred_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (vercel_project_id, vercel_deployment_id)
+);
+
+CREATE TABLE IF NOT EXISTS vercel_webhook_audit (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  action VARCHAR(100) NOT NULL,
+  vercel_project_id VARCHAR(255),
+  occurred_at TIMESTAMP DEFAULT NOW()
+);
 
 -- ============================================================================
 -- CORE APPLICATION DATA TABLES

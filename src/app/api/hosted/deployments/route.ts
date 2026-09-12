@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomBytes } from "node:crypto";
 
 import { hostedError, hostedIdentity } from "@/app/api/hosted/_shared";
 import {
@@ -59,12 +60,32 @@ export async function POST(request: Request) {
       if (denied) return denied;
       if (typeof body.projectId !== "string")
         return NextResponse.json({ error: "projectId is required." }, { status: 400 });
-      return NextResponse.json({
-        project: await identity.domainStore.setVercelProject(identity.userId, workspaceId, {
-          projectId: body.projectId,
-          teamId: typeof body.teamId === "string" ? body.teamId : undefined,
-        }),
+      const project = await identity.domainStore.setVercelProject(identity.userId, workspaceId, {
+        projectId: body.projectId,
+        teamId: typeof body.teamId === "string" ? body.teamId : undefined,
       });
+      const webhookSecret =
+        typeof body.webhookSecret === "string" && body.webhookSecret.trim()
+          ? body.webhookSecret
+          : randomBytes(32).toString("base64url");
+      await identity.domainStore.setVercelWebhookSecret(
+        identity.userId,
+        workspaceId,
+        webhookSecret
+      );
+      return NextResponse.json({ project });
+    }
+    if (action === "set-webhook-secret") {
+      const denied = adminRequired(identity);
+      if (denied) return denied;
+      if (typeof body.secret !== "string")
+        return NextResponse.json({ error: "secret is required." }, { status: 400 });
+      await identity.domainStore.setVercelWebhookSecret(
+        identity.userId,
+        workspaceId,
+        body.secret
+      );
+      return NextResponse.json({ ok: true });
     }
     if (action === "register-repository") {
       const denied = adminRequired(identity);

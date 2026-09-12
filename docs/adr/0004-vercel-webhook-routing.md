@@ -1,13 +1,13 @@
 # ADR 0004: Vercel Webhook Routing to Tenants
 
-**Status**: Accepted and Implemented
+**Status**: Accepted; target design approved, implementation partial
 
 **Date**: 2026-09-09
 **Last Updated**: 2026-09-12
 
 ## Status Update
 
-This routing pattern is now in place for hosted deployments. Vercel deployment metadata is stored with `tenant_id` in the Neon schema, and webhook events can be mapped back to the correct org by resolving the Vercel project ID in the `vercel_projects` table.
+The tenant/project mapping and deployment-event schema are documented, but the live application currently exposes Vercel deployment polling rather than the shared webhook endpoint described here. The webhook contract below is therefore the approved target for the hosted implementation.
 
 The system treats deployment events as tenant-scoped signals and associates them with the organization that owns that project.
 
@@ -145,6 +145,19 @@ async function handleDeploymentEvent(tenantId: UUID, event: any) {
   });
 }
 ```
+
+## Resolved Design Rules
+
+- A webhook is first persisted as an immutable tenant-scoped Deployment Event. An Incoming Signal is derived only for supported failure events; webhook processing does not automatically create a Work Item.
+- `vercel_project_id` must resolve to one tenant. If Vercel permits project IDs to be reused across teams, the mapping key must include `vercel_team_id`.
+- Signature verification reads the raw request body and uses the mapped project's active secret with a timing-safe comparison. During rotation, the active and previous secrets may both validate for a bounded transition window.
+- Unknown projects and duplicate deliveries return a non-revealing `202 Accepted` response. Invalid signatures are rejected without revealing registration state. All such attempts are recorded in a platform-level webhook audit stream.
+- Delivery idempotency uses Vercel's stable delivery ID when available, falling back to `(vercel_project_id, vercel_deployment_id, event_type)`. The deployment-level uniqueness constraint must not collapse `created`, `ready`, and `error` into one event.
+- Immutable events are retained separately from a current deployment projection. Provider timestamps prevent late events from overwriting newer projected state.
+- Events are assigned to the tenant resolved at receipt time. Project transfers do not retroactively move historical events.
+- The endpoint returns success after durable persistence. Signal creation, notifications, and other side effects run asynchronously with internal retries; Vercel is not asked to retry them.
+- Authorized operators may replay stored events, but replay is explicit, audited, idempotent, and subject to current authorization.
+- Raw payloads are sensitive tenant data: redact unnecessary metadata, restrict access, and retain them for less time than normalized events. Unknown event types are stored as unhandled events without creating user-facing signals.
 
 ## Webhook Event Types
 

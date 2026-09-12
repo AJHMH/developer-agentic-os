@@ -250,6 +250,18 @@ An explicit association between a GitHub repository and a Tenant. Repository own
 
 The Tenant-owned association between a registered Tenant and its primary Vercel project and, when applicable, Vercel team. A missing mapping means deployment configuration is incomplete rather than selecting an implicit fallback.
 
+### Deployment Event
+
+An immutable, tenant-scoped observation received from Vercel for a deployment lifecycle event. It is retained as source evidence and may produce an Incoming Signal when the event represents a supported failure.
+
+### Deployment Projection
+
+The current tenant-scoped view of a Vercel deployment derived from its ordered Deployment Events. It is a read model, not a replacement for the immutable event history.
+
+### Webhook Audit Entry
+
+A platform-level record of a Vercel webhook attempt, including unknown projects, invalid signatures, duplicates, and processing failures that cannot safely be assigned to a Tenant.
+
 ## Clarified Distinctions
 
 ### Skill vs Routine

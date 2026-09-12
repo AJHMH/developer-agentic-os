@@ -171,6 +171,10 @@ export interface HostedStateProvider {
   write(state: HostedState): Promise<void>;
   readDeploymentState?(): Promise<HostedDeploymentState>;
   writeDeploymentState?(state: HostedDeploymentState): Promise<void>;
+  rotateVercelWebhookSecret?(input: {
+    projectId: string;
+    activeReference: string;
+  }): Promise<void>;
   withMutationLock?<T>(operation: () => Promise<T>): Promise<T>;
 }
 
@@ -362,6 +366,29 @@ export class HostedDomainStore {
       deploymentState.vercelProject = null;
       await this.auditEvent(state, userId, workspaceId, "vercel.project.mapping.removed");
       await this.writeDeploymentState(state, deploymentState);
+      await this.write(state);
+    });
+  }
+
+  async setVercelWebhookSecret(
+    userId: string,
+    workspaceId: string,
+    secret: string
+  ): Promise<void> {
+    if (!secret.trim()) throw new HostedDomainError("INVALID", "A webhook secret is required.");
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      const deploymentState = await this.readDeploymentState(state);
+      await this.assertWorkspace(userId, workspaceId);
+      if (!deploymentState.vercelProject)
+        throw new HostedDomainError("NOT_FOUND", "Vercel project mapping not found.");
+      const activeReference = await this.secretStore.put(secret.trim());
+      if (this.provider.rotateVercelWebhookSecret)
+        await this.provider.rotateVercelWebhookSecret({
+          projectId: deploymentState.vercelProject.projectId,
+          activeReference,
+        });
+      await this.auditEvent(state, userId, workspaceId, "vercel.webhook.secret.updated");
       await this.write(state);
     });
   }
