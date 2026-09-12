@@ -193,11 +193,11 @@ Even with signature validation:
 
 ## Failure Modes
 
-| Scenario                           | Response                                              |
-| ---------------------------------- | ----------------------------------------------------- |
-| Project not found                  | Non-revealing 202; record a Webhook Audit Entry       |
-| Signature invalid                  | Non-revealing 202; record a Webhook Audit Entry       |
-| Duplicate delivery                 | 202; record a duplicate Webhook Audit Entry          |
+| Scenario                           | Response                                                     |
+| ---------------------------------- | ------------------------------------------------------------ |
+| Project not found                  | Non-revealing 202; record a Webhook Audit Entry              |
+| Signature invalid                  | Non-revealing 202; record a Webhook Audit Entry              |
+| Duplicate delivery                 | 202; record a duplicate Webhook Audit Entry                  |
 | Processing fails after persistence | Record a processing-failure audit entry and surface an error |
 
 ## Related Decisions

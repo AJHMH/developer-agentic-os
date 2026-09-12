@@ -171,10 +171,7 @@ export interface HostedStateProvider {
   write(state: HostedState): Promise<void>;
   readDeploymentState?(): Promise<HostedDeploymentState>;
   writeDeploymentState?(state: HostedDeploymentState): Promise<void>;
-  rotateVercelWebhookSecret?(input: {
-    projectId: string;
-    activeReference: string;
-  }): Promise<void>;
+  rotateVercelWebhookSecret?(input: { projectId: string; activeReference: string }): Promise<void>;
   withMutationLock?<T>(operation: () => Promise<T>): Promise<T>;
 }
 
@@ -370,11 +367,7 @@ export class HostedDomainStore {
     });
   }
 
-  async setVercelWebhookSecret(
-    userId: string,
-    workspaceId: string,
-    secret: string
-  ): Promise<void> {
+  async setVercelWebhookSecret(userId: string, workspaceId: string, secret: string): Promise<void> {
     if (!secret.trim()) throw new HostedDomainError("INVALID", "A webhook secret is required.");
     return this.withMutationLock(async () => {
       const state = await this.read();

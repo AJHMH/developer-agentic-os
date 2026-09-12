@@ -78,11 +78,7 @@ export async function POST(request: Request) {
       if (denied) return denied;
       if (typeof body.secret !== "string")
         return NextResponse.json({ error: "secret is required." }, { status: 400 });
-      await identity.domainStore.setVercelWebhookSecret(
-        identity.userId,
-        workspaceId,
-        body.secret
-      );
+      await identity.domainStore.setVercelWebhookSecret(identity.userId, workspaceId, body.secret);
       return NextResponse.json({ ok: true });
     }
     if (action === "register-repository") {

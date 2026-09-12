@@ -82,7 +82,11 @@ test("invalid signatures are rejected without persisting an event", async () => 
   const response = await handleVercelWebhook(
     new Request("http://localhost/api/webhooks/vercel", {
       method: "POST",
-      body: JSON.stringify({ type: "deployment.ready", projectId: "prj_acme", deploymentId: "dpl_1" }),
+      body: JSON.stringify({
+        type: "deployment.ready",
+        projectId: "prj_acme",
+        deploymentId: "dpl_1",
+      }),
       headers: { "x-vercel-signature": "invalid" },
     }),
     repository
@@ -111,7 +115,11 @@ test("unknown projects are acknowledged without revealing tenant registration", 
   const response = await handleVercelWebhook(
     new Request("http://localhost/api/webhooks/vercel", {
       method: "POST",
-      body: JSON.stringify({ type: "deployment.ready", projectId: "prj_unknown", deploymentId: "dpl_1" }),
+      body: JSON.stringify({
+        type: "deployment.ready",
+        projectId: "prj_unknown",
+        deploymentId: "dpl_1",
+      }),
     }),
     repository
   );

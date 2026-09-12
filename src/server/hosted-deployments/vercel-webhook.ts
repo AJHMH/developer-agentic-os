@@ -23,19 +23,13 @@ export type VercelWebhookEvent = {
 
 export type VercelWebhookAuditEntry = {
   action:
-    | "unknown_project"
-    | "invalid_signature"
-    | "invalid_payload"
-    | "duplicate"
-    | "processing_failed";
+    "unknown_project" | "invalid_signature" | "invalid_payload" | "duplicate" | "processing_failed";
   projectId?: string;
 };
 
 export interface VercelWebhookRepository {
   findProject(projectId: string, teamId?: string): Promise<VercelWebhookProject | null>;
-  recordEvent(
-    event: VercelWebhookEvent
-  ): Promise<{ duplicate: boolean; deliveryId?: string }>;
+  recordEvent(event: VercelWebhookEvent): Promise<{ duplicate: boolean; deliveryId?: string }>;
   updateProjection?(event: VercelWebhookEvent): Promise<void>;
   recordFailureSignal?(event: VercelWebhookEvent): Promise<void>;
   recordAudit(entry: VercelWebhookAuditEntry): Promise<void>;
