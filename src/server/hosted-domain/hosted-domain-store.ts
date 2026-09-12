@@ -331,10 +331,13 @@ export class HostedDomainStore {
   async setVercelProject(
     userId: string,
     workspaceId: string,
-    input: DeploymentProjectMapping
+    input: DeploymentProjectMapping,
+    webhookSecret?: string
   ): Promise<HostedVercelProjectMapping> {
     if (!input.projectId.trim())
       throw new HostedDomainError("INVALID", "A Vercel project id is required.");
+    if (webhookSecret !== undefined && !webhookSecret.trim())
+      throw new HostedDomainError("INVALID", "A webhook secret is required.");
     return this.withMutationLock(async () => {
       const state = await this.read();
       const deploymentState = await this.readDeploymentState(state);
@@ -350,6 +353,11 @@ export class HostedDomainStore {
       deploymentState.vercelProject = mapping;
       await this.auditEvent(state, userId, workspaceId, "vercel.project.mapping.updated");
       await this.writeDeploymentState(state, deploymentState);
+      if (webhookSecret !== undefined && this.provider.rotateVercelWebhookSecret)
+        await this.provider.rotateVercelWebhookSecret({
+          projectId: mapping.projectId,
+          activeReference: await this.secretStore.put(webhookSecret.trim()),
+        });
       await this.write(state);
       return mapping;
     });

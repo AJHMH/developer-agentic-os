@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_project_mapping (
 ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS webhook_secret_reference text;
 ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_reference text;
 ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_expires_at timestamptz;
+CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_vercel_project_mapping_identity
+  ON developer_agentic_os_vercel_project_mapping (project_id, COALESCE(team_id, ''));
 CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_webhook_events (
   tenant_id text NOT NULL,
   project_id text NOT NULL,
@@ -89,12 +91,16 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       `SELECT tenant_id, project_id, team_id, webhook_secret_reference, previous_webhook_secret_reference,
         previous_webhook_secret_expires_at
        FROM developer_agentic_os_vercel_project_mapping
-       WHERE project_id = $1 AND (($2::text IS NULL AND team_id IS NULL) OR team_id = $2)
-       LIMIT 2`,
-      [projectId, teamId ?? null]
+       WHERE project_id = $1`,
+      [projectId]
     );
-    if (result.rows.length !== 1) return null;
-    const row = result.rows[0];
+    const matchingRows = teamId
+      ? result.rows.filter((row) => row.team_id === teamId).length === 1
+        ? result.rows.filter((row) => row.team_id === teamId)
+        : result.rows.filter((row) => row.team_id === null)
+      : result.rows;
+    if (matchingRows.length !== 1) return null;
+    const row = matchingRows[0];
     if (!row.webhook_secret_reference) return null;
     return {
       tenantId: row.tenant_id,

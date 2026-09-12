@@ -7,11 +7,11 @@
 
 ## Status Update
 
-The tenant-scoped deployment mapping is the accepted hosted architecture, but the complete mapping and deployment-resolution flow is not yet implemented.
+The tenant-scoped deployment mapping and deployment-resolution flow are implemented in the hosted path. The remaining gaps are operational migration and production workflow rollout details.
 
 The canonical tenant boundary is the Clerk organization. Repository registrations and deployment resources belong to that tenant. The Vercel project association is treated as an org-level resource rather than a shared global deployment target.
 
-The current hosted implementation provides tenant-scoped persistence, explicit GitHub organization configuration, and GitHub organization membership checks. It does not yet provide durable Vercel project mappings, repository-to-tenant deployment resolution, GitHub Actions OIDC verification, or mapping-management APIs.
+The current hosted implementation provides tenant-scoped persistence, durable Vercel project mappings, explicit GitHub organization configuration, repository-to-tenant resolution, GitHub Actions OIDC verification, admin-only mapping APIs, and explicit `deployment_unconfigured` responses.
 
 The normalized table definitions and endpoint examples below describe the accepted target design, not a claim that those interfaces are live today.
 
@@ -188,15 +188,11 @@ _This is simpler initially but limits per-org customization later._
 
 The following work remains before this decision can be marked fully implemented:
 
-1. Add durable tenant-scoped persistence for the primary Vercel project mapping and enforce its uniqueness constraints.
-2. Add admin-only APIs and UI for creating, replacing, and removing a tenant mapping.
-3. Complete explicit repository registration and exact repository-to-tenant resolution in the live hosted path.
-4. Implement GitHub Actions OIDC verification, including audience, repository, workflow, ref, and tenant checks.
-5. Add deployment-resolution audit events and historical preservation when mappings change.
-6. Define and execute the migration path for temporary fallback credentials, including their removal deadline.
-7. Update the deployment workflow and resolver contract to return explicit `deployment_unconfigured` failures.
+1. Update and roll out the tenant deployment workflow to call the dedicated hosted resolution endpoint with a GitHub Actions OIDC token and `id-token: write` permission.
+2. Add production integration coverage for OIDC verification against stubbed JWKS and signed claims; fixture-mode route tests cover the current unit path.
+3. Complete the versioned migration rollout for existing installations and remove any remaining temporary fallback credential configuration.
 
-Until these gaps are closed, this ADR remains **Accepted, Partially Implemented**.
+Until these operational gaps are closed, this ADR remains **Accepted, Partially Implemented**.
 
 ## Related Decisions
 

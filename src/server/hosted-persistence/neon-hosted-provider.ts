@@ -62,6 +62,8 @@ const webhookSchema = `
 ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS webhook_secret_reference text;
 ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_reference text;
 ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_expires_at timestamptz;
+CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_github_repository_identity
+  ON developer_agentic_os_github_repository_registration (lower(owner), lower(repository));
 `;
 
 const emptyHostedState = (): HostedState => ({
@@ -98,10 +100,10 @@ export async function findHostedTenantForGitHubRepository(
   const pool = new Pool({ connectionString: hostedDatabaseUrl() });
   try {
     const result = await pool.query<{ tenant_id: string }>(
-      "SELECT tenant_id FROM developer_agentic_os_github_repository_registration WHERE lower(owner) = lower($1) AND lower(repository) = lower($2) LIMIT 1",
+      "SELECT tenant_id FROM developer_agentic_os_github_repository_registration WHERE lower(owner) = lower($1) AND lower(repository) = lower($2)",
       [owner, repository]
     );
-    return result.rows[0]?.tenant_id ?? null;
+    return result.rows.length === 1 ? result.rows[0].tenant_id : null;
   } finally {
     await pool.end();
   }
@@ -193,13 +195,12 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     await this.ensureDeploymentSchema();
     const client = this.transactionClient.getStore();
     if (!client) return this.withMutationLock(() => this.writeDeploymentState(state));
-    await client.query(
-      "DELETE FROM developer_agentic_os_vercel_project_mapping WHERE tenant_id = $1",
-      [this.tenantId]
-    );
-    if (state.vercelProject)
+    if (state.vercelProject) {
       await client.query(
-        "INSERT INTO developer_agentic_os_vercel_project_mapping (tenant_id, project_id, team_id, updated_at) VALUES ($1, $2, $3, $4)",
+        `INSERT INTO developer_agentic_os_vercel_project_mapping (tenant_id, project_id, team_id, updated_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (tenant_id) DO UPDATE SET project_id = EXCLUDED.project_id,
+           team_id = EXCLUDED.team_id, updated_at = EXCLUDED.updated_at`,
         [
           this.tenantId,
           state.vercelProject.projectId,
@@ -207,6 +208,12 @@ export class NeonHostedStateProvider implements HostedStateProvider {
           state.vercelProject.updatedAt,
         ]
       );
+    } else {
+      await client.query(
+        "DELETE FROM developer_agentic_os_vercel_project_mapping WHERE tenant_id = $1",
+        [this.tenantId]
+      );
+    }
     await client.query(
       "DELETE FROM developer_agentic_os_vercel_project_history WHERE tenant_id = $1",
       [this.tenantId]

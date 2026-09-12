@@ -46,8 +46,12 @@ export async function handleVercelWebhook(
     return json({ error: "Invalid webhook payload." }, 400);
   }
 
-  const projectId = stringValue(payload.projectId);
-  const teamId = stringValue(payload.teamId);
+  const envelope = objectValue(payload.payload) ?? payload;
+  const nestedProject = objectValue(envelope.project);
+  const deployment = objectValue(envelope.deployment);
+  const team = objectValue(envelope.team);
+  const projectId = stringValue(nestedProject?.id) ?? stringValue(payload.projectId);
+  const teamId = stringValue(team?.id) ?? stringValue(payload.teamId);
   if (!projectId) {
     await repository.recordAudit({ action: "invalid_payload" });
     return json({ error: "Invalid webhook payload." }, 400);
@@ -69,15 +73,15 @@ export async function handleVercelWebhook(
     return json({ ok: true, duplicate: false }, 202);
   }
 
-  const deploymentId = stringValue(payload.deploymentId);
+  const deploymentId = stringValue(deployment?.id) ?? stringValue(payload.deploymentId);
   const eventType = stringValue(payload.type);
   if (!deploymentId || !eventType) {
     await repository.recordAudit({ action: "invalid_payload", projectId });
     return json({ error: "Invalid webhook payload." }, 400);
   }
 
-  const deployment = objectValue(payload.deployment);
-  const meta = objectValue(payload.meta);
+  const meta = objectValue(deployment?.meta) ?? objectValue(envelope.meta) ?? objectValue(payload.meta);
+  const deliveryHeader = request.headers.get("x-vercel-delivery")?.trim();
   const event: VercelWebhookEvent = {
     tenantId: project.tenantId,
     projectId: project.projectId,
@@ -88,15 +92,12 @@ export async function handleVercelWebhook(
     commitSha: stringValue(meta?.githubCommitSha) ?? null,
     payload: redactPayload(payload),
     occurredAt: eventTime(payload),
-    ...(request.headers.get("x-vercel-delivery")
-      ? { deliveryId: request.headers.get("x-vercel-delivery")!.trim() }
-      : {}),
+    ...(deliveryHeader ? { deliveryId: deliveryHeader } : {}),
   };
   try {
     const result = await repository.recordEvent(event);
     if (result.duplicate) {
       await repository.recordAudit({ action: "duplicate", projectId: project.projectId });
-      return json({ ok: true, duplicate: true }, 202);
     }
     await repository.updateProjection?.(event);
     if (eventType === "deployment.error") await repository.recordFailureSignal?.(event);
@@ -117,7 +118,7 @@ function parsePayload(rawBody: string): Record<string, unknown> | null {
 }
 
 function validSignature(rawBody: string, signature: string, secret: string): boolean {
-  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+  const expected = createHmac("sha1", secret).update(rawBody).digest("hex");
   const provided = Buffer.from(signature, "utf8");
   const actual = Buffer.from(expected, "utf8");
   return provided.length === actual.length && timingSafeEqual(provided, actual);

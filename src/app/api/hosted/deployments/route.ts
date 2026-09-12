@@ -1,6 +1,4 @@
 import { NextResponse } from "next/server";
-import { randomBytes } from "node:crypto";
-
 import { hostedError, hostedIdentity } from "@/app/api/hosted/_shared";
 import {
   DeploymentResolutionError,
@@ -42,7 +40,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
   try {
-    body = (await request.json()) as Record<string, unknown>;
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return NextResponse.json({ error: "Request body must be a JSON object." }, { status: 400 });
+    body = parsed as Record<string, unknown>;
   } catch {
     return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
   }
@@ -58,18 +59,16 @@ export async function POST(request: Request) {
       if (denied) return denied;
       if (typeof body.projectId !== "string")
         return NextResponse.json({ error: "projectId is required." }, { status: 400 });
-      const project = await identity.domainStore.setVercelProject(identity.userId, workspaceId, {
-        projectId: body.projectId,
-        teamId: typeof body.teamId === "string" ? body.teamId : undefined,
-      });
-      const webhookSecret =
-        typeof body.webhookSecret === "string" && body.webhookSecret.trim()
-          ? body.webhookSecret
-          : randomBytes(32).toString("base64url");
-      await identity.domainStore.setVercelWebhookSecret(
+      if (typeof body.webhookSecret !== "string" || !body.webhookSecret.trim())
+        return NextResponse.json({ error: "webhookSecret is required." }, { status: 400 });
+      const project = await identity.domainStore.setVercelProject(
         identity.userId,
         workspaceId,
-        webhookSecret
+        {
+          projectId: body.projectId,
+          teamId: typeof body.teamId === "string" ? body.teamId : undefined,
+        },
+        body.webhookSecret
       );
       return NextResponse.json({ project });
     }
@@ -114,6 +113,7 @@ export async function POST(request: Request) {
         ref: string;
         audience: string;
       } | null =
+        (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") &&
         process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
           ? {
               owner: String(body.owner ?? ""),
