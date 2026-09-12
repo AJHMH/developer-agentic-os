@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool, type PoolClient } from "@neondatabase/serverless";
 
 import type {
+  HostedDeploymentState,
   HostedState,
   HostedStateProvider,
   ProtectedSecretStore,
@@ -34,6 +35,29 @@ ALTER TABLE developer_agentic_os_hosted_state DROP CONSTRAINT IF EXISTS develope
 ALTER TABLE developer_agentic_os_workspace_state DROP CONSTRAINT IF EXISTS developer_agentic_os_workspace_state_pkey;
 CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_hosted_state_tenant_key ON developer_agentic_os_hosted_state (tenant_id, state_key);
 CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_workspace_state_tenant_key ON developer_agentic_os_workspace_state (tenant_id, state_key);`;
+const deploymentSchema = `
+CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_project_mapping (
+  tenant_id text PRIMARY KEY,
+  project_id text NOT NULL,
+  team_id text,
+  updated_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_project_history (
+  tenant_id text NOT NULL,
+  project_id text NOT NULL,
+  team_id text,
+  updated_at timestamptz NOT NULL
+);
+CREATE TABLE IF NOT EXISTS developer_agentic_os_github_repository_registration (
+  id text PRIMARY KEY,
+  tenant_id text NOT NULL,
+  owner text NOT NULL,
+  repository text NOT NULL,
+  workflow text NOT NULL,
+  ref text NOT NULL,
+  created_at timestamptz NOT NULL,
+  UNIQUE (owner, repository)
+);`;
 
 const emptyHostedState = (): HostedState => ({
   repositories: {},
@@ -43,6 +67,9 @@ const emptyHostedState = (): HostedState => ({
   connectors: [],
   credentials: [],
   audit: [],
+  vercelProject: null,
+  vercelProjectHistory: [],
+  githubRepositories: [],
 });
 const emptyWorkspaceState = (): HostedWorkspaceState => ({ users: {}, audit: [] });
 
@@ -57,6 +84,22 @@ export function hostedDatabaseUrl(): string {
       "Hosted persistence requires DATABASE_URL, DATABASE_URL_UNPOOLED, DEV_AGENTIC_OS_DATABASE_URL, or DEV_AGENTIC_OS_DATABASE_URL_UNPOOLED."
     );
   return url;
+}
+
+export async function findHostedTenantForGitHubRepository(
+  owner: string,
+  repository: string
+): Promise<string | null> {
+  const pool = new Pool({ connectionString: hostedDatabaseUrl() });
+  try {
+    const result = await pool.query<{ tenant_id: string }>(
+      "SELECT tenant_id FROM developer_agentic_os_github_repository_registration WHERE lower(owner) = lower($1) AND lower(repository) = lower($2) LIMIT 1",
+      [owner, repository]
+    );
+    return result.rows[0]?.tenant_id ?? null;
+  } finally {
+    await pool.end();
+  }
 }
 
 export class NeonHostedStateProvider implements HostedStateProvider {
@@ -86,6 +129,105 @@ export class NeonHostedStateProvider implements HostedStateProvider {
       [this.tenantId, "default", JSON.stringify(state)]
     );
   }
+  async readDeploymentState(): Promise<HostedDeploymentState> {
+    await this.ensureDeploymentSchema();
+    const client = this.transactionClient.getStore() ?? this.pool;
+    const mapping = await client.query<{
+      project_id: string;
+      team_id: string | null;
+      updated_at: string;
+    }>(
+      "SELECT project_id, team_id, updated_at FROM developer_agentic_os_vercel_project_mapping WHERE tenant_id = $1",
+      [this.tenantId]
+    );
+    const history = await client.query<{
+      project_id: string;
+      team_id: string | null;
+      updated_at: string;
+    }>(
+      "SELECT project_id, team_id, updated_at FROM developer_agentic_os_vercel_project_history WHERE tenant_id = $1 ORDER BY updated_at",
+      [this.tenantId]
+    );
+    const repositories = await client.query<{
+      id: string;
+      owner: string;
+      repository: string;
+      workflow: string;
+      ref: string;
+      created_at: string;
+    }>(
+      "SELECT id, owner, repository, workflow, ref, created_at FROM developer_agentic_os_github_repository_registration WHERE tenant_id = $1",
+      [this.tenantId]
+    );
+    return {
+      vercelProject: mapping.rows[0]
+        ? {
+            projectId: mapping.rows[0].project_id,
+            ...(mapping.rows[0].team_id ? { teamId: mapping.rows[0].team_id } : {}),
+            updatedAt: mapping.rows[0].updated_at,
+          }
+        : null,
+      vercelProjectHistory: history.rows.map((item) => ({
+        projectId: item.project_id,
+        ...(item.team_id ? { teamId: item.team_id } : {}),
+        updatedAt: item.updated_at,
+      })),
+      githubRepositories: repositories.rows.map((repository) => ({
+        id: repository.id,
+        tenantId: this.tenantId,
+        owner: repository.owner,
+        repository: repository.repository,
+        workflow: repository.workflow,
+        ref: repository.ref,
+        createdAt: repository.created_at,
+      })),
+    };
+  }
+  async writeDeploymentState(state: HostedDeploymentState): Promise<void> {
+    await this.ensureDeploymentSchema();
+    const client = this.transactionClient.getStore();
+    if (!client) return this.withMutationLock(() => this.writeDeploymentState(state));
+    await client.query(
+      "DELETE FROM developer_agentic_os_vercel_project_mapping WHERE tenant_id = $1",
+      [this.tenantId]
+    );
+    if (state.vercelProject)
+      await client.query(
+        "INSERT INTO developer_agentic_os_vercel_project_mapping (tenant_id, project_id, team_id, updated_at) VALUES ($1, $2, $3, $4)",
+        [
+          this.tenantId,
+          state.vercelProject.projectId,
+          state.vercelProject.teamId ?? null,
+          state.vercelProject.updatedAt,
+        ]
+      );
+    await client.query(
+      "DELETE FROM developer_agentic_os_vercel_project_history WHERE tenant_id = $1",
+      [this.tenantId]
+    );
+    for (const historical of state.vercelProjectHistory)
+      await client.query(
+        "INSERT INTO developer_agentic_os_vercel_project_history (tenant_id, project_id, team_id, updated_at) VALUES ($1, $2, $3, $4)",
+        [this.tenantId, historical.projectId, historical.teamId ?? null, historical.updatedAt]
+      );
+    await client.query(
+      "DELETE FROM developer_agentic_os_github_repository_registration WHERE tenant_id = $1",
+      [this.tenantId]
+    );
+    for (const repository of state.githubRepositories)
+      await client.query(
+        "INSERT INTO developer_agentic_os_github_repository_registration (id, tenant_id, owner, repository, workflow, ref, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [
+          repository.id,
+          this.tenantId,
+          repository.owner,
+          repository.repository,
+          repository.workflow,
+          repository.ref,
+          repository.createdAt,
+        ]
+      );
+  }
   async withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
     await this.ensureSchema();
     const client = await this.pool.connect();
@@ -109,6 +251,9 @@ export class NeonHostedStateProvider implements HostedStateProvider {
   }
   private ensureSchema(): Promise<void> {
     return (this.ready ??= this.pool.query(schema).then(() => undefined));
+  }
+  private ensureDeploymentSchema(): Promise<void> {
+    return this.pool.query(deploymentSchema).then(() => undefined);
   }
 }
 

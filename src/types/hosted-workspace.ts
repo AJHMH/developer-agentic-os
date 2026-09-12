@@ -2,6 +2,7 @@ export type HostedIdentity = {
   userId: string;
   tenantId: string;
   displayName: string;
+  orgRole?: "org:admin" | "org:member";
 };
 
 export type HostedWorkspace = {
