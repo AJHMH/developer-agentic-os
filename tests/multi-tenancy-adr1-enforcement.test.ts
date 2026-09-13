@@ -44,3 +44,12 @@ test("migration script upserts artifacts and work items by tenant-scoped conflic
   );
   assert.doesNotMatch(script, /ON CONFLICT \(id\) DO NOTHING/);
 });
+
+test("migration script migrates handoffs under the active tenant", async () => {
+  const script = await read(migrationScriptPath);
+  assert.match(
+    script,
+    /INSERT\s+INTO\s+handoffs\s*\(\s*id\s*,\s*tenant_id\s*,\s*title\s*,\s*session_date\s*,\s*repo_context\s*,\s*current_branch\s*,\s*changed_files\s*,\s*work_items_summary\s*,\s*artifacts_summary\s*,\s*decisions\s*,\s*blockers\s*,\s*next_actions\s*,\s*is_draft\s*,\s*created_at\s*,\s*finalized_at\s*\)/i
+  );
+  assert.match(script, /ON CONFLICT\s*\(\s*tenant_id\s*,\s*id\s*\)\s*DO NOTHING/i);
+});

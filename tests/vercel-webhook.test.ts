@@ -63,6 +63,36 @@ test("valid deployment webhooks persist a tenant-scoped event", async () => {
   assert.equal(projections[0]?.deploymentId, "dpl_123");
 });
 
+test("Vercel signatures accept the real sha1 prefix format", async () => {
+  const repository: VercelWebhookRepository = {
+    async findProject() {
+      return { tenantId: "tenant-acme", projectId: "prj_acme", secret: "webhook-secret" };
+    },
+    async recordEvent() {
+      return { duplicate: false };
+    },
+    async recordAudit() {},
+  };
+  const payload = JSON.stringify({
+    type: "deployment.ready",
+    projectId: "prj_acme",
+    deploymentId: "dpl_prefixed",
+  });
+  const signature = `sha1=${createHmac("sha1", "webhook-secret").update(payload).digest("hex")}`;
+
+  const response = await handleVercelWebhook(
+    new Request("http://localhost/api/webhooks/vercel", {
+      method: "POST",
+      body: payload,
+      headers: { "x-vercel-signature": signature },
+    }),
+    repository
+  );
+
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), { ok: true, duplicate: false });
+});
+
 test("canonical nested Vercel envelopes route and normalize deployment fields", async () => {
   let event: Record<string, unknown> | undefined;
   const repository: VercelWebhookRepository = {

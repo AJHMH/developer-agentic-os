@@ -357,6 +357,63 @@ async function migrateRepos(client: PoolClient, tenantId: string, data: unknown[
   console.log(`✓ Migrated ${data.length} repos`);
 }
 
+async function migrateHandoffs(
+  client: PoolClient,
+  tenantId: string,
+  data: unknown[]
+): Promise<void> {
+  if (!Array.isArray(data) || data.length === 0) {
+    console.log("  No handoffs to migrate");
+    return;
+  }
+
+  console.log(`Migrating ${data.length} handoffs...`);
+
+  for (const handoff of data) {
+    const record = handoff as Record<string, unknown>;
+    const snapshot = (record.snapshot as Record<string, unknown>) ?? {};
+    const repositoryContext = (snapshot.repositoryContext as Record<string, unknown>) ?? {};
+    const workItems = Array.isArray(snapshot.workItems) ? snapshot.workItems : [];
+    const artifacts = Array.isArray(snapshot.artifacts) ? snapshot.artifacts : [];
+    const changedFiles = Array.isArray(snapshot.changedFiles) ? snapshot.changedFiles : [];
+    const decisions = Array.isArray(record.decisions) ? record.decisions : [];
+    const blockers = Array.isArray(record.blockers) ? record.blockers : [];
+    const nextActions = Array.isArray(record.nextActions) ? record.nextActions : [];
+
+    try {
+      await client.query(
+        `INSERT INTO handoffs (
+           id, tenant_id, title, session_date, repo_context, current_branch, changed_files,
+           work_items_summary, artifacts_summary, decisions, blockers, next_actions,
+           is_draft, created_at, finalized_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         ON CONFLICT (tenant_id, id) DO NOTHING`,
+        [
+          record.id || randomUUID(),
+          tenantId,
+          record.title || "Session Handoff",
+          record.finalizedAt || record.updatedAt || record.createdAt || new Date(),
+          (repositoryContext.id as string | undefined) ?? record.repo_context ?? null,
+          (snapshot.branch as string | undefined) ?? record.current_branch ?? null,
+          JSON.stringify(changedFiles),
+          JSON.stringify(workItems),
+          JSON.stringify(artifacts),
+          JSON.stringify(decisions),
+          blockers.join("\n") || null,
+          nextActions.join("\n") || null,
+          record.status !== "finalized",
+          record.createdAt || record.created_at || new Date(),
+          record.finalizedAt || record.finalized_at || null,
+        ]
+      );
+    } catch (error) {
+      console.warn(`  ⚠ Failed to migrate handoff ${record.title}:`, error);
+    }
+  }
+
+  console.log(`✓ Migrated ${data.length} handoffs`);
+}
+
 async function loadExistingState(): Promise<MigrationState> {
   console.log("Loading existing state from .developer-agentic-os/...");
 
@@ -426,6 +483,7 @@ async function main() {
     await migrateSkills(client, tenantId, state.skills);
     await migrateRoutines(client, tenantId, state.routines);
     await migrateRepos(client, tenantId, state.repos);
+    await migrateHandoffs(client, tenantId, state.handoffs);
     await recordMigrationStatus(client, tenantId, "completed");
 
     console.log("\n=====================================");

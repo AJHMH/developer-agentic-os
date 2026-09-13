@@ -119,8 +119,14 @@ function parsePayload(rawBody: string): Record<string, unknown> | null {
 }
 
 function validSignature(rawBody: string, signature: string, secret: string): boolean {
+  const normalized = signature.trim();
+  const providedValue = normalized.startsWith("sha1=")
+    ? normalized.slice("sha1=".length)
+    : normalized.startsWith("sha256=")
+      ? normalized.slice("sha256=".length)
+      : normalized;
   const expected = createHmac("sha1", secret).update(rawBody).digest("hex");
-  const provided = Buffer.from(signature, "utf8");
+  const provided = Buffer.from(providedValue, "utf8");
   const actual = Buffer.from(expected, "utf8");
   return provided.length === actual.length && timingSafeEqual(provided, actual);
 }

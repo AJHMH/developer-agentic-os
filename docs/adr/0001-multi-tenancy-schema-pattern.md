@@ -27,18 +27,20 @@ Key constraints:
 
 We will use **row-level tenant ID isolation** as the multi-tenancy pattern:
 
-1. **Every table has a `tenant_id` column** (not null, indexed, part of unique constraints where needed)
-2. **All queries must include `WHERE tenant_id = ?`** in the ORM/query layer or middleware
+1. **Tenant-owned tables include a `tenant_id` column** (not null, indexed, part of unique constraints where needed)
+2. **All queries against tenant-owned tables must include `WHERE tenant_id = ?`** in the ORM/query layer or middleware
 3. **The Clerk session provides the authenticated tenant context** on each request
 4. **The Next.js API layer enforces tenant filtering** before any data is returned
+5. **A small set of global reference tables, such as `users` and `schema_migrations`, remain intentionally outside the tenant scope**
 
 ### Schema Principles
 
-- `tenant_id` is a UUID foreign key to an `organizations` table
-- Unique constraints on entities include `(tenant_id, entity_key)` tuples, not just `entity_key`
+- `tenant_id` is a UUID foreign key to an `organizations` table on tenant-owned tables
+- Unique constraints on tenant-scoped entities include `(tenant_id, entity_key)` tuples, not just `entity_key`
 - Example: artifacts uniquely identified by `(tenant_id, artifact_id)`, not just `artifact_id`
 - GitHub and Vercel data is cached but includes `tenant_id` to track which org synced it
 - Webhook events include tenant routing metadata to look up the org before processing
+- Global user identity and migration metadata are not replicated per tenant; they are referenced from tenant-owned rows via foreign keys or app-level membership tables
 
 ## Why Row-Level Over Alternatives
 
@@ -54,10 +56,12 @@ Row-level is the SaaS standard for good reasons: it scales, it's maintainable, a
 
 ### Enforcement Strategy
 
-1. **Database Layer**: Foreign key constraints ensure `tenant_id` references a valid org
-2. **ORM Layer**: Drizzle or Prisma middleware automatically adds `WHERE tenant_id = current_tenant_id` to all queries
-3. **API Layer**: Next.js route handlers read `tenant_id` from Clerk session, pass it to all data access functions
+1. **Database Layer**: Foreign key constraints ensure `tenant_id` references a valid org for tenant-owned rows
+2. **ORM Layer**: middleware adds `WHERE tenant_id = current_tenant_id` to all tenant-scoped queries; global tables such as `users` are exempt by design
+3. **API Layer**: Next.js route handlers read `tenant_id` from Clerk session, pass it to all data access functions, and reject cross-tenant access attempts
 4. **Testing**: Every test seeds a test tenant; queries are scoped to it
+
+This is still row-level isolation, not table-per-tenant. The system shares a single schema while keeping data access constrained to the authenticated organization's `tenant_id` across tenant-owned tables.
 
 ### Example Table Structure
 
