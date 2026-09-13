@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import { Pool, type PoolClient } from "@neondatabase/serverless";
@@ -14,27 +14,6 @@ import type {
   HostedWorkspaceStateProvider,
 } from "@/server/hosted-workspaces/hosted-workspace-store";
 
-const schema = `
-CREATE TABLE IF NOT EXISTS developer_agentic_os_hosted_state (
-  tenant_id text NOT NULL,
-  state_key text NOT NULL,
-  state jsonb NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (tenant_id, state_key)
-);
-CREATE TABLE IF NOT EXISTS developer_agentic_os_workspace_state (
-  tenant_id text NOT NULL,
-  state_key text NOT NULL,
-  state jsonb NOT NULL,
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (tenant_id, state_key)
-);
-ALTER TABLE developer_agentic_os_hosted_state ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'legacy';
-ALTER TABLE developer_agentic_os_workspace_state ADD COLUMN IF NOT EXISTS tenant_id text NOT NULL DEFAULT 'legacy';
-ALTER TABLE developer_agentic_os_hosted_state DROP CONSTRAINT IF EXISTS developer_agentic_os_hosted_state_pkey;
-ALTER TABLE developer_agentic_os_workspace_state DROP CONSTRAINT IF EXISTS developer_agentic_os_workspace_state_pkey;
-CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_hosted_state_tenant_key ON developer_agentic_os_hosted_state (tenant_id, state_key);
-CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_workspace_state_tenant_key ON developer_agentic_os_workspace_state (tenant_id, state_key);`;
 const emptyHostedState = (): HostedState => ({
   repositories: {},
   records: {},
@@ -47,7 +26,14 @@ const emptyHostedState = (): HostedState => ({
   vercelProjectHistory: [],
   githubRepositories: [],
 });
-const emptyWorkspaceState = (): HostedWorkspaceState => ({ users: {}, audit: [] });
+
+type HostedStateRepositoryRow = {
+  id: string;
+  workspace_id: string;
+  local_path: string;
+  path_identity: string;
+  created_at: string;
+};
 
 export function hostedDatabaseUrl(): string {
   const url =
@@ -96,20 +82,115 @@ export class NeonHostedStateProvider implements HostedStateProvider {
   async read(): Promise<HostedState> {
     await this.ensureSchema();
     const client = this.transactionClient.getStore() ?? this.pool;
-    const result = await client.query<{ state: HostedState }>(
-      "SELECT state FROM developer_agentic_os_hosted_state WHERE tenant_id = $1 AND state_key = $2",
-      [this.tenantId, "default"]
+    const tenantId = await this.tenantDatabaseId(client);
+    const state = emptyHostedState();
+    const repositories = await client.query<HostedStateRepositoryRow>(
+      "SELECT id, workspace_id, local_path, path_identity, created_at FROM hosted_repositories WHERE tenant_id = $1",
+      [tenantId]
     );
-    return result.rows[0]?.state ?? emptyHostedState();
+    for (const repository of repositories.rows) {
+      (state.repositories[repository.workspace_id] ??= []).push({
+        id: repository.id,
+        localPath: repository.local_path,
+        pathIdentity: repository.path_identity,
+        createdAt: repository.created_at,
+      });
+    }
+    const records = await client.query<{ workspace_id: string; kind: string; value: Record<string, unknown> }>(
+      "SELECT workspace_id, kind, value FROM hosted_records WHERE tenant_id = $1",
+      [tenantId]
+    );
+    for (const record of records.rows) {
+      const workspace = (state.records[record.workspace_id] ??= {});
+      (workspace[record.kind as keyof typeof workspace] ??= []).push(record.value);
+    }
+    const relationships = await client.query<{ workspace_id: string; source_id: string; target_id: string; kind: string }>(
+      "SELECT workspace_id, source_id, target_id, kind FROM hosted_relationships WHERE tenant_id = $1",
+      [tenantId]
+    );
+    for (const relationship of relationships.rows)
+      (state.relationships[relationship.workspace_id] ??= []).push({
+        from: relationship.source_id,
+        to: relationship.target_id,
+        kind: relationship.kind,
+      });
+    const snapshots = await client.query<{ workspace_id: string; value: HostedState["snapshots"][string][number] }>(
+      "SELECT workspace_id, value FROM hosted_snapshots WHERE tenant_id = $1",
+      [tenantId]
+    );
+    for (const snapshot of snapshots.rows) (state.snapshots[snapshot.workspace_id] ??= []).push(snapshot.value);
+    const connectors = await client.query<{ value: HostedState["connectors"][number] }>(
+      "SELECT value FROM hosted_connectors WHERE tenant_id = $1",
+      [tenantId]
+    );
+    state.connectors = connectors.rows.map((row) => row.value);
+    const credentials = await client.query<{ value: HostedState["credentials"][number] }>(
+      "SELECT value FROM hosted_credentials WHERE tenant_id = $1",
+      [tenantId]
+    );
+    state.credentials = credentials.rows.map((row) => row.value);
+    const audit = await client.query<{ value: HostedState["audit"][number] }>(
+      "SELECT value FROM hosted_audit WHERE tenant_id = $1",
+      [tenantId]
+    );
+    state.audit = audit.rows.map((row) => row.value);
+    return state;
   }
   async write(state: HostedState): Promise<void> {
     await this.ensureSchema();
     const client = this.transactionClient.getStore();
     if (!client) return this.withMutationLock(() => this.write(state));
-    await client.query(
-      "INSERT INTO developer_agentic_os_hosted_state (tenant_id, state_key, state) VALUES ($1, $2, $3::jsonb) ON CONFLICT (tenant_id, state_key) DO UPDATE SET state = EXCLUDED.state, updated_at = now()",
-      [this.tenantId, "default", JSON.stringify(state)]
-    );
+    const tenantId = await this.tenantDatabaseId(client);
+    for (const table of [
+      "hosted_repositories",
+      "hosted_records",
+      "hosted_relationships",
+      "hosted_snapshots",
+      "hosted_connectors",
+      "hosted_credentials",
+      "hosted_audit",
+    ])
+      await client.query(`DELETE FROM ${table} WHERE tenant_id = $1`, [tenantId]);
+    for (const [workspaceId, repositories] of Object.entries(state.repositories))
+      for (const repository of repositories)
+        await client.query(
+          "INSERT INTO hosted_repositories (id, tenant_id, workspace_id, local_path, path_identity, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+          [repository.id, tenantId, workspaceId, repository.localPath, repository.pathIdentity, repository.createdAt]
+        );
+    for (const [workspaceId, recordMap] of Object.entries(state.records))
+      for (const [kind, records] of Object.entries(recordMap))
+        for (const record of records ?? [])
+          await client.query(
+            "INSERT INTO hosted_records (id, tenant_id, workspace_id, kind, value) VALUES ($1, $2, $3, $4, $5::jsonb)",
+            [typeof record.id === "string" ? record.id : randomUUID(), tenantId, workspaceId, kind, JSON.stringify(record)]
+          );
+    for (const [workspaceId, links] of Object.entries(state.relationships))
+      for (const link of links)
+        await client.query(
+          "INSERT INTO hosted_relationships (tenant_id, workspace_id, source_id, target_id, kind) VALUES ($1, $2, $3, $4, $5)",
+          [tenantId, workspaceId, link.from, link.to, link.kind]
+        );
+    for (const [workspaceId, snapshots] of Object.entries(state.snapshots))
+      for (const snapshot of snapshots)
+        await client.query(
+          "INSERT INTO hosted_snapshots (id, tenant_id, workspace_id, value) VALUES ($1, $2, $3, $4::jsonb)",
+          [snapshot.id, tenantId, workspaceId, JSON.stringify(snapshot)]
+        );
+    for (const connector of state.connectors)
+      await client.query(
+        "INSERT INTO hosted_connectors (id, tenant_id, workspace_id, value) VALUES ($1, $2, $3, $4::jsonb)",
+        [connector.id, tenantId, connector.workspaceId, JSON.stringify(connector)]
+      );
+    for (const credential of state.credentials)
+      await client.query(
+        "INSERT INTO hosted_credentials (id, tenant_id, workspace_id, value) VALUES ($1, $2, $3, $4::jsonb)",
+        [credential.id, tenantId, credential.workspaceId, JSON.stringify(credential)]
+      );
+    for (const event of state.audit)
+      await client.query(
+        "INSERT INTO hosted_audit (id, tenant_id, workspace_id, value) VALUES ($1, $2, $3, $4::jsonb)",
+        [event.id, tenantId, event.workspaceId ?? null, JSON.stringify(event)]
+      );
   }
   async readDeploymentState(): Promise<HostedDeploymentState> {
     await this.ensureDeploymentSchema();
@@ -252,7 +333,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-        `developer_agentic_os_hosted_state:${this.tenantId}`,
+        `hosted_state:${this.tenantId}`,
       ]);
       const result = await this.transactionClient.run(client, operation);
       await client.query("COMMIT");
@@ -268,7 +349,24 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     await this.pool.end();
   }
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool.query(schema).then(() => undefined));
+    return (this.ready ??= this.pool
+      .query(
+        `SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN
+         ('organizations', 'hosted_workspaces', 'hosted_records', 'hosted_audit')
+         GROUP BY table_schema HAVING COUNT(*) = 4`
+      )
+      .then((result) => {
+        if (result.rowCount !== 1) throw new Error("Canonical hosted state schema is not installed.");
+      }));
+  }
+  private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
+    const result = await client.query<{ id: string }>(
+      "SELECT id FROM organizations WHERE clerk_org_id = $1",
+      [this.tenantId]
+    );
+    if (result.rows.length !== 1) throw new Error(`Tenant ${this.tenantId} is not registered.`);
+    return result.rows[0].id;
   }
   private ensureDeploymentSchema(): Promise<void> {
     return (this.deploymentReady ??= this.pool
@@ -296,20 +394,76 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
   async read(): Promise<HostedWorkspaceState> {
     await this.ensureSchema();
     const client = this.transactionClient.getStore() ?? this.pool;
-    const result = await client.query<{ state: HostedWorkspaceState }>(
-      "SELECT state FROM developer_agentic_os_workspace_state WHERE tenant_id = $1 AND state_key = $2",
-      [this.tenantId, "default"]
+    const tenantId = await this.tenantDatabaseId(client);
+    const users = await client.query<{ user_id: string; active_workspace_id: string | null }>(
+      "SELECT user_id, active_workspace_id FROM hosted_workspace_users WHERE tenant_id = $1",
+      [tenantId]
     );
-    return result.rows[0]?.state ?? emptyWorkspaceState();
+    const workspaces = await client.query<{
+      id: string;
+      owner_id: string;
+      name: string;
+      created_at: string;
+    }>(
+      "SELECT id, owner_id, name, created_at FROM hosted_workspaces WHERE tenant_id = $1",
+      [tenantId]
+    );
+    const state: HostedWorkspaceState = { users: {}, audit: [] };
+    for (const user of users.rows)
+      state.users[user.user_id] = {
+        workspaces: [],
+        activeWorkspaceId: user.active_workspace_id,
+      };
+    for (const workspace of workspaces.rows) {
+      const user = (state.users[workspace.owner_id] ??= {
+        workspaces: [],
+        activeWorkspaceId: null,
+      });
+      user.workspaces.push({
+        id: workspace.id,
+        ownerId: workspace.owner_id,
+        name: workspace.name,
+        createdAt: workspace.created_at,
+      });
+    }
+    const audit = await client.query<{ id: string; user_id: string; workspace_id: string | null; action: string; occurred_at: string }>(
+      "SELECT id, user_id, workspace_id, action, occurred_at FROM hosted_workspace_audit WHERE tenant_id = $1",
+      [tenantId]
+    );
+    state.audit = audit.rows.map((event) => ({
+      id: event.id,
+      userId: event.user_id,
+      ...(event.workspace_id ? { workspaceId: event.workspace_id } : {}),
+      action: event.action as HostedWorkspaceState["audit"][number]["action"],
+      occurredAt: event.occurred_at,
+    }));
+    return state;
   }
   async write(state: HostedWorkspaceState): Promise<void> {
     await this.ensureSchema();
     const client = this.transactionClient.getStore();
     if (!client) return this.withMutationLock(() => this.write(state));
-    await client.query(
-      "INSERT INTO developer_agentic_os_workspace_state (tenant_id, state_key, state) VALUES ($1, $2, $3::jsonb) ON CONFLICT (tenant_id, state_key) DO UPDATE SET state = EXCLUDED.state, updated_at = now()",
-      [this.tenantId, "default", JSON.stringify(state)]
-    );
+    const tenantId = await this.tenantDatabaseId(client);
+    await client.query("DELETE FROM hosted_workspace_audit WHERE tenant_id = $1", [tenantId]);
+    await client.query("DELETE FROM hosted_workspace_members WHERE tenant_id = $1", [tenantId]);
+    await client.query("DELETE FROM hosted_workspace_users WHERE tenant_id = $1", [tenantId]);
+    await client.query("DELETE FROM hosted_workspaces WHERE tenant_id = $1", [tenantId]);
+    for (const [userId, user] of Object.entries(state.users)) {
+      await client.query(
+        "INSERT INTO hosted_workspace_users (tenant_id, user_id, active_workspace_id) VALUES ($1, $2, $3)",
+        [tenantId, userId, user.activeWorkspaceId]
+      );
+      for (const workspace of user.workspaces)
+        await client.query(
+          "INSERT INTO hosted_workspaces (id, tenant_id, owner_id, name, created_at) VALUES ($1, $2, $3, $4, $5)",
+          [workspace.id, tenantId, workspace.ownerId, workspace.name, workspace.createdAt]
+        );
+    }
+    for (const event of state.audit)
+      await client.query(
+        "INSERT INTO hosted_workspace_audit (id, tenant_id, user_id, workspace_id, action, occurred_at) VALUES ($1, $2, $3, $4, $5, $6)",
+        [event.id, tenantId, event.userId, event.workspaceId ?? null, event.action, event.occurredAt]
+      );
   }
   async withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
     await this.ensureSchema();
@@ -317,7 +471,7 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
-        `developer_agentic_os_workspace_state:${this.tenantId}`,
+        `hosted_workspace_state:${this.tenantId}`,
       ]);
       const result = await this.transactionClient.run(client, operation);
       await client.query("COMMIT");
@@ -333,7 +487,25 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     await this.pool.end();
   }
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool.query(schema).then(() => undefined));
+    return (this.ready ??= this.pool
+      .query(
+        `SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN
+         ('organizations', 'hosted_workspace_users', 'hosted_workspaces', 'hosted_workspace_audit')
+         GROUP BY table_schema HAVING COUNT(*) = 4`
+      )
+      .then((result) => {
+        if (result.rowCount !== 1) throw new Error("Canonical hosted state schema is not installed.");
+      }));
+  }
+
+  private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
+    const result = await client.query<{ id: string }>(
+      "SELECT id FROM organizations WHERE clerk_org_id = $1",
+      [this.tenantId]
+    );
+    if (result.rows.length !== 1) throw new Error(`Tenant ${this.tenantId} is not registered.`);
+    return result.rows[0].id;
   }
 }
 

@@ -41,6 +41,7 @@ const pool = new Pool({ connectionString: DATABASE_URL });
 const canonicalMigrations = [
   "migrations/001-init.sql",
   "migrations/003-hosted-deployment-normalization.sql",
+  "migrations/004-hosted-state-normalization.sql",
 ] as const;
 
 async function applyCanonicalMigrations(client: PoolClient): Promise<void> {
