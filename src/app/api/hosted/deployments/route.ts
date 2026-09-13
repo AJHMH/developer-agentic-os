@@ -9,6 +9,12 @@ import { requiredGitHubOrgForTenant } from "@/server/hosted-auth/github-link";
 import { findHostedTenantForGitHubRepository } from "@/server/hosted-persistence/neon-hosted-provider";
 import { hostedDomainStoreForTenant } from "@/server/hosted-domain/hosted-domain-store";
 
+export type GitHubActionsDeploymentDependencies = {
+  verifyToken?: typeof verifyGitHubActionsOidcToken;
+  findTenant?: typeof findHostedTenantForGitHubRepository;
+  storeForTenant?: typeof hostedDomainStoreForTenant;
+};
+
 function adminRequired(identity: { orgRole?: string }): NextResponse | null {
   return identity.orgRole === "org:admin"
     ? null
@@ -143,6 +149,12 @@ export async function POST(request: Request) {
           { error: "A GitHub Actions OIDC token is required." },
           { status: 401 }
         );
+      const configuredOrg = requiredGitHubOrgForTenant(identity.tenantId);
+      if (!configuredOrg || configuredOrg.toLowerCase() !== claims.owner.toLowerCase())
+        throw new DeploymentResolutionError(
+          "FORBIDDEN",
+          "Deployment repository is not allowed for this Tenant."
+        );
       const target = await resolveDeploymentTarget(identity.domainStore.deploymentRegistry(), {
         tenantId: identity.tenantId,
         owner: claims.owner,
@@ -173,7 +185,13 @@ export async function POST(request: Request) {
   }
 }
 
-export async function resolveGitHubActionsDeployment(request: Request): Promise<NextResponse> {
+export async function resolveGitHubActionsDeployment(
+  request: Request,
+  dependencies: GitHubActionsDeploymentDependencies = {}
+): Promise<NextResponse> {
+  const verifyToken = dependencies.verifyToken ?? verifyGitHubActionsOidcToken;
+  const findTenant = dependencies.findTenant ?? findHostedTenantForGitHubRepository;
+  const storeForTenant = dependencies.storeForTenant ?? hostedDomainStoreForTenant;
   const authorization = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
   if (!authorization)
     return NextResponse.json(
@@ -184,16 +202,22 @@ export async function resolveGitHubActionsDeployment(request: Request): Promise<
   let owner = "";
   let repository = "";
   try {
-    const verified = await verifyGitHubActionsOidcToken(authorization[1], "developer-agentic-os");
+    const verified = await verifyToken(authorization[1], "developer-agentic-os");
     owner = verified.repositoryOwner;
     repository = verified.repository.split("/").at(-1) ?? "";
-    tenantId = await findHostedTenantForGitHubRepository(owner, repository);
+    tenantId = await findTenant(owner, repository);
     if (!tenantId)
       return NextResponse.json(
         { error: "Repository registration was not found." },
         { status: 404 }
       );
-    const domainStore = hostedDomainStoreForTenant(tenantId);
+    const configuredOrg = requiredGitHubOrgForTenant(tenantId);
+    if (!configuredOrg || configuredOrg.toLowerCase() !== owner.toLowerCase())
+      throw new DeploymentResolutionError(
+        "FORBIDDEN",
+        "Deployment repository is not allowed for this Tenant."
+      );
+    const domainStore = storeForTenant(tenantId);
     const target = await resolveDeploymentTarget(domainStore.deploymentRegistry(), {
       tenantId,
       owner,
@@ -211,7 +235,7 @@ export async function resolveGitHubActionsDeployment(request: Request): Promise<
     return NextResponse.json(target);
   } catch (error) {
     if (tenantId) {
-      await hostedDomainStoreForTenant(tenantId).recordDeploymentResolution(
+      await storeForTenant(tenantId).recordDeploymentResolution(
         `github-actions:${owner}/${repository}`,
         "deployment",
         "denied",

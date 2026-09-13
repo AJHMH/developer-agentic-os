@@ -157,3 +157,36 @@ test("hosted deployment route exposes tenant-scoped mapping and registrations", 
   assert.equal(response.status, 200);
   assert.deepEqual(await json(response), { project: null, repositories: [] });
 });
+
+test("hosted deployment route rejects repository registration without a tenant org mapping", async () => {
+  const tenantId = `tenant-unmapped-${Date.now()}`;
+  const userId = `unmapped-admin-${Date.now()}`;
+  const originalOrgMap = process.env.GITHUB_ORG_MAP;
+  process.env.GITHUB_ORG_MAP = JSON.stringify({});
+  try {
+    const workspaceResponse = await createWorkspace(
+      request(userId, tenantId, "org:admin", {
+        method: "POST",
+        body: JSON.stringify({ name: "Unmapped workspace" }),
+      })
+    );
+    const workspaceId = ((await json(workspaceResponse)).workspace as { id: string }).id;
+    const response = await POST(
+      request(userId, tenantId, "org:admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "register-repository",
+          workspaceId,
+          owner: "acme",
+          repository: "checkout",
+          workflow: "deploy.yml",
+          ref: "refs/heads/main",
+        }),
+      })
+    );
+    assert.equal(response.status, 403);
+  } finally {
+    if (originalOrgMap === undefined) delete process.env.GITHUB_ORG_MAP;
+    else process.env.GITHUB_ORG_MAP = originalOrgMap;
+  }
+});

@@ -34,17 +34,14 @@ export function requiredGitHubOrgForTenant(
   env: Record<string, string | undefined> = process.env
 ): string | null {
   const mapValue = env.GITHUB_ORG_MAP?.trim();
-  if (mapValue) {
-    try {
-      const mapping = JSON.parse(mapValue) as Record<string, unknown>;
-      const perTenant = typeof mapping[tenantId] === "string" ? mapping[tenantId].trim() : "";
-      if (perTenant) return perTenant;
-    } catch (error) {
-      void error;
-    }
+  if (!mapValue) return null;
+  try {
+    const mapping = JSON.parse(mapValue) as Record<string, unknown>;
+    const perTenant = typeof mapping[tenantId] === "string" ? mapping[tenantId].trim() : "";
+    return perTenant || null;
+  } catch {
+    return null;
   }
-  const fallback = env.GITHUB_ORG?.trim();
-  return fallback ? fallback : null;
 }
 
 export function githubOrgVerificationMessage(

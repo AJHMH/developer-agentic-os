@@ -7,7 +7,7 @@ import {
   verifyGitHubOrgMembership,
 } from "../src/server/hosted-auth/github-link";
 
-test("requiredGitHubOrgForTenant resolves per-tenant map and fallback", () => {
+test("requiredGitHubOrgForTenant requires an explicit tenant mapping", () => {
   const env = {
     GITHUB_ORG: "fallback-org",
     GITHUB_ORG_MAP: JSON.stringify({
@@ -17,13 +17,13 @@ test("requiredGitHubOrgForTenant resolves per-tenant map and fallback", () => {
   };
 
   assert.equal(requiredGitHubOrgForTenant("org-alpha", env), "alpha-github-org");
-  assert.equal(requiredGitHubOrgForTenant("org-missing", env), "fallback-org");
+  assert.equal(requiredGitHubOrgForTenant("org-missing", env), null);
   assert.equal(
     requiredGitHubOrgForTenant("org-missing", {
       GITHUB_ORG: "fallback",
       GITHUB_ORG_MAP: "{not-json",
     }),
-    "fallback"
+    null
   );
   assert.equal(requiredGitHubOrgForTenant("org-missing", {}), null);
 });

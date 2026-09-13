@@ -7,7 +7,7 @@
 
 ## Status Update
 
-This pattern is now implemented in the hosted product. The Neon migration creates tenant-scoped tables in `migrations/001-init.sql`, tenant filtering is enforced in `src/server/adapters/neon-adapter.ts`, and hosted state storage uses a composite `(tenant_id, state_key)` key in `src/server/hosted-persistence/neon-hosted-provider.ts`.
+This pattern is now implemented in the hosted product. The Neon migrations create tenant-scoped normalized tables in `migrations/001-init.sql` and later hosted-state migrations, tenant filtering is enforced in the persistence layer, and hosted workspace/domain aggregates no longer use a general JSONB state blob.
 
 The application now treats each Clerk organization as a tenant, each table as tenant-scoped, and all reads/writes as constrained to the authenticated org's `tenant_id`.
 
