@@ -123,14 +123,17 @@ BEGIN
     FROM developer_agentic_os_workspace_state AS legacy
     JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
     CROSS JOIN LATERAL jsonb_each(legacy.state->'users') AS users(key, value)
-    CROSS JOIN LATERAL jsonb_array_elements(users.value->'workspaces') AS workspace;
+    CROSS JOIN LATERAL jsonb_array_elements(users.value->'workspaces') AS workspace
+    ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_workspace_users (tenant_id, user_id, active_workspace_id)
     SELECT organizations.id, users.key,
       NULLIF(users.value->>'activeWorkspaceId', '')::uuid
     FROM developer_agentic_os_workspace_state AS legacy
     JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
-    CROSS JOIN LATERAL jsonb_each(legacy.state->'users') AS users(key, value);
+    CROSS JOIN LATERAL jsonb_each(legacy.state->'users') AS users(key, value)
+    ON CONFLICT (tenant_id, user_id) DO UPDATE SET
+      active_workspace_id = EXCLUDED.active_workspace_id;
 
     INSERT INTO hosted_workspace_audit (id, tenant_id, user_id, workspace_id, action, occurred_at)
     SELECT (event->>'id')::uuid, organizations.id, event->>'userId',
@@ -138,7 +141,8 @@ BEGIN
       (event->>'occurredAt')::timestamp
     FROM developer_agentic_os_workspace_state AS legacy
     JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
-    CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'audit') AS audit(event);
+    CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'audit') AS audit(event)
+    ON CONFLICT (id) DO NOTHING;
   END IF;
 
   IF to_regclass('developer_agentic_os_hosted_state') IS NOT NULL THEN
@@ -159,7 +163,8 @@ BEGIN
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
     CROSS JOIN LATERAL jsonb_each(legacy.state->'repositories') AS repositories(key, value)
-    CROSS JOIN LATERAL jsonb_array_elements(repositories.value) AS repository;
+    CROSS JOIN LATERAL jsonb_array_elements(repositories.value) AS repository
+    ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_records (id, tenant_id, workspace_id, kind, value)
     SELECT COALESCE(NULLIF(record->>'id', '')::uuid, gen_random_uuid()), organizations.id,
@@ -168,7 +173,8 @@ BEGIN
     JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
     CROSS JOIN LATERAL jsonb_each(legacy.state->'records') AS records(key, value)
     CROSS JOIN LATERAL jsonb_each(records.value) AS kinds(key, value)
-    CROSS JOIN LATERAL jsonb_array_elements(kinds.value) AS record;
+    CROSS JOIN LATERAL jsonb_array_elements(kinds.value) AS record
+    ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_relationships (tenant_id, workspace_id, source_id, target_id, kind)
     SELECT organizations.id, relationships.key, relationship->>'from',
@@ -176,32 +182,37 @@ BEGIN
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
     CROSS JOIN LATERAL jsonb_each(legacy.state->'relationships') AS relationships(key, value)
-    CROSS JOIN LATERAL jsonb_array_elements(relationships.value) AS relationship;
+    CROSS JOIN LATERAL jsonb_array_elements(relationships.value) AS relationship
+    ON CONFLICT (tenant_id, workspace_id, source_id, target_id, kind) DO NOTHING;
 
     INSERT INTO hosted_snapshots (id, tenant_id, workspace_id, value)
     SELECT (snapshot->>'id')::uuid, organizations.id, snapshots.key, snapshot
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
     CROSS JOIN LATERAL jsonb_each(legacy.state->'snapshots') AS snapshots(key, value)
-    CROSS JOIN LATERAL jsonb_array_elements(snapshots.value) AS snapshot;
+    CROSS JOIN LATERAL jsonb_array_elements(snapshots.value) AS snapshot
+    ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_connectors (id, tenant_id, workspace_id, value)
     SELECT (connector->>'id')::uuid, organizations.id, connector->>'workspaceId', connector
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
-    CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'connectors') AS connector;
+    CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'connectors') AS connector
+    ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_credentials (id, tenant_id, workspace_id, value)
     SELECT (credential->>'id')::uuid, organizations.id, credential->>'workspaceId', credential
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations ON organizations.id::text = legacy.tenant_id OR organizations.clerk_org_id = legacy.tenant_id
-    CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'credentials') AS credential;
+    CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'credentials') AS credential
+    ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_audit (id, tenant_id, workspace_id, value)
     SELECT (event->>'id')::uuid, organizations.id, NULLIF(event->>'workspaceId', '')::uuid, event
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations ON organizations.id::text = legacy.tenant_id OR organizations.clerk_org_id = legacy.tenant_id
-    CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'audit') AS audit(event);
+    CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'audit') AS audit(event)
+    ON CONFLICT (id) DO NOTHING;
   END IF;
 END $$;
 

@@ -492,13 +492,6 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
              created_at = EXCLUDED.created_at`,
           [workspace.id, tenantId, workspace.ownerId, workspace.name, workspace.createdAt]
         );
-    if (desiredWorkspaceIds.size > 0)
-      await client.query(
-        "DELETE FROM hosted_workspaces WHERE tenant_id = $1 AND id <> ALL($2::uuid[])",
-        [tenantId, Array.from(desiredWorkspaceIds)]
-      );
-    else await client.query("DELETE FROM hosted_workspaces WHERE tenant_id = $1", [tenantId]);
-
     const desiredUserIds = Object.keys(state.users);
     for (const [userId, user] of Object.entries(state.users)) {
       const activeWorkspaceId =
@@ -518,6 +511,12 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
         [tenantId, desiredUserIds]
       );
     else await client.query("DELETE FROM hosted_workspace_users WHERE tenant_id = $1", [tenantId]);
+    if (desiredWorkspaceIds.size > 0)
+      await client.query(
+        "DELETE FROM hosted_workspaces WHERE tenant_id = $1 AND id <> ALL($2::uuid[])",
+        [tenantId, Array.from(desiredWorkspaceIds)]
+      );
+    else await client.query("DELETE FROM hosted_workspaces WHERE tenant_id = $1", [tenantId]);
     for (const event of state.audit)
       await client.query(
         "INSERT INTO hosted_workspace_audit (id, tenant_id, user_id, workspace_id, action, occurred_at) VALUES ($1, $2, $3, $4, $5, $6)",
