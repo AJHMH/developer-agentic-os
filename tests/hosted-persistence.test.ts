@@ -5,6 +5,14 @@ import {
   EncryptedProtectedSecretStore,
   hostedDatabaseUrl,
 } from "../src/server/hosted-persistence/neon-hosted-provider";
+import {
+  assertCanonicalHostedPersistenceContract,
+  hostedPersistenceContract,
+} from "../src/server/hosted-persistence/hosted-persistence-contract";
+import {
+  migrateHostedTenant,
+  type HostedMigrationStatus,
+} from "../src/server/hosted-persistence/hosted-migration";
 import type {
   HostedState,
   HostedStateProvider,
@@ -27,6 +35,146 @@ const emptyDomainState = (): HostedState => ({
   audit: [],
 });
 const emptyWorkspaceState = (): HostedWorkspaceState => ({ users: {}, audit: [] });
+
+test("hosted persistence exposes one tenant-scoped canonical contract", () => {
+  assertCanonicalHostedPersistenceContract();
+  assert.equal(hostedPersistenceContract.name, "tenant-scoped-hosted-provider");
+  assert.equal(hostedPersistenceContract.tenantKey, "tenant_id");
+  assert.equal(
+    hostedPersistenceContract.compatibility,
+    "normalized-migration-tables-are-legacy-input-only"
+  );
+  assert.deepEqual(hostedPersistenceContract.stateTables, [
+    "developer_agentic_os_hosted_state",
+    "developer_agentic_os_workspace_state",
+  ]);
+});
+
+test("hosted tenant migration is retry-safe and records completion provenance", async () => {
+  const sourceState = new MemoryDomainProvider({
+    ...emptyDomainState(),
+    audit: [
+      {
+        id: "audit",
+        userId: "alice",
+        workspaceId: "workspace-a",
+        action: "migration.source",
+        occurredAt: "2026-09-12T00:00:00.000Z",
+      },
+    ],
+  });
+  const sourceWorkspace = new MemoryWorkspaceProvider({
+    users: { alice: { workspaces: [], activeWorkspaceId: null } },
+    audit: [],
+  });
+  const targetState = new MemoryDomainProvider(emptyDomainState());
+  const targetWorkspace = new MemoryWorkspaceProvider(emptyWorkspaceState());
+  const statuses = new Map<string, Awaited<ReturnType<typeof migrateHostedTenant>>["status"]>();
+  const status = {
+    read: async (tenantId: string) => statuses.get(tenantId) ?? null,
+    write: async (value: Awaited<ReturnType<typeof migrateHostedTenant>>["status"]) => {
+      statuses.set(value.tenantId, value);
+    },
+  };
+
+  const input = {
+    tenantId: "tenant-a",
+    source: { state: sourceState, workspace: sourceWorkspace },
+    target: { state: targetState, workspace: targetWorkspace },
+    status,
+    sourceName: "legacy-hosted-state",
+    targetName: "tenant-scoped-hosted-provider",
+    version: 1,
+    now: () => "2026-09-12T00:00:00.000Z",
+  };
+  const first = await migrateHostedTenant(input);
+  const second = await migrateHostedTenant(input);
+
+  assert.equal(first.status.state, "completed");
+  assert.equal(second.status.state, "completed");
+  assert.equal(second.status.startedAt, first.status.startedAt);
+  assert.deepEqual(await targetState.read(), await sourceState.read());
+  assert.deepEqual(await targetWorkspace.read(), await sourceWorkspace.read());
+});
+
+test("hosted tenant migration records a failed attempt without changing its tenant", async () => {
+  const sourceState = new MemoryDomainProvider(emptyDomainState());
+  const sourceWorkspace = new MemoryWorkspaceProvider(emptyWorkspaceState());
+  const targetState = new MemoryDomainProvider(emptyDomainState());
+  const targetWorkspace = new MemoryWorkspaceProvider(emptyWorkspaceState());
+  const statuses = new Map<string, HostedMigrationStatus>();
+  const status = {
+    read: async (tenantId: string) => statuses.get(tenantId) ?? null,
+    write: async (value: HostedMigrationStatus) => {
+      statuses.set(value.tenantId, value);
+    },
+  };
+  const failingState: HostedStateProvider = {
+    read: () => targetState.read(),
+    write: async () => {
+      throw new Error("target unavailable");
+    },
+  };
+  const failingTarget = {
+    state: failingState,
+    workspace: targetWorkspace,
+  };
+
+  await assert.rejects(
+    () =>
+      migrateHostedTenant({
+        tenantId: "tenant-b",
+        source: { state: sourceState, workspace: sourceWorkspace },
+        target: failingTarget,
+        status,
+        sourceName: "legacy-hosted-state",
+        targetName: "tenant-scoped-hosted-provider",
+        version: 1,
+      }),
+    /target unavailable/
+  );
+  assert.equal(statuses.get("tenant-b")?.state, "failed");
+  assert.equal(statuses.get("tenant-b")?.tenantId, "tenant-b");
+  assert.equal(statuses.get("tenant-b")?.error, "target unavailable");
+  assert.equal(statuses.has("tenant-a"), false);
+});
+
+test("hosted tenant migration restores state when the workspace write fails", async () => {
+  const sourceState = new MemoryDomainProvider({ ...emptyDomainState(), records: { source: {} } });
+  const sourceWorkspace = new MemoryWorkspaceProvider(emptyWorkspaceState());
+  const originalState: HostedState = { ...emptyDomainState(), records: { original: {} } };
+  const targetState = new MemoryDomainProvider(originalState);
+  const targetWorkspace = new MemoryWorkspaceProvider(emptyWorkspaceState());
+  const statuses = new Map<string, HostedMigrationStatus>();
+  const status = {
+    read: async (tenantId: string) => statuses.get(tenantId) ?? null,
+    write: async (value: HostedMigrationStatus) => {
+      statuses.set(value.tenantId, value);
+    },
+  };
+  const failingWorkspace: HostedWorkspaceStateProvider = {
+    read: () => targetWorkspace.read(),
+    write: async () => {
+      throw new Error("workspace unavailable");
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      migrateHostedTenant({
+        tenantId: "tenant-c",
+        source: { state: sourceState, workspace: sourceWorkspace },
+        target: { state: targetState, workspace: failingWorkspace },
+        status,
+        sourceName: "legacy-hosted-state",
+        targetName: "tenant-scoped-hosted-provider",
+        version: 1,
+      }),
+    /workspace unavailable/
+  );
+  assert.deepEqual(await targetState.read(), originalState);
+  assert.equal(statuses.get("tenant-c")?.state, "failed");
+});
 
 class MemoryDomainProvider implements HostedStateProvider {
   constructor(private state: HostedState) {}

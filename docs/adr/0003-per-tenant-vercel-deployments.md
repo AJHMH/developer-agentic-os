@@ -190,7 +190,7 @@ The following work remains before this decision can be marked fully implemented:
 
 1. Update and roll out the tenant deployment workflow to call the dedicated hosted resolution endpoint with a GitHub Actions OIDC token and `id-token: write` permission.
 2. Add production integration coverage for OIDC verification against stubbed JWKS and signed claims; fixture-mode route tests cover the current unit path.
-3. Complete the versioned migration rollout for existing installations and remove any remaining temporary fallback credential configuration.
+3. Complete the versioned migration rollout for existing installations and remove any remaining temporary fallback credential configuration. The canonical contract and migration status boundary now exist; production rollout remains outstanding.
 
 Until these operational gaps are closed, this ADR remains **Accepted, Partially Implemented**.
 

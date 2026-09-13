@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "ruleset:sync": "tsx scripts/sync-ruleset.ts",
+    "migrate:hosted-tenant": "tsx scripts/migrate-hosted-tenant.ts",
     "test": "node --test tests/*.test.mjs && tsx --test tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:hosted": "playwright test --config=playwright.hosted.config.ts"

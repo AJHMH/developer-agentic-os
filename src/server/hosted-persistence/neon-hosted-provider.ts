@@ -13,8 +13,27 @@ import type {
   HostedWorkspaceState,
   HostedWorkspaceStateProvider,
 } from "@/server/hosted-workspaces/hosted-workspace-store";
+import {
+  assertCanonicalHostedPersistenceContract,
+  hostedPersistenceContract,
+} from "./hosted-persistence-contract";
 
 const schema = `
+CREATE TABLE IF NOT EXISTS developer_agentic_os_schema_version (
+  contract_name text PRIMARY KEY,
+  contract_version integer NOT NULL,
+  migrated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS developer_agentic_os_migration_status (
+  tenant_id text PRIMARY KEY,
+  source text NOT NULL,
+  target text NOT NULL,
+  version integer NOT NULL,
+  state text NOT NULL,
+  started_at timestamptz NOT NULL,
+  completed_at timestamptz,
+  error text
+);
 CREATE TABLE IF NOT EXISTS developer_agentic_os_hosted_state (
   tenant_id text NOT NULL,
   state_key text NOT NULL,
@@ -103,6 +122,11 @@ export async function findHostedTenantForGitHubRepository(
       "SELECT tenant_id FROM developer_agentic_os_github_repository_registration WHERE lower(owner) = lower($1) AND lower(repository) = lower($2)",
       [owner, repository]
     );
+    const migration = await pool.query<{ state: string }>(
+      "SELECT state FROM developer_agentic_os_migration_status WHERE tenant_id = $1",
+      [result.rows[0]?.tenant_id]
+    );
+    if (["running", "failed"].includes(migration.rows[0]?.state ?? "")) return null;
     return result.rows.length === 1 ? result.rows[0].tenant_id : null;
   } finally {
     await pool.end();
@@ -274,11 +298,27 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     await this.pool.end();
   }
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool.query(schema).then(() => undefined));
+    return (this.ready ??= this.pool
+      .query(schema)
+      .then(() => assertCanonicalHostedPersistenceContract())
+      .then(() =>
+        this.pool.query(
+          `INSERT INTO developer_agentic_os_schema_version (contract_name, contract_version)
+             VALUES ($1, $2)
+             ON CONFLICT (contract_name) DO UPDATE SET contract_version = EXCLUDED.contract_version,
+               migrated_at = now()
+             WHERE EXCLUDED.contract_version >= developer_agentic_os_schema_version.contract_version`,
+          [hostedPersistenceContract.name, hostedPersistenceContract.version]
+        )
+      )
+      .then(async () => {
+        await assertTenantMigrationReady(this.pool, this.tenantId);
+      })
+      .then(() => undefined));
   }
   private ensureDeploymentSchema(): Promise<void> {
-    return (this.deploymentReady ??= this.pool
-      .query(`${deploymentSchema}${webhookSchema}`)
+    return (this.deploymentReady ??= this.ensureSchema()
+      .then(() => this.pool.query(`${deploymentSchema}${webhookSchema}`))
       .then(() => undefined));
   }
 }
@@ -332,7 +372,43 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     await this.pool.end();
   }
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool.query(schema).then(() => undefined));
+    return (this.ready ??= this.pool
+      .query(schema)
+      .then(() => assertCanonicalHostedPersistenceContract())
+      .then(() =>
+        this.pool.query(
+          `INSERT INTO developer_agentic_os_schema_version (contract_name, contract_version)
+             VALUES ($1, $2)
+             ON CONFLICT (contract_name) DO UPDATE SET contract_version = EXCLUDED.contract_version,
+               migrated_at = now()
+             WHERE EXCLUDED.contract_version >= developer_agentic_os_schema_version.contract_version`,
+          [hostedPersistenceContract.name, hostedPersistenceContract.version]
+        )
+      )
+      .then(() => assertTenantMigrationReady(this.pool, this.tenantId))
+      .then(() => undefined));
+  }
+}
+
+async function assertTenantMigrationReady(pool: Pool, tenantId: string): Promise<void> {
+  const migration = await pool.query<{ state: string }>(
+    "SELECT state FROM developer_agentic_os_migration_status WHERE tenant_id = $1",
+    [tenantId]
+  );
+  const state = migration.rows[0]?.state;
+  if (state === "running" || state === "failed")
+    throw new Error(`Hosted persistence migration is ${state} for tenant ${tenantId}.`);
+  if (!migration.rows[0]) {
+    const existing = await pool.query<{ has_state: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM developer_agentic_os_hosted_state WHERE tenant_id = $1
+         UNION ALL
+         SELECT 1 FROM developer_agentic_os_workspace_state WHERE tenant_id = $1
+       ) AS has_state`,
+      [tenantId]
+    );
+    if (existing.rows[0]?.has_state)
+      throw new Error(`Hosted persistence migration status is missing for tenant ${tenantId}.`);
   }
 }
 

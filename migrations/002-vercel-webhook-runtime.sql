@@ -19,6 +19,17 @@ CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_project_mapping (
 CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_vercel_project_mapping_identity
   ON developer_agentic_os_vercel_project_mapping (project_id, COALESCE(team_id, ''));
 
+CREATE TABLE IF NOT EXISTS developer_agentic_os_github_repository_registration (
+  id text PRIMARY KEY,
+  tenant_id text NOT NULL,
+  owner text NOT NULL,
+  repository text NOT NULL,
+  workflow text NOT NULL,
+  ref text NOT NULL,
+  created_at timestamptz NOT NULL,
+  UNIQUE (owner, repository)
+);
+
 CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_webhook_events (
   tenant_id text NOT NULL,
   project_id text NOT NULL,

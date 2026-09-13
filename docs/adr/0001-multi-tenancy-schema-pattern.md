@@ -1,15 +1,15 @@
 # ADR 0001: Multi-Tenancy Schema Pattern
 
-**Status**: Accepted and Implemented
+**Status**: Accepted and Partially Implemented; canonical hosted provider selected
 
 **Date**: 2026-09-09
 **Last Updated**: 2026-09-12
 
 ## Status Update
 
-This pattern is now implemented in the hosted product. The Neon migration creates tenant-scoped tables in `migrations/001-init.sql`, tenant filtering is enforced in `src/server/adapters/neon-adapter.ts`, and hosted state storage uses a composite `(tenant_id, state_key)` key in `src/server/hosted-persistence/neon-hosted-provider.ts`.
+The live hosted product uses the tenant-scoped hosted provider as the canonical Hosted State persistence contract. Its state, workspace, deployment, and webhook tables are keyed by `tenant_id`; the contract is versioned and recorded in Neon during provider initialization.
 
-The application now treats each Clerk organization as a tenant, each table as tenant-scoped, and all reads/writes as constrained to the authenticated org's `tenant_id`.
+The normalized tables in `migrations/001-init.sql` are legacy migration inputs until an explicit transformation removes them. The migration command fails closed when those tables are present rather than silently dropping their data. They are not a second production read/write path. The application treats each Clerk organization as a Tenant, and all hosted reads/writes are constrained to the authenticated organization's `tenant_id`.
 
 ## Context
 
@@ -27,8 +27,8 @@ Key constraints:
 
 We will use **row-level tenant ID isolation** as the multi-tenancy pattern:
 
-1. **Every table has a `tenant_id` column** (not null, indexed, part of unique constraints where needed)
-2. **All queries must include `WHERE tenant_id = ?`** in the ORM/query layer or middleware
+1. **Every canonical tenant-owned hosted table has a non-null `tenant_id` column** (indexed, part of unique constraints where needed). Platform-level audit rows for unknown or malformed requests are the documented exception and carry no Tenant.
+2. **All canonical hosted queries must include `WHERE tenant_id = ?`** in the query layer or provider boundary
 3. **The Clerk session provides the authenticated tenant context** on each request
 4. **The Next.js API layer enforces tenant filtering** before any data is returned
 
@@ -54,10 +54,10 @@ Row-level is the SaaS standard for good reasons: it scales, it's maintainable, a
 
 ### Enforcement Strategy
 
-1. **Database Layer**: Foreign key constraints ensure `tenant_id` references a valid org
-2. **ORM Layer**: Drizzle or Prisma middleware automatically adds `WHERE tenant_id = current_tenant_id` to all queries
-3. **API Layer**: Next.js route handlers read `tenant_id` from Clerk session, pass it to all data access functions
-4. **Testing**: Every test seeds a test tenant; queries are scoped to it
+1. **Database Layer**: Canonical hosted tables require `tenant_id` and composite tenant keys where state is keyed by `state_key`
+2. **Provider Layer**: Hosted persistence methods bind every read/write to the provider's Tenant identity
+3. **API Layer**: Next.js route handlers read `tenant_id` from Clerk session and pass it to hosted data access
+4. **Testing**: Every hosted test seeds a test Tenant and verifies cross-Tenant isolation at the public provider or route seam
 
 ### Example Table Structure
 
@@ -114,7 +114,7 @@ CREATE TABLE work_items (
    - This is the implemented pattern used for repos, issues, pull requests, and related metadata.
 2. Cross-tenant relationships remain disallowed.
    - Each org is isolated by `tenant_id`; the system is designed to reject access outside the current tenant.
-3. Audit logging is still a future enhancement if compliance requirements or security review demand it.
+3. Tenant-scoped audit logging is implemented for hosted workflows. Platform-level audit logging for unknown or malformed requests remains separate from Tenant audit data.
 
 ## References
 

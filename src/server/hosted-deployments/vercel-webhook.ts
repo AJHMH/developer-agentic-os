@@ -25,6 +25,7 @@ export type VercelWebhookAuditEntry = {
   action:
     "unknown_project" | "invalid_signature" | "invalid_payload" | "duplicate" | "processing_failed";
   projectId?: string;
+  tenantId?: string;
 };
 
 export interface VercelWebhookRepository {

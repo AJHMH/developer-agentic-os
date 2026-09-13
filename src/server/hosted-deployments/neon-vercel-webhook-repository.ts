@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_failure_signals (
 );
 CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_webhook_audit (
   id bigserial PRIMARY KEY,
+  tenant_id text,
   action text NOT NULL,
   project_id text,
   occurred_at timestamptz NOT NULL DEFAULT now()
@@ -196,8 +197,9 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   async recordAudit(entry: VercelWebhookAuditEntry): Promise<void> {
     await this.ensureSchema();
     await this.pool.query(
-      "INSERT INTO developer_agentic_os_vercel_webhook_audit (action, project_id) VALUES ($1, $2)",
-      [entry.action, entry.projectId ?? null]
+      `INSERT INTO developer_agentic_os_vercel_webhook_audit (tenant_id, action, project_id)
+       VALUES ((SELECT tenant_id FROM developer_agentic_os_vercel_project_mapping WHERE project_id = $1), $2, $1)`,
+      [entry.projectId ?? null, entry.action]
     );
   }
 }

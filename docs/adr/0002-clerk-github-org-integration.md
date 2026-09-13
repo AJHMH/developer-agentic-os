@@ -1,15 +1,15 @@
 # ADR 0002: Clerk + GitHub Org Integration for Multi-Tenant Identity
 
-**Status**: Accepted and Implemented
+**Status**: Accepted and Partially Implemented; canonical hosted provider selected
 
 **Date**: 2026-09-09
 **Last Updated**: 2026-09-12
 
 ## Status Update
 
-This identity model is now in effect. Clerk organization membership provides app-level access; GitHub org membership is verified separately through the GitHub OAuth token flow in `src/server/hosted-auth/github-link.ts`, and the system uses the tenant mapping created in `migrations/001-init.sql` to keep org membership and repository data scoped to the correct tenant.
+This identity model is now in effect. Clerk organization membership provides app-level access; GitHub org membership is verified separately through the GitHub OAuth token flow in `src/server/hosted-auth/github-link.ts`. The live hosted provider stores Tenant-scoped Hosted State and deployment registrations using the authenticated Clerk organization as `tenant_id`.
 
-The app has moved from an abstract pattern to an enforced tenant model: users must be invited to the Clerk org and verified as members of the GitHub org before they can access GitHub-backed repository data.
+The normalized organization and membership tables in `migrations/001-init.sql` remain legacy migration inputs rather than a parallel live persistence path. The app has moved from an abstract pattern to an enforced Tenant model: users must be invited to the Clerk org and verified as members of the GitHub org before they can access GitHub-backed repository data.
 
 ## Context
 

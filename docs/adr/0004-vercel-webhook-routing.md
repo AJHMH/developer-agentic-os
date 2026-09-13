@@ -151,7 +151,7 @@ async function handleDeploymentEvent(tenantId: UUID, event: any) {
 - A webhook is first persisted as an immutable tenant-scoped Deployment Event. An Incoming Signal is derived only for supported failure events; webhook processing does not automatically create a Work Item.
 - `vercel_project_id` must resolve to one tenant. If Vercel permits project IDs to be reused across teams, the mapping key must include `vercel_team_id`.
 - Signature verification reads the raw request body and uses the mapped project's active secret with a timing-safe comparison. During rotation, the active and previous secrets may both validate for a bounded transition window.
-- Unknown projects and duplicate deliveries return a non-revealing `202 Accepted` response. Invalid signatures are rejected without revealing registration state. All such attempts are recorded in a platform-level webhook audit stream.
+- Unknown projects, malformed payloads, and invalid signatures are recorded in a platform-level webhook audit stream without a Tenant because the request has not been safely resolved. Known-project lifecycle and processing audits are Tenant-scoped.
 - Delivery idempotency uses Vercel's stable delivery ID when available, falling back to `(vercel_project_id, vercel_deployment_id, event_type)`. The deployment-level uniqueness constraint must not collapse `created`, `ready`, and `error` into one event.
 - Immutable events are retained separately from a current deployment projection. Provider timestamps prevent late events from overwriting newer projected state.
 - Events are assigned to the tenant resolved at receipt time. Project transfers do not retroactively move historical events.
@@ -222,7 +222,7 @@ Even with signature validation:
 2. Failure records are persisted by the hosted webhook adapter but are not yet connected to the existing Agent Inbox / Incoming Signal presentation abstraction.
 3. Authorized event replay, including its admin/platform authorization boundary and replay endpoint, is not yet implemented.
 4. Runtime retention cleanup and deletion/transfer lifecycle operations remain to be scheduled and exposed as operational workflows.
-5. The hosted runtime's `developer_agentic_os_*` text-tenant tables and the older normalized UUID-based migration tables still need a single schema ownership decision before the migration can be considered the sole provisioning path.
+5. Hosted persistence now has a single documented schema owner: the tenant-scoped `developer_agentic_os_*` provider contract. The older normalized UUID-based tables remain legacy migration inputs until existing installations complete migration.
 
 ## References
 
