@@ -1,15 +1,15 @@
 # ADR 0004: Vercel Webhook Routing to Tenants
 
-**Status**: Accepted and Implemented
+**Status**: Accepted; core ingestion implemented, extensions deferred
 
 **Date**: 2026-09-09
 **Last Updated**: 2026-09-12
 
 ## Status Update
 
-This routing pattern is now in place for hosted deployments. Vercel deployment metadata is stored with `tenant_id` in the Neon schema, and webhook events can be mapped back to the correct org by resolving the Vercel project ID in the `vercel_projects` table.
+The shared webhook endpoint and core tenant-routing path are implemented for the hosted runtime. Vercel polling remains available as a separate integration path. The runtime uses the hosted deployment mapping provider, encrypted webhook-secret references, immutable webhook events, a current deployment projection, and webhook audit records.
 
-The system treats deployment events as tenant-scoped signals and associates them with the organization that owns that project.
+The system treats deployment events as tenant-scoped Operational Events and associates them with the organization that owns the mapped project.
 
 ## Context
 
@@ -146,6 +146,19 @@ async function handleDeploymentEvent(tenantId: UUID, event: any) {
 }
 ```
 
+## Resolved Design Rules
+
+- A webhook is first persisted as an immutable tenant-scoped Deployment Event. An Incoming Signal is derived only for supported failure events; webhook processing does not automatically create a Work Item.
+- `vercel_project_id` must resolve to one tenant. If Vercel permits project IDs to be reused across teams, the mapping key must include `vercel_team_id`.
+- Signature verification reads the raw request body and uses the mapped project's active secret with a timing-safe comparison. During rotation, the active and previous secrets may both validate for a bounded transition window.
+- Unknown projects and duplicate deliveries return a non-revealing `202 Accepted` response. Invalid signatures are rejected without revealing registration state. All such attempts are recorded in a platform-level webhook audit stream.
+- Delivery idempotency uses Vercel's stable delivery ID when available, falling back to `(vercel_project_id, vercel_deployment_id, event_type)`. The deployment-level uniqueness constraint must not collapse `created`, `ready`, and `error` into one event.
+- Immutable events are retained separately from a current deployment projection. Provider timestamps prevent late events from overwriting newer projected state.
+- Events are assigned to the tenant resolved at receipt time. Project transfers do not retroactively move historical events.
+- The endpoint returns success after durable persistence. Signal creation, notifications, and other side effects run asynchronously with internal retries; Vercel is not asked to retry them.
+- Authorized operators may replay stored events, but replay is explicit, audited, idempotent, and subject to current authorization.
+- Raw payloads are sensitive tenant data: redact unnecessary metadata, restrict access, and retain them for less time than normalized events. Unknown event types are stored as unhandled events without creating user-facing signals.
+
 ## Webhook Event Types
 
 Vercel sends several event types. We track:
@@ -163,16 +176,7 @@ For v1, we handle `ready` (success) and `error` (failure).
 
 ### Webhook Secret Validation
 
-Vercel signs each webhook with an HMAC. We validate it:
-
-```typescript
-function verifyWebhookSignature(body: any, signature: string, secret: string): boolean {
-  const json = JSON.stringify(body);
-  const hash = crypto.createHmac("sha256", secret).update(json).digest("hex");
-
-  return signature === hash;
-}
-```
+Vercel signs each webhook with an HMAC. The handler validates the signature against the raw request body using a timing-safe comparison. The active encrypted secret is accepted, and the previous encrypted secret is accepted only during the bounded rotation window.
 
 ### Store Secret Securely
 
@@ -189,11 +193,12 @@ Even with signature validation:
 
 ## Failure Modes
 
-| Scenario                                              | Response                             |
-| ----------------------------------------------------- | ------------------------------------ |
-| Webhook arrives but project not found in DB           | 404; log for investigation           |
-| Signature invalid                                     | 401; log as potential security issue |
-| Deployment event stored but tenant notification fails | 200 anyway; alert ops                |
+| Scenario                           | Response                                                     |
+| ---------------------------------- | ------------------------------------------------------------ |
+| Project not found                  | Non-revealing 202; record a Webhook Audit Entry              |
+| Signature invalid                  | Non-revealing 202; record a Webhook Audit Entry              |
+| Duplicate delivery                 | 202; record a duplicate Webhook Audit Entry                  |
+| Processing fails after persistence | Record a processing-failure audit entry and surface an error |
 
 ## Related Decisions
 
@@ -201,16 +206,23 @@ Even with signature validation:
 - **ADR 0003**: Per-tenant Vercel deployments
 - **ADR 0002**: Clerk org → tenant mapping
 
-## Current Status and Deferred Extensions
+## Implementation Status and Deferred Extensions
 
-1. Deployment events currently route into tenant-scoped signals without auto-creating a Work Item by default.
-   - The implemented pattern favors triage-first handling, with a user or workflow deciding whether a signal becomes an actionable Work Item.
+### Implemented
 
-2. A single shared webhook endpoint remains the current model.
-   - The tenant is resolved from the mapped Vercel project, which keeps the routing simple and explicit.
+1. A shared `POST /api/webhooks/vercel` endpoint resolves a Tenant from the Vercel Project Mapping.
+2. Raw-body HMAC validation, timing-safe comparison, encrypted secret references, bounded previous-secret rotation, and non-revealing handling for unknown projects and invalid signatures are implemented.
+3. Immutable Deployment Events retain normalized lifecycle data, provider timestamps, redacted payloads, delivery identity, and raw-payload expiry metadata.
+4. Delivery and lifecycle deduplication, timestamp-guarded Deployment Projection updates, supported deployment-error signal persistence, and Webhook Audit Entries are implemented.
+5. The route, handler contract, rotation behavior, duplicate behavior, and security branches have focused tests; the full repository test suite passes.
 
-3. Retention policy remains a later operational detail.
-   - Deployment history is kept as part of the tenant-scoped data model, with timeline retention to be tuned if needed.
+### Deferred
+
+1. Projection updates and failure-signal processing currently run in the request after event persistence. A durable background queue with retry scheduling is still required to fully satisfy the asynchronous side-effect contract.
+2. Failure records are persisted by the hosted webhook adapter but are not yet connected to the existing Agent Inbox / Incoming Signal presentation abstraction.
+3. Authorized event replay, including its admin/platform authorization boundary and replay endpoint, is not yet implemented.
+4. Runtime retention cleanup and deletion/transfer lifecycle operations remain to be scheduled and exposed as operational workflows.
+5. The hosted runtime's `developer_agentic_os_*` text-tenant tables and the older normalized UUID-based migration tables still need a single schema ownership decision before the migration can be considered the sole provisioning path.
 
 ## References
 

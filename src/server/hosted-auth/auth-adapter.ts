@@ -55,7 +55,13 @@ export class DeterministicAuthAdapter implements AuthAdapter {
     if (!userId) throw new AuthError("UNAUTHENTICATED");
     const tenantId = request.headers.get("x-hosted-tenant-id")?.trim() || `personal:${userId}`;
     const displayName = request.headers.get("x-hosted-user-name")?.trim() || userId;
-    return { userId, tenantId, displayName };
+    const orgRole = request.headers.get("x-hosted-org-role")?.trim();
+    return {
+      userId,
+      tenantId,
+      displayName,
+      ...(orgRole === "org:admin" || orgRole === "org:member" ? { orgRole } : {}),
+    };
   }
 }
 
@@ -69,7 +75,14 @@ export class ClerkAuthAdapter implements AuthAdapter {
         "UNAUTHENTICATED",
         "Select an organization before opening the hosted application."
       );
-    return { userId: identity.userId, tenantId: identity.orgId, displayName: identity.userId };
+    return {
+      userId: identity.userId,
+      tenantId: identity.orgId,
+      displayName: identity.userId,
+      ...(identity.orgRole === "org:admin" || identity.orgRole === "org:member"
+        ? { orgRole: identity.orgRole }
+        : {}),
+    };
   }
 }
 

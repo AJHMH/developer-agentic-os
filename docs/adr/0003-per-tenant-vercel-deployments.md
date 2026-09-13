@@ -1,15 +1,19 @@
 # ADR 0003: Per-Tenant Vercel Deployments
 
-**Status**: Accepted and Implemented
+**Status**: Accepted, Partially Implemented
 
 **Date**: 2026-09-09
 **Last Updated**: 2026-09-12
 
 ## Status Update
 
-This tenant-scoped deployment mapping is now part of the hosted architecture. The application keeps a `vercel_projects` mapping keyed by `tenant_id`, and the Neon schema stores deployment metadata scoped to the authenticated organization.
+The tenant-scoped deployment mapping and deployment-resolution flow are implemented in the hosted path. The remaining gaps are operational migration and production workflow rollout details.
 
-The Vercel project association is treated as an org-level resource rather than a shared global deployment target.
+The canonical tenant boundary is the Clerk organization. Repository registrations and deployment resources belong to that tenant. The Vercel project association is treated as an org-level resource rather than a shared global deployment target.
+
+The current hosted implementation provides tenant-scoped persistence, durable Vercel project mappings, explicit GitHub organization configuration, repository-to-tenant resolution, GitHub Actions OIDC verification, admin-only mapping APIs, and explicit `deployment_unconfigured` responses.
+
+The normalized table definitions and endpoint examples below describe the accepted target design, not a claim that those interfaces are live today.
 
 ## Context
 
@@ -76,6 +80,20 @@ CREATE TABLE repos (
 
 ## Implementation Approach
 
+### Deployment identity and authorization
+
+Repository registration is explicit and requires a Clerk organization administrator. The registered GitHub owner and repository are verified against the tenant's configured GitHub organization; ownership is not inferred only from request headers, repository names, or Vercel metadata.
+
+Deployment resolution must verify a GitHub Actions OIDC identity with a restricted audience and claims matching the registered GitHub owner and repository, configured deployment workflow, protected deployment ref such as `main`, and tenant association.
+
+The resolver returns only the primary Vercel project and optional team identifiers for that exact registered repository. A missing mapping returns an explicit `deployment_unconfigured` failure and never falls back to a shared or implicit project.
+
+### Mapping lifecycle
+
+Each tenant has one primary Vercel project for this ADR. A dedicated tenant-scoped persistence boundary stores the project and optional team identifiers. Tenant administrators may create or update the mapping; deletion leaves repository registrations intact but marks deployment configuration as unconfigured. Mapping changes affect future deployments, preserve historical deployment targets, and emit an audit event.
+
+No long-lived fallback credential is supported by the current implementation. GitHub Actions OIDC is required for deployment resolution; any future migration fallback must first add encryption, tenant scoping, rotation, audit events, and an explicit removal deadline.
+
 ### GitHub Actions Workflow (in the tenant's repo)
 
 The workflow is **generic** (one per tenant, or one shared across all tenants) but parameterized:
@@ -93,12 +111,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # Query our backend to find the Vercel project ID
+      # Query our backend with the workflow's GitHub Actions OIDC identity
       - name: Resolve Vercel project
         id: resolve
         run: |
           PROJECT_ID=$(curl -s "https://app.vercel.app/api/repos/vercel-project" \
-            -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN" \
             -H "X-GitHub-Owner: ${{ github.repository_owner }}" \
             -H "X-GitHub-Repo: ${{ github.event.repository.name }}" \
             | jq -r '.vercel_project_id')
@@ -165,6 +183,16 @@ _This is simpler initially but limits per-org customization later._
 | Repo added but Vercel project not created → deploy fails  | Create Vercel project during repo registration; use sensible defaults |
 | Vercel project ID wrong or outdated                       | Validate on each deploy; alert on API errors                          |
 | GitHub Actions token is compromised → bad actor redeploys | Use org-scoped tokens; rotate regularly; audit logs                   |
+
+## Implementation Gaps
+
+The following work remains before this decision can be marked fully implemented:
+
+1. Update and roll out the tenant deployment workflow to call the dedicated hosted resolution endpoint with a GitHub Actions OIDC token and `id-token: write` permission.
+2. Add production integration coverage for OIDC verification against stubbed JWKS and signed claims; fixture-mode route tests cover the current unit path.
+3. Complete the versioned migration rollout for existing installations and remove any remaining temporary fallback credential configuration.
+
+Until these operational gaps are closed, this ADR remains **Accepted, Partially Implemented**.
 
 ## Related Decisions
 

@@ -17,6 +17,11 @@ import {
   DeterministicLocalStoreExportAdapter,
   type LocalStoreExportAdapter,
 } from "../local-store/local-store-export";
+import type {
+  DeploymentProjectMapping,
+  DeploymentRegistry,
+  RegisteredDeploymentRepository,
+} from "../hosted-deployments/deployment-resolution";
 import {
   EncryptedProtectedSecretStore,
   isHostedJsonFixtureMode,
@@ -41,6 +46,18 @@ export type HostedRepository = {
   localPath: string;
   pathIdentity: string;
   createdAt: string;
+};
+export type HostedGitHubRepositoryRegistration = RegisteredDeploymentRepository & {
+  id: string;
+  createdAt: string;
+};
+export type HostedVercelProjectMapping = DeploymentProjectMapping & {
+  updatedAt: string;
+};
+export type HostedDeploymentState = {
+  vercelProject: HostedVercelProjectMapping | null;
+  vercelProjectHistory: HostedVercelProjectMapping[];
+  githubRepositories: HostedGitHubRepositoryRegistration[];
 };
 export type HostedCapabilityGrant = {
   id: string;
@@ -131,6 +148,9 @@ export type HostedState = {
   connectors: HostedConnector[];
   credentials: HostedCredentialRecord[];
   audit: HostedAudit[];
+  vercelProject?: HostedVercelProjectMapping | null;
+  vercelProjectHistory?: HostedVercelProjectMapping[];
+  githubRepositories?: HostedGitHubRepositoryRegistration[];
 };
 
 const emptyState = (): HostedState => ({
@@ -141,11 +161,17 @@ const emptyState = (): HostedState => ({
   connectors: [],
   credentials: [],
   audit: [],
+  vercelProject: null,
+  vercelProjectHistory: [],
+  githubRepositories: [],
 });
 
 export interface HostedStateProvider {
   read(): Promise<HostedState>;
   write(state: HostedState): Promise<void>;
+  readDeploymentState?(): Promise<HostedDeploymentState>;
+  writeDeploymentState?(state: HostedDeploymentState): Promise<void>;
+  rotateVercelWebhookSecret?(input: { projectId: string; activeReference: string }): Promise<void>;
   withMutationLock?<T>(operation: () => Promise<T>): Promise<T>;
 }
 
@@ -208,7 +234,8 @@ export class HostedDomainStore {
     private readonly localExport: LocalStoreExportAdapter = new DeterministicLocalStoreExportAdapter(
       root
     ),
-    private readonly secretStore: ProtectedSecretStore = new DeterministicProtectedSecretStore()
+    private readonly secretStore: ProtectedSecretStore = new DeterministicProtectedSecretStore(),
+    private readonly tenantId = "legacy"
   ) {}
 
   async createWorkspace(userId: string, name: string) {
@@ -290,6 +317,189 @@ export class HostedDomainStore {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
     return state.repositories[workspaceId] ?? [];
+  }
+
+  async getVercelProject(
+    userId: string,
+    workspaceId: string
+  ): Promise<HostedVercelProjectMapping | null> {
+    const state = await this.readDeploymentState();
+    await this.assertWorkspace(userId, workspaceId);
+    return state.vercelProject;
+  }
+
+  async setVercelProject(
+    userId: string,
+    workspaceId: string,
+    input: DeploymentProjectMapping,
+    webhookSecret?: string
+  ): Promise<HostedVercelProjectMapping> {
+    if (!input.projectId.trim())
+      throw new HostedDomainError("INVALID", "A Vercel project id is required.");
+    if (webhookSecret !== undefined && !webhookSecret.trim())
+      throw new HostedDomainError("INVALID", "A webhook secret is required.");
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      const deploymentState = await this.readDeploymentState(state);
+      await this.assertWorkspace(userId, workspaceId);
+      const mapping: HostedVercelProjectMapping = {
+        projectId: input.projectId.trim(),
+        ...(input.teamId?.trim() ? { teamId: input.teamId.trim() } : {}),
+        updatedAt: new Date().toISOString(),
+      };
+      if (deploymentState.vercelProject) {
+        deploymentState.vercelProjectHistory.push(deploymentState.vercelProject);
+      }
+      deploymentState.vercelProject = mapping;
+      await this.auditEvent(state, userId, workspaceId, "vercel.project.mapping.updated");
+      await this.writeDeploymentState(state, deploymentState);
+      if (webhookSecret !== undefined && this.provider.rotateVercelWebhookSecret)
+        await this.provider.rotateVercelWebhookSecret({
+          projectId: mapping.projectId,
+          activeReference: await this.secretStore.put(webhookSecret.trim()),
+        });
+      await this.write(state);
+      return mapping;
+    });
+  }
+
+  async removeVercelProject(userId: string, workspaceId: string): Promise<void> {
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      const deploymentState = await this.readDeploymentState(state);
+      await this.assertWorkspace(userId, workspaceId);
+      deploymentState.vercelProject = null;
+      await this.auditEvent(state, userId, workspaceId, "vercel.project.mapping.removed");
+      await this.writeDeploymentState(state, deploymentState);
+      await this.write(state);
+    });
+  }
+
+  async setVercelWebhookSecret(userId: string, workspaceId: string, secret: string): Promise<void> {
+    if (!secret.trim()) throw new HostedDomainError("INVALID", "A webhook secret is required.");
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      const deploymentState = await this.readDeploymentState(state);
+      await this.assertWorkspace(userId, workspaceId);
+      if (!deploymentState.vercelProject)
+        throw new HostedDomainError("NOT_FOUND", "Vercel project mapping not found.");
+      const activeReference = await this.secretStore.put(secret.trim());
+      if (this.provider.rotateVercelWebhookSecret)
+        await this.provider.rotateVercelWebhookSecret({
+          projectId: deploymentState.vercelProject.projectId,
+          activeReference,
+        });
+      await this.auditEvent(state, userId, workspaceId, "vercel.webhook.secret.updated");
+      await this.write(state);
+    });
+  }
+
+  async registerGitHubRepository(
+    userId: string,
+    workspaceId: string,
+    input: Omit<HostedGitHubRepositoryRegistration, "id" | "createdAt" | "tenantId">
+  ): Promise<HostedGitHubRepositoryRegistration> {
+    if (!input.owner.trim() || !input.repository.trim())
+      throw new HostedDomainError("INVALID", "GitHub owner and repository are required.");
+    if (!input.workflow.trim() || input.ref.trim() !== "refs/heads/main")
+      throw new HostedDomainError("INVALID", "Deployment workflow and ref are required.");
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      const deploymentState = await this.readDeploymentState(state);
+      await this.assertWorkspace(userId, workspaceId);
+      const repositories = deploymentState.githubRepositories;
+      const existing = repositories.find(
+        (repository) =>
+          repository.owner.toLowerCase() === input.owner.trim().toLowerCase() &&
+          repository.repository.toLowerCase() === input.repository.trim().toLowerCase()
+      );
+      if (existing) return existing;
+      const registration: HostedGitHubRepositoryRegistration = {
+        id: randomUUID(),
+        tenantId: this.tenantId,
+        owner: input.owner.trim(),
+        repository: input.repository.trim(),
+        workflow: input.workflow.trim(),
+        ref: input.ref.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      repositories.push(registration);
+      await this.auditEvent(
+        state,
+        userId,
+        workspaceId,
+        "github.repository.registered",
+        registration.id
+      );
+      await this.writeDeploymentState(state, deploymentState);
+      await this.write(state);
+      return registration;
+    });
+  }
+
+  async listGitHubRepositories(
+    userId: string,
+    workspaceId: string
+  ): Promise<HostedGitHubRepositoryRegistration[]> {
+    const state = await this.readDeploymentState();
+    await this.assertWorkspace(userId, workspaceId);
+    return state.githubRepositories;
+  }
+
+  deploymentRegistry(): DeploymentRegistry {
+    return {
+      findRepository: async (tenantId, owner, repository) => {
+        const state = await this.readDeploymentState();
+        if (tenantId !== this.tenantId) return null;
+        return (
+          state.githubRepositories.find(
+            (item) =>
+              item.owner.toLowerCase() === owner.toLowerCase() &&
+              item.repository.toLowerCase() === repository.toLowerCase()
+          ) ?? null
+        );
+      },
+      findProject: async (tenantId) => {
+        const state = await this.readDeploymentState();
+        return tenantId === this.tenantId ? state.vercelProject : null;
+      },
+    };
+  }
+
+  async recordDeploymentResolution(
+    userId: string,
+    workspaceId: string,
+    outcome: "allowed" | "denied",
+    subjectId?: string,
+    target?: DeploymentProjectMapping
+  ): Promise<void> {
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      await this.auditEvent(
+        state,
+        userId,
+        workspaceId,
+        "deployment.resolution",
+        subjectId,
+        undefined,
+        undefined,
+        outcome
+      );
+      if (outcome === "allowed" && target) {
+        const records = state.records[workspaceId] ?? (state.records[workspaceId] = {});
+        const deployments = records.automationRuns ?? (records.automationRuns = []);
+        deployments.push({
+          id: randomUUID(),
+          workspaceId,
+          subjectId,
+          projectId: target.projectId,
+          ...(target.teamId ? { teamId: target.teamId } : {}),
+          status: "resolved",
+          createdAt: new Date().toISOString(),
+        });
+      }
+      await this.write(state);
+    });
   }
   async listSnapshots(userId: string, workspaceId: string): Promise<HostedSnapshot[]> {
     return this.withMutationLock(async () => {
@@ -1246,6 +1456,26 @@ export class HostedDomainStore {
   private write(state: HostedState): Promise<void> {
     return this.provider.write(state);
   }
+  private async readDeploymentState(state?: HostedState): Promise<HostedDeploymentState> {
+    if (this.provider.readDeploymentState) return this.provider.readDeploymentState();
+    const source = state ?? (await this.read());
+    return {
+      vercelProject: source.vercelProject ?? null,
+      vercelProjectHistory: source.vercelProjectHistory ?? [],
+      githubRepositories: source.githubRepositories ?? [],
+    };
+  }
+  private writeDeploymentState(
+    state: HostedState,
+    deploymentState: HostedDeploymentState
+  ): Promise<void> {
+    if (this.provider.writeDeploymentState)
+      return this.provider.writeDeploymentState(deploymentState);
+    state.vercelProject = deploymentState.vercelProject;
+    state.vercelProjectHistory = deploymentState.vercelProjectHistory;
+    state.githubRepositories = deploymentState.githubRepositories;
+    return Promise.resolve();
+  }
 }
 
 const tenantDomainStores = new Map<string, HostedDomainStore>();
@@ -1271,7 +1501,8 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
       new NeonHostedStateProvider(tenantId),
       new RejectingHostedObjectStore(),
       undefined,
-      secretStore
+      secretStore,
+      tenantId
     );
     tenantDomainStores.set(tenantId, store);
     return store;
@@ -1282,7 +1513,15 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
     "tenants",
     createHash("sha256").update(tenantId).digest("hex")
   );
-  const store = new HostedDomainStore(tenantRoot, workspaceStore);
+  const store = new HostedDomainStore(
+    tenantRoot,
+    workspaceStore,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    tenantId
+  );
   tenantDomainStores.set(tenantId, store);
   return store;
 }
