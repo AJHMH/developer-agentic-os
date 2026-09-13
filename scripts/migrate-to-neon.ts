@@ -54,16 +54,33 @@ async function applyCanonicalMigrations(client: PoolClient): Promise<void> {
 
   for (const migrationPath of canonicalMigrations) {
     const version = migrationPath.split("/").at(-1) ?? migrationPath;
-    const applied = await client.query("SELECT 1 FROM schema_migrations WHERE version = $1", [
-      version,
-    ]);
-    if (applied.rowCount) continue;
+    const legacyVersion = version.replace(/\.sql$/, "");
+    const knownVersions = Array.from(new Set([version, legacyVersion]));
+    const applied = await client.query<{ version: string }>(
+      "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
+      [knownVersions]
+    );
+    if (applied.rowCount) {
+      const appliedVersions = new Set(applied.rows.map((row) => row.version));
+      for (const knownVersion of knownVersions) {
+        if (appliedVersions.has(knownVersion)) continue;
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
+          [knownVersion]
+        );
+      }
+      continue;
+    }
 
     const sql = await readFile(join(process.cwd(), migrationPath), "utf8");
     await client.query("BEGIN");
     try {
       await client.query(sql);
-      await client.query("INSERT INTO schema_migrations (version) VALUES ($1)", [version]);
+      for (const knownVersion of knownVersions)
+        await client.query(
+          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
+          [knownVersion]
+        );
       await client.query("COMMIT");
       console.log(`✓ Applied ${version}`);
     } catch (error) {

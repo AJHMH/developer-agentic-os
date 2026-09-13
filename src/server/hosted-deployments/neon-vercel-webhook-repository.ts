@@ -159,7 +159,15 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
     await this.ensureSchema();
     await this.pool.query(
       `INSERT INTO vercel_webhook_audit (tenant_id, action, vercel_project_id)
-       VALUES (NULL, $1, $2)`,
+       VALUES (
+         (SELECT tenant_id
+            FROM vercel_projects
+           WHERE vercel_project_id = $2
+           ORDER BY updated_at DESC
+           LIMIT 1),
+         $1,
+         $2
+       )`,
       [entry.action, entry.projectId ?? null]
     );
   }

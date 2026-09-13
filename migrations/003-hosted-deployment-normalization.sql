@@ -40,10 +40,44 @@ CREATE TABLE IF NOT EXISTS vercel_failure_signals (
 ALTER TABLE vercel_webhook_audit
   ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES organizations(id) ON DELETE CASCADE;
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team
+  ON vercel_projects(vercel_project_id, COALESCE(vercel_team_id, ''));
+
 -- Backfill deployment data created by the retired hosted deployment tables.
 DO $$
+DECLARE
+  unmapped_tenants TEXT;
+  project_team_collisions TEXT;
 BEGIN
   IF to_regclass('developer_agentic_os_vercel_project_mapping') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT legacy.tenant_id, ', ')
+    INTO unmapped_tenants
+    FROM developer_agentic_os_vercel_project_mapping AS legacy
+    LEFT JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
+    WHERE organizations.id IS NULL;
+    IF unmapped_tenants IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate vercel project mappings; missing organizations for tenant IDs: %', unmapped_tenants;
+    END IF;
+
+    SELECT string_agg(format('%s (team=%s)', collisions.project_id, COALESCE(collisions.team_id, '<none>')), ', ')
+    INTO project_team_collisions
+    FROM (
+      SELECT combined.project_id, combined.team_id
+      FROM (
+        SELECT organizations.id::text AS tenant_key, legacy.project_id, legacy.team_id
+        FROM developer_agentic_os_vercel_project_mapping AS legacy
+        JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
+        UNION ALL
+        SELECT tenant_id::text AS tenant_key, vercel_project_id AS project_id, vercel_team_id AS team_id
+        FROM vercel_projects
+      ) AS combined
+      GROUP BY combined.project_id, combined.team_id
+      HAVING COUNT(DISTINCT combined.tenant_key) > 1
+    ) AS collisions;
+    IF project_team_collisions IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate vercel project mappings; project/team collisions across tenants: %', project_team_collisions;
+    END IF;
+
     INSERT INTO vercel_projects
       (tenant_id, vercel_project_id, vercel_team_id, webhook_secret_reference,
        previous_webhook_secret_reference, previous_webhook_secret_expires_at, updated_at)
@@ -61,6 +95,15 @@ BEGIN
   END IF;
 
   IF to_regclass('developer_agentic_os_vercel_project_history') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT legacy.tenant_id, ', ')
+    INTO unmapped_tenants
+    FROM developer_agentic_os_vercel_project_history AS legacy
+    LEFT JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
+    WHERE organizations.id IS NULL;
+    IF unmapped_tenants IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate vercel project history; missing organizations for tenant IDs: %', unmapped_tenants;
+    END IF;
+
     INSERT INTO vercel_project_history
       (tenant_id, vercel_project_id, vercel_team_id, changed_at)
     SELECT organizations.id, legacy.project_id, legacy.team_id, legacy.updated_at
@@ -69,6 +112,15 @@ BEGIN
   END IF;
 
   IF to_regclass('developer_agentic_os_github_repository_registration') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT legacy.tenant_id, ', ')
+    INTO unmapped_tenants
+    FROM developer_agentic_os_github_repository_registration AS legacy
+    LEFT JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
+    WHERE organizations.id IS NULL;
+    IF unmapped_tenants IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate GitHub repository registrations; missing organizations for tenant IDs: %', unmapped_tenants;
+    END IF;
+
     INSERT INTO repos
       (id, tenant_id, github_owner, github_repo, deployment_workflow,
        deployment_ref, created_at, updated_at)
@@ -84,6 +136,15 @@ BEGIN
   END IF;
 
   IF to_regclass('developer_agentic_os_vercel_webhook_events') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT legacy.tenant_id, ', ')
+    INTO unmapped_tenants
+    FROM developer_agentic_os_vercel_webhook_events AS legacy
+    LEFT JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
+    WHERE organizations.id IS NULL;
+    IF unmapped_tenants IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate webhook events; missing organizations for tenant IDs: %', unmapped_tenants;
+    END IF;
+
     INSERT INTO vercel_webhook_events
       (tenant_id, vercel_project_id, vercel_deployment_id, event_type, delivery_id,
        status, url, commit_sha, payload, raw_expires_at, occurred_at, received_at)
@@ -96,6 +157,15 @@ BEGIN
   END IF;
 
   IF to_regclass('developer_agentic_os_vercel_deployment_projection') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT legacy.tenant_id, ', ')
+    INTO unmapped_tenants
+    FROM developer_agentic_os_vercel_deployment_projection AS legacy
+    LEFT JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
+    WHERE organizations.id IS NULL;
+    IF unmapped_tenants IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate deployment projections; missing organizations for tenant IDs: %', unmapped_tenants;
+    END IF;
+
     INSERT INTO vercel_deployment_projections
       (tenant_id, vercel_project_id, vercel_deployment_id, event_type, status, url, commit_sha, occurred_at)
     SELECT organizations.id, legacy.project_id, legacy.deployment_id, legacy.event_type,
@@ -106,6 +176,15 @@ BEGIN
   END IF;
 
   IF to_regclass('developer_agentic_os_vercel_failure_signals') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT legacy.tenant_id, ', ')
+    INTO unmapped_tenants
+    FROM developer_agentic_os_vercel_failure_signals AS legacy
+    LEFT JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
+    WHERE organizations.id IS NULL;
+    IF unmapped_tenants IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate failure signals; missing organizations for tenant IDs: %', unmapped_tenants;
+    END IF;
+
     INSERT INTO vercel_failure_signals
       (tenant_id, vercel_project_id, vercel_deployment_id, source_id, title, body, created_at)
     SELECT organizations.id, legacy.project_id, legacy.deployment_id, legacy.source_id,

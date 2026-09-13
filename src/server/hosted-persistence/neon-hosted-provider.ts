@@ -287,11 +287,14 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     );
     if (tenant.rows.length !== 1) throw new Error(`Tenant ${this.tenantId} is not registered.`);
     const tenantId = tenant.rows[0].id;
-    await client.query("DELETE FROM vercel_projects WHERE tenant_id = $1", [tenantId]);
+    const activeProjectId = state.vercelProject?.projectId ?? null;
     if (state.vercelProject) {
       await client.query(
         `INSERT INTO vercel_projects (tenant_id, vercel_project_id, vercel_team_id, updated_at)
-         VALUES ($1, $2, $3, $4)`,
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (tenant_id, vercel_project_id) DO UPDATE SET
+           vercel_team_id = EXCLUDED.vercel_team_id,
+           updated_at = EXCLUDED.updated_at`,
         [
           tenantId,
           state.vercelProject.projectId,
@@ -300,6 +303,12 @@ export class NeonHostedStateProvider implements HostedStateProvider {
         ]
       );
     }
+    await client.query(
+      `DELETE FROM vercel_projects
+       WHERE tenant_id = $1
+         AND ($2::text IS NULL OR vercel_project_id <> $2)`,
+      [tenantId, activeProjectId]
+    );
     await client.query("DELETE FROM vercel_project_history WHERE tenant_id = $1", [tenantId]);
     for (const historical of state.vercelProjectHistory)
       await client.query(
@@ -469,19 +478,46 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     const tenantId = await this.tenantDatabaseId(client);
     await client.query("DELETE FROM hosted_workspace_audit WHERE tenant_id = $1", [tenantId]);
     await client.query("DELETE FROM hosted_workspace_members WHERE tenant_id = $1", [tenantId]);
-    await client.query("DELETE FROM hosted_workspace_users WHERE tenant_id = $1", [tenantId]);
-    await client.query("DELETE FROM hosted_workspaces WHERE tenant_id = $1", [tenantId]);
-    for (const [userId, user] of Object.entries(state.users)) {
-      await client.query(
-        "INSERT INTO hosted_workspace_users (tenant_id, user_id, active_workspace_id) VALUES ($1, $2, $3)",
-        [tenantId, userId, user.activeWorkspaceId]
-      );
+    const desiredWorkspaceIds = new Set<string>();
+    for (const user of Object.values(state.users))
+      for (const workspace of user.workspaces) desiredWorkspaceIds.add(workspace.id);
+    for (const user of Object.values(state.users))
       for (const workspace of user.workspaces)
         await client.query(
-          "INSERT INTO hosted_workspaces (id, tenant_id, owner_id, name, created_at) VALUES ($1, $2, $3, $4, $5)",
+          `INSERT INTO hosted_workspaces (id, tenant_id, owner_id, name, created_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (tenant_id, id) DO UPDATE SET
+             owner_id = EXCLUDED.owner_id,
+             name = EXCLUDED.name,
+             created_at = EXCLUDED.created_at`,
           [workspace.id, tenantId, workspace.ownerId, workspace.name, workspace.createdAt]
         );
+    if (desiredWorkspaceIds.size > 0)
+      await client.query(
+        "DELETE FROM hosted_workspaces WHERE tenant_id = $1 AND id <> ALL($2::uuid[])",
+        [tenantId, Array.from(desiredWorkspaceIds)]
+      );
+    else await client.query("DELETE FROM hosted_workspaces WHERE tenant_id = $1", [tenantId]);
+
+    const desiredUserIds = Object.keys(state.users);
+    for (const [userId, user] of Object.entries(state.users)) {
+      const activeWorkspaceId =
+        user.activeWorkspaceId && desiredWorkspaceIds.has(user.activeWorkspaceId)
+          ? user.activeWorkspaceId
+          : null;
+      await client.query(
+        `INSERT INTO hosted_workspace_users (tenant_id, user_id, active_workspace_id)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (tenant_id, user_id) DO UPDATE SET active_workspace_id = EXCLUDED.active_workspace_id`,
+        [tenantId, userId, activeWorkspaceId]
+      );
     }
+    if (desiredUserIds.length > 0)
+      await client.query(
+        "DELETE FROM hosted_workspace_users WHERE tenant_id = $1 AND user_id <> ALL($2::text[])",
+        [tenantId, desiredUserIds]
+      );
+    else await client.query("DELETE FROM hosted_workspace_users WHERE tenant_id = $1", [tenantId]);
     for (const event of state.audit)
       await client.query(
         "INSERT INTO hosted_workspace_audit (id, tenant_id, user_id, workspace_id, action, occurred_at) VALUES ($1, $2, $3, $4, $5, $6)",

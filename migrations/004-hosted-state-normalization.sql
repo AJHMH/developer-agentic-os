@@ -104,8 +104,19 @@ CREATE INDEX IF NOT EXISTS idx_hosted_audit_workspace
 
 -- Backfill the retired hosted/workspace JSONB rows before removing their tables.
 DO $$
+DECLARE
+  unmapped_tenants TEXT;
 BEGIN
   IF to_regclass('developer_agentic_os_workspace_state') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT legacy.tenant_id, ', ')
+    INTO unmapped_tenants
+    FROM developer_agentic_os_workspace_state AS legacy
+    LEFT JOIN organizations ON organizations.clerk_org_id = legacy.tenant_id
+    WHERE organizations.id IS NULL;
+    IF unmapped_tenants IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate workspace state; missing organizations for tenant IDs: %', unmapped_tenants;
+    END IF;
+
     INSERT INTO hosted_workspaces (id, tenant_id, owner_id, name, created_at)
     SELECT (workspace->>'id')::uuid, organizations.id, users.key,
       workspace->>'name', (workspace->>'createdAt')::timestamp
@@ -131,6 +142,16 @@ BEGIN
   END IF;
 
   IF to_regclass('developer_agentic_os_hosted_state') IS NOT NULL THEN
+    SELECT string_agg(DISTINCT legacy.tenant_id, ', ')
+    INTO unmapped_tenants
+    FROM developer_agentic_os_hosted_state AS legacy
+    LEFT JOIN organizations
+      ON organizations.id::text = legacy.tenant_id OR organizations.clerk_org_id = legacy.tenant_id
+    WHERE organizations.id IS NULL;
+    IF unmapped_tenants IS NOT NULL THEN
+      RAISE EXCEPTION 'Cannot migrate hosted domain state; missing organizations for tenant IDs: %', unmapped_tenants;
+    END IF;
+
     INSERT INTO hosted_repositories (id, tenant_id, workspace_id, local_path, path_identity, created_at)
     SELECT (repository->>'id')::uuid, organizations.id, repositories.key,
       repository->>'localPath', repository->>'pathIdentity',
