@@ -315,9 +315,14 @@ export class NeonHostedStateProvider implements HostedStateProvider {
         "INSERT INTO vercel_project_history (tenant_id, vercel_project_id, vercel_team_id, changed_at) VALUES ($1, $2, $3, $4)",
         [tenantId, historical.projectId, historical.teamId ?? null, historical.updatedAt]
       );
+    const deploymentUpdatedAt = new Date().toISOString();
     await client.query(
-      "DELETE FROM repos WHERE tenant_id = $1 AND deployment_workflow IS NOT NULL",
-      [tenantId]
+      `UPDATE repos
+       SET deployment_workflow = NULL,
+           deployment_ref = NULL,
+           updated_at = $2
+       WHERE tenant_id = $1 AND deployment_workflow IS NOT NULL`,
+      [tenantId, deploymentUpdatedAt]
     );
     for (const repository of state.githubRepositories)
       await client.query(
@@ -504,6 +509,14 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
          ON CONFLICT (tenant_id, user_id) DO UPDATE SET active_workspace_id = EXCLUDED.active_workspace_id`,
         [tenantId, userId, activeWorkspaceId]
       );
+      for (const workspace of user.workspaces)
+        await client.query(
+          `INSERT INTO hosted_workspace_members (tenant_id, workspace_id, user_id, active_workspace)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (tenant_id, workspace_id, user_id) DO UPDATE SET
+             active_workspace = EXCLUDED.active_workspace`,
+          [tenantId, workspace.id, userId, workspace.id === activeWorkspaceId]
+        );
     }
     if (desiredUserIds.length > 0)
       await client.query(
