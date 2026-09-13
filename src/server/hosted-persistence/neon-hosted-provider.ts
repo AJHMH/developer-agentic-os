@@ -281,12 +281,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     await this.ensureDeploymentSchema();
     const client = this.transactionClient.getStore();
     if (!client) return this.withMutationLock(() => this.writeDeploymentState(state));
-    const tenant = await client.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [this.tenantId]
-    );
-    if (tenant.rows.length !== 1) throw new Error(`Tenant ${this.tenantId} is not registered.`);
-    const tenantId = tenant.rows[0].id;
+    const tenantId = await this.tenantDatabaseId(client);
     const activeProjectId = state.vercelProject?.projectId ?? null;
     if (state.vercelProject) {
       await client.query(
@@ -420,8 +415,17 @@ export class NeonHostedStateProvider implements HostedStateProvider {
       "SELECT id FROM organizations WHERE clerk_org_id = $1",
       [this.tenantId]
     );
-    if (result.rows.length !== 1) throw new Error(`Tenant ${this.tenantId} is not registered.`);
-    return result.rows[0].id;
+    if (result.rows.length === 1) return result.rows[0].id;
+
+    const tenantId = randomUUID();
+    const insertResult = await client.query<{ id: string }>(
+      `INSERT INTO organizations (id, name, clerk_org_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
+       RETURNING id`,
+      [tenantId, `Organization ${this.tenantId}`, this.tenantId]
+    );
+    return insertResult.rows[0].id;
   }
   private ensureDeploymentSchema(): Promise<void> {
     return (this.deploymentReady ??= this.pool
@@ -605,8 +609,17 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
       "SELECT id FROM organizations WHERE clerk_org_id = $1",
       [this.tenantId]
     );
-    if (result.rows.length !== 1) throw new Error(`Tenant ${this.tenantId} is not registered.`);
-    return result.rows[0].id;
+    if (result.rows.length === 1) return result.rows[0].id;
+
+    const tenantId = randomUUID();
+    const insertResult = await client.query<{ id: string }>(
+      `INSERT INTO organizations (id, name, clerk_org_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
+       RETURNING id`,
+      [tenantId, `Organization ${this.tenantId}`, this.tenantId]
+    );
+    return insertResult.rows[0].id;
   }
 }
 
