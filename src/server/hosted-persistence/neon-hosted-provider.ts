@@ -96,15 +96,21 @@ export class NeonHostedStateProvider implements HostedStateProvider {
         createdAt: repository.created_at,
       });
     }
-    const records = await client.query<{ workspace_id: string; kind: string; value: Record<string, unknown> }>(
-      "SELECT workspace_id, kind, value FROM hosted_records WHERE tenant_id = $1",
-      [tenantId]
-    );
+    const records = await client.query<{
+      workspace_id: string;
+      kind: string;
+      value: Record<string, unknown>;
+    }>("SELECT workspace_id, kind, value FROM hosted_records WHERE tenant_id = $1", [tenantId]);
     for (const record of records.rows) {
       const workspace = (state.records[record.workspace_id] ??= {});
       (workspace[record.kind as keyof typeof workspace] ??= []).push(record.value);
     }
-    const relationships = await client.query<{ workspace_id: string; source_id: string; target_id: string; kind: string }>(
+    const relationships = await client.query<{
+      workspace_id: string;
+      source_id: string;
+      target_id: string;
+      kind: string;
+    }>(
       "SELECT workspace_id, source_id, target_id, kind FROM hosted_relationships WHERE tenant_id = $1",
       [tenantId]
     );
@@ -114,11 +120,12 @@ export class NeonHostedStateProvider implements HostedStateProvider {
         to: relationship.target_id,
         kind: relationship.kind,
       });
-    const snapshots = await client.query<{ workspace_id: string; value: HostedState["snapshots"][string][number] }>(
-      "SELECT workspace_id, value FROM hosted_snapshots WHERE tenant_id = $1",
-      [tenantId]
-    );
-    for (const snapshot of snapshots.rows) (state.snapshots[snapshot.workspace_id] ??= []).push(snapshot.value);
+    const snapshots = await client.query<{
+      workspace_id: string;
+      value: HostedState["snapshots"][string][number];
+    }>("SELECT workspace_id, value FROM hosted_snapshots WHERE tenant_id = $1", [tenantId]);
+    for (const snapshot of snapshots.rows)
+      (state.snapshots[snapshot.workspace_id] ??= []).push(snapshot.value);
     const connectors = await client.query<{ value: HostedState["connectors"][number] }>(
       "SELECT value FROM hosted_connectors WHERE tenant_id = $1",
       [tenantId]
@@ -155,14 +162,27 @@ export class NeonHostedStateProvider implements HostedStateProvider {
       for (const repository of repositories)
         await client.query(
           "INSERT INTO hosted_repositories (id, tenant_id, workspace_id, local_path, path_identity, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
-          [repository.id, tenantId, workspaceId, repository.localPath, repository.pathIdentity, repository.createdAt]
+          [
+            repository.id,
+            tenantId,
+            workspaceId,
+            repository.localPath,
+            repository.pathIdentity,
+            repository.createdAt,
+          ]
         );
     for (const [workspaceId, recordMap] of Object.entries(state.records))
       for (const [kind, records] of Object.entries(recordMap))
         for (const record of records ?? [])
           await client.query(
             "INSERT INTO hosted_records (id, tenant_id, workspace_id, kind, value) VALUES ($1, $2, $3, $4, $5::jsonb)",
-            [typeof record.id === "string" ? record.id : randomUUID(), tenantId, workspaceId, kind, JSON.stringify(record)]
+            [
+              typeof record.id === "string" ? record.id : randomUUID(),
+              tenantId,
+              workspaceId,
+              kind,
+              JSON.stringify(record),
+            ]
           );
     for (const [workspaceId, links] of Object.entries(state.relationships))
       for (const link of links)
@@ -280,10 +300,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
         ]
       );
     }
-    await client.query(
-      "DELETE FROM vercel_project_history WHERE tenant_id = $1",
-      [tenantId]
-    );
+    await client.query("DELETE FROM vercel_project_history WHERE tenant_id = $1", [tenantId]);
     for (const historical of state.vercelProjectHistory)
       await client.query(
         "INSERT INTO vercel_project_history (tenant_id, vercel_project_id, vercel_team_id, changed_at) VALUES ($1, $2, $3, $4)",
@@ -357,7 +374,8 @@ export class NeonHostedStateProvider implements HostedStateProvider {
          GROUP BY table_schema HAVING COUNT(*) = 4`
       )
       .then((result) => {
-        if (result.rowCount !== 1) throw new Error("Canonical hosted state schema is not installed.");
+        if (result.rowCount !== 1)
+          throw new Error("Canonical hosted state schema is not installed.");
       }));
   }
   private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
@@ -404,10 +422,9 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
       owner_id: string;
       name: string;
       created_at: string;
-    }>(
-      "SELECT id, owner_id, name, created_at FROM hosted_workspaces WHERE tenant_id = $1",
-      [tenantId]
-    );
+    }>("SELECT id, owner_id, name, created_at FROM hosted_workspaces WHERE tenant_id = $1", [
+      tenantId,
+    ]);
     const state: HostedWorkspaceState = { users: {}, audit: [] };
     for (const user of users.rows)
       state.users[user.user_id] = {
@@ -426,7 +443,13 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
         createdAt: workspace.created_at,
       });
     }
-    const audit = await client.query<{ id: string; user_id: string; workspace_id: string | null; action: string; occurred_at: string }>(
+    const audit = await client.query<{
+      id: string;
+      user_id: string;
+      workspace_id: string | null;
+      action: string;
+      occurred_at: string;
+    }>(
       "SELECT id, user_id, workspace_id, action, occurred_at FROM hosted_workspace_audit WHERE tenant_id = $1",
       [tenantId]
     );
@@ -462,7 +485,14 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     for (const event of state.audit)
       await client.query(
         "INSERT INTO hosted_workspace_audit (id, tenant_id, user_id, workspace_id, action, occurred_at) VALUES ($1, $2, $3, $4, $5, $6)",
-        [event.id, tenantId, event.userId, event.workspaceId ?? null, event.action, event.occurredAt]
+        [
+          event.id,
+          tenantId,
+          event.userId,
+          event.workspaceId ?? null,
+          event.action,
+          event.occurredAt,
+        ]
       );
   }
   async withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -495,7 +525,8 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
          GROUP BY table_schema HAVING COUNT(*) = 4`
       )
       .then((result) => {
-        if (result.rowCount !== 1) throw new Error("Canonical hosted state schema is not installed.");
+        if (result.rowCount !== 1)
+          throw new Error("Canonical hosted state schema is not installed.");
       }));
   }
 
