@@ -40,7 +40,12 @@ test("hosted deployment route protects mapping mutations and fails closed after 
   const memberAttempt = await POST(
     request("member", tenantId, "org:member", {
       method: "POST",
-      body: JSON.stringify({ action: "set-project", workspaceId, projectId: "prj_denied" }),
+      body: JSON.stringify({
+        action: "set-project",
+        workspaceId,
+        projectId: "prj_denied",
+        webhookSecret: "denied-secret",
+      }),
     })
   );
   assert.equal(memberAttempt.status, 403);
@@ -48,7 +53,12 @@ test("hosted deployment route protects mapping mutations and fails closed after 
   const mapping = await POST(
     request(userId, tenantId, "org:admin", {
       method: "POST",
-      body: JSON.stringify({ action: "set-project", workspaceId, projectId: "prj_acme" }),
+      body: JSON.stringify({
+        action: "set-project",
+        workspaceId,
+        projectId: "prj_acme",
+        webhookSecret: "acme-secret",
+      }),
     })
   );
   assert.equal(mapping.status, 200);

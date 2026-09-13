@@ -80,7 +80,8 @@ export async function handleVercelWebhook(
     return json({ error: "Invalid webhook payload." }, 400);
   }
 
-  const meta = objectValue(deployment?.meta) ?? objectValue(envelope.meta) ?? objectValue(payload.meta);
+  const meta =
+    objectValue(deployment?.meta) ?? objectValue(envelope.meta) ?? objectValue(payload.meta);
   const deliveryHeader = request.headers.get("x-vercel-delivery")?.trim();
   const event: VercelWebhookEvent = {
     tenantId: project.tenantId,
