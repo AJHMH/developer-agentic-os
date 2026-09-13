@@ -315,14 +315,17 @@ export class NeonHostedStateProvider implements HostedStateProvider {
         "INSERT INTO vercel_project_history (tenant_id, vercel_project_id, vercel_team_id, changed_at) VALUES ($1, $2, $3, $4)",
         [tenantId, historical.projectId, historical.teamId ?? null, historical.updatedAt]
       );
-    const deploymentUpdatedAt = new Date().toISOString();
-    await client.query(
-      `UPDATE repos
-       SET deployment_workflow = NULL,
-           deployment_ref = NULL,
-           updated_at = $2
-       WHERE tenant_id = $1 AND deployment_workflow IS NOT NULL`,
-      [tenantId, deploymentUpdatedAt]
+    const existingDeploymentRepos = await client.query<{
+      github_owner: string;
+      github_repo: string;
+    }>(
+      "SELECT github_owner, github_repo FROM repos WHERE tenant_id = $1 AND deployment_workflow IS NOT NULL",
+      [tenantId]
+    );
+    const desiredDeploymentRepoKeys = new Set(
+      state.githubRepositories.map(
+        (repository) => `${repository.owner.toLowerCase()}\0${repository.repository.toLowerCase()}`
+      )
     );
     for (const repository of state.githubRepositories)
       await client.query(
@@ -342,6 +345,26 @@ export class NeonHostedStateProvider implements HostedStateProvider {
           repository.createdAt,
         ]
       );
+    for (const existingRepository of existingDeploymentRepos.rows) {
+      const repositoryKey = `${existingRepository.github_owner.toLowerCase()}\0${existingRepository.github_repo.toLowerCase()}`;
+      if (desiredDeploymentRepoKeys.has(repositoryKey)) continue;
+      await client.query(
+        `UPDATE repos
+         SET deployment_workflow = NULL,
+             deployment_ref = NULL,
+             updated_at = $4
+         WHERE tenant_id = $1
+           AND lower(github_owner) = lower($2)
+           AND lower(github_repo) = lower($3)
+           AND deployment_workflow IS NOT NULL`,
+        [
+          tenantId,
+          existingRepository.github_owner,
+          existingRepository.github_repo,
+          new Date().toISOString(),
+        ]
+      );
+    }
   }
   async rotateVercelWebhookSecret(input: {
     projectId: string;
@@ -482,7 +505,6 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     if (!client) return this.withMutationLock(() => this.write(state));
     const tenantId = await this.tenantDatabaseId(client);
     await client.query("DELETE FROM hosted_workspace_audit WHERE tenant_id = $1", [tenantId]);
-    await client.query("DELETE FROM hosted_workspace_members WHERE tenant_id = $1", [tenantId]);
     const desiredWorkspaceIds = new Set<string>();
     for (const user of Object.values(state.users))
       for (const workspace of user.workspaces) desiredWorkspaceIds.add(workspace.id);

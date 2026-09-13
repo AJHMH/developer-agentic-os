@@ -434,12 +434,16 @@ async function main() {
     console.log(`Clerk org ID: ${CLERK_ORG_ID}\n`);
   } catch (error) {
     if (tenantId) {
-      await recordMigrationStatus(
-        client,
-        tenantId,
-        "failed",
-        error instanceof Error ? error.message : String(error)
-      );
+      try {
+        await recordMigrationStatus(
+          client,
+          tenantId,
+          "failed",
+          error instanceof Error ? error.message : String(error)
+        );
+      } catch (statusError) {
+        console.error("Failed to record migration failure status:", statusError);
+      }
     }
     console.error("❌ Migration failed:", error);
     process.exit(1);
