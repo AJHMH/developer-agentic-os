@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, createSign } from "node:crypto";
 import test from "node:test";
 
-import { POST as resolveDeploymentRoute } from "../src/app/api/hosted/deployments/resolve/route";
+import { resolveGitHubActionsDeployment } from "../src/app/api/hosted/deployments/route";
 import { verifyGitHubActionsOidcToken } from "../src/server/hosted-deployments/github-actions-oidc";
 import {
   DeploymentResolutionError,
@@ -41,16 +41,13 @@ function fetchJwks(): typeof fetch {
 }
 
 test("OIDC verifier accepts a valid signed GitHub Actions token", async () => {
-  assert.deepEqual(
-    await verifyGitHubActionsOidcToken(token(), expectedAudience, fetchJwks()),
-    {
-      audience: expectedAudience,
-      repository: "acme/checkout",
-      repositoryOwner: "acme",
-      workflow: "deploy.yml",
-      ref: "refs/heads/main",
-    }
-  );
+  assert.deepEqual(await verifyGitHubActionsOidcToken(token(), expectedAudience, fetchJwks()), {
+    audience: expectedAudience,
+    repository: "acme/checkout",
+    repositoryOwner: "acme",
+    workflow: "deploy.yml",
+    ref: "refs/heads/main",
+  });
 });
 
 test("OIDC verifier rejects invalid token claims and signatures", async () => {
@@ -60,7 +57,10 @@ test("OIDC verifier rejects invalid token claims and signatures", async () => {
     ["expired token", { exp: Math.floor(Date.now() / 1000) - 1 }],
     ["missing repository", { repository: undefined }],
     ["wrong repository owner", { repository: "other/checkout" }],
-    ["wrong workflow repository", { workflow_ref: "other/checkout/.github/workflows/deploy.yml@refs/heads/main" }],
+    [
+      "wrong workflow repository",
+      { workflow_ref: "other/checkout/.github/workflows/deploy.yml@refs/heads/main" },
+    ],
   ];
 
   for (const [name, overrides] of cases) {
@@ -106,7 +106,10 @@ test("deployment resolver rejects wrong ref, unknown repository, and missing ten
       audience: expectedAudience,
     },
   ]) {
-    await assert.rejects(() => resolveDeploymentTarget(registry, request), DeploymentResolutionError);
+    await assert.rejects(
+      () => resolveDeploymentTarget(registry, request),
+      DeploymentResolutionError
+    );
   }
 
   await assert.rejects(
@@ -131,12 +134,13 @@ test("deployment handler resolves a real token with fixture mode disabled", asyn
   process.env.GITHUB_ORG_MAP = JSON.stringify({ "tenant-acme": "acme" });
   try {
     const resolutions: string[] = [];
-    const response = await resolveDeploymentRoute(
+    const response = await resolveGitHubActionsDeployment(
       new Request("http://localhost/api/hosted/deployments/resolve", {
         headers: { authorization: `Bearer ${token()}` },
       }),
       {
-        verifyToken: (value, audience) => verifyGitHubActionsOidcToken(value, audience, fetchJwks()),
+        verifyToken: (value, audience) =>
+          verifyGitHubActionsOidcToken(value, audience, fetchJwks()),
         findTenant: async () => "tenant-acme",
         storeForTenant: () =>
           ({
@@ -150,7 +154,11 @@ test("deployment handler resolves a real token with fixture mode disabled", asyn
               }),
               findProject: async () => ({ projectId: "prj_acme", teamId: "team_acme" }),
             }),
-            recordDeploymentResolution: async (_subject: string, _kind: string, outcome: string) => {
+            recordDeploymentResolution: async (
+              _subject: string,
+              _kind: string,
+              outcome: string
+            ) => {
               resolutions.push(outcome);
             },
           }) as never,
@@ -162,12 +170,13 @@ test("deployment handler resolves a real token with fixture mode disabled", asyn
     assert.deepEqual(resolutions, ["allowed"]);
 
     process.env.GITHUB_ORG_MAP = JSON.stringify({ "tenant-acme": "other-org" });
-    const denied = await resolveDeploymentRoute(
+    const denied = await resolveGitHubActionsDeployment(
       new Request("http://localhost/api/hosted/deployments/resolve", {
         headers: { authorization: `Bearer ${token()}` },
       }),
       {
-        verifyToken: (value, audience) => verifyGitHubActionsOidcToken(value, audience, fetchJwks()),
+        verifyToken: (value, audience) =>
+          verifyGitHubActionsOidcToken(value, audience, fetchJwks()),
         findTenant: async () => "tenant-acme",
         storeForTenant: () =>
           ({
