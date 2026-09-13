@@ -11,6 +11,7 @@ export default async function Home() {
     if (!fixtureMode) {
       const session = await auth();
       if (!session.userId) redirect("/sign-in");
+      if (!session.orgId) redirect("/select-organization");
     }
     return <HostedCommandCentre fixtureMode={fixtureMode} />;
   }
