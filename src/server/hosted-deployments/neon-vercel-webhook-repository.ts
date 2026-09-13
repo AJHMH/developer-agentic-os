@@ -11,68 +11,6 @@ import type {
   VercelWebhookRepository,
 } from "./vercel-webhook";
 
-const schema = `
-CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_project_mapping (
-  tenant_id text PRIMARY KEY,
-  project_id text NOT NULL,
-  team_id text,
-  webhook_secret_reference text,
-  previous_webhook_secret_reference text,
-  previous_webhook_secret_expires_at timestamptz,
-  updated_at timestamptz NOT NULL
-);
-ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS webhook_secret_reference text;
-ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_reference text;
-ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_expires_at timestamptz;
-CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_vercel_project_mapping_identity
-  ON developer_agentic_os_vercel_project_mapping (project_id, COALESCE(team_id, ''));
-CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_webhook_events (
-  tenant_id text NOT NULL,
-  project_id text NOT NULL,
-  deployment_id text NOT NULL,
-  event_type text NOT NULL,
-  delivery_id text,
-  status text,
-  url text,
-  commit_sha text,
-  payload jsonb NOT NULL,
-  raw_expires_at timestamptz NOT NULL,
-  occurred_at timestamptz NOT NULL,
-  received_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (project_id, deployment_id, event_type)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_vercel_webhook_delivery
-  ON developer_agentic_os_vercel_webhook_events (delivery_id)
-  WHERE delivery_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS developer_agentic_os_vercel_webhook_events_tenant
-  ON developer_agentic_os_vercel_webhook_events (tenant_id, received_at);
-CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_deployment_projection (
-  tenant_id text NOT NULL,
-  project_id text NOT NULL,
-  deployment_id text NOT NULL,
-  event_type text NOT NULL,
-  status text,
-  url text,
-  commit_sha text,
-  occurred_at timestamptz NOT NULL,
-  PRIMARY KEY (project_id, deployment_id)
-);
-CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_failure_signals (
-  tenant_id text NOT NULL,
-  project_id text NOT NULL,
-  deployment_id text NOT NULL,
-  source_id text PRIMARY KEY,
-  title text NOT NULL,
-  body text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_webhook_audit (
-  id bigserial PRIMARY KEY,
-  action text NOT NULL,
-  project_id text,
-  occurred_at timestamptz NOT NULL DEFAULT now()
-);`;
-
 export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   private readonly pool = new Pool({ connectionString: hostedDatabaseUrl() });
   private readonly secretStore = new EncryptedProtectedSecretStore();
@@ -88,10 +26,12 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       previous_webhook_secret_reference: string | null;
       previous_webhook_secret_expires_at: string | null;
     }>(
-      `SELECT tenant_id, project_id, team_id, webhook_secret_reference, previous_webhook_secret_reference,
+      `SELECT organizations.clerk_org_id AS tenant_id, vercel_project_id AS project_id,
+        vercel_team_id AS team_id, webhook_secret_reference, previous_webhook_secret_reference,
         previous_webhook_secret_expires_at
-       FROM developer_agentic_os_vercel_project_mapping
-       WHERE project_id = $1`,
+       FROM vercel_projects
+       JOIN organizations ON organizations.id = vercel_projects.tenant_id
+       WHERE vercel_project_id = $1`,
       [projectId]
     );
     const matchingRows = teamId
@@ -117,13 +57,14 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
 
   async recordEvent(event: VercelWebhookEvent): Promise<{ duplicate: boolean }> {
     await this.ensureSchema();
+    const tenantId = await this.tenantDatabaseId(event.tenantId);
     const result = await this.pool.query(
-      `INSERT INTO developer_agentic_os_vercel_webhook_events
-        (tenant_id, project_id, deployment_id, event_type, delivery_id, status, url, commit_sha, payload, raw_expires_at, occurred_at)
+      `INSERT INTO vercel_webhook_events
+        (tenant_id, vercel_project_id, vercel_deployment_id, event_type, delivery_id, status, url, commit_sha, payload, raw_expires_at, occurred_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11)
       ON CONFLICT DO NOTHING`,
       [
-        event.tenantId,
+        tenantId,
         event.projectId,
         event.deploymentId,
         event.eventType,
@@ -141,20 +82,21 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
 
   async updateProjection(event: VercelWebhookEvent): Promise<void> {
     await this.ensureSchema();
+    const tenantId = await this.tenantDatabaseId(event.tenantId);
     await this.pool.query(
-      `INSERT INTO developer_agentic_os_vercel_deployment_projection
-        (tenant_id, project_id, deployment_id, event_type, status, url, commit_sha, occurred_at)
+      `INSERT INTO vercel_deployment_projections
+        (tenant_id, vercel_project_id, vercel_deployment_id, event_type, status, url, commit_sha, occurred_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (project_id, deployment_id) DO UPDATE SET
+      ON CONFLICT (vercel_project_id, vercel_deployment_id) DO UPDATE SET
          tenant_id = EXCLUDED.tenant_id,
          event_type = EXCLUDED.event_type,
          status = EXCLUDED.status,
          url = EXCLUDED.url,
          commit_sha = EXCLUDED.commit_sha,
          occurred_at = EXCLUDED.occurred_at
-       WHERE EXCLUDED.occurred_at >= developer_agentic_os_vercel_deployment_projection.occurred_at`,
+      WHERE EXCLUDED.occurred_at >= vercel_deployment_projections.occurred_at`,
       [
-        event.tenantId,
+        tenantId,
         event.projectId,
         event.deploymentId,
         event.eventType,
@@ -169,13 +111,14 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   async recordFailureSignal(event: VercelWebhookEvent): Promise<void> {
     await this.ensureSchema();
     const sourceId = `vercel:${event.projectId}:${event.deploymentId}:error`;
+    const tenantId = await this.tenantDatabaseId(event.tenantId);
     await this.pool.query(
-      `INSERT INTO developer_agentic_os_vercel_failure_signals
-        (tenant_id, project_id, deployment_id, source_id, title, body)
+      `INSERT INTO vercel_failure_signals
+        (tenant_id, vercel_project_id, vercel_deployment_id, source_id, title, body)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (source_id) DO NOTHING`,
       [
-        event.tenantId,
+        tenantId,
         event.projectId,
         event.deploymentId,
         sourceId,
@@ -190,13 +133,33 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   }
 
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool.query(schema).then(() => undefined));
+    return (this.ready ??= this.pool
+      .query(
+        `SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN
+         ('organizations', 'vercel_projects', 'vercel_webhook_events',
+          'vercel_deployment_projections', 'vercel_failure_signals')
+         GROUP BY table_schema HAVING COUNT(*) = 5`
+      )
+      .then((result) => {
+        if (result.rowCount !== 1) throw new Error("Canonical webhook schema is not installed.");
+      }));
+  }
+
+  private async tenantDatabaseId(clerkOrgId: string): Promise<string> {
+    const result = await this.pool.query<{ id: string }>(
+      "SELECT id FROM organizations WHERE clerk_org_id = $1",
+      [clerkOrgId]
+    );
+    if (result.rows.length !== 1) throw new Error(`Tenant ${clerkOrgId} is not registered.`);
+    return result.rows[0].id;
   }
 
   async recordAudit(entry: VercelWebhookAuditEntry): Promise<void> {
     await this.ensureSchema();
     await this.pool.query(
-      "INSERT INTO developer_agentic_os_vercel_webhook_audit (action, project_id) VALUES ($1, $2)",
+      `INSERT INTO vercel_webhook_audit (tenant_id, action, vercel_project_id)
+       VALUES (NULL, $1, $2)`,
       [entry.action, entry.projectId ?? null]
     );
   }

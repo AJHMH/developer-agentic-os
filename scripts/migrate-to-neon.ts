@@ -38,6 +38,79 @@ interface MigrationState {
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 
+const canonicalMigrations = [
+  "migrations/001-init.sql",
+  "migrations/003-hosted-deployment-normalization.sql",
+] as const;
+
+async function applyCanonicalMigrations(client: PoolClient): Promise<void> {
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version VARCHAR(100) PRIMARY KEY,
+      applied_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  for (const migrationPath of canonicalMigrations) {
+    const version = migrationPath.split("/").at(-1) ?? migrationPath;
+    const applied = await client.query("SELECT 1 FROM schema_migrations WHERE version = $1", [
+      version,
+    ]);
+    if (applied.rowCount) continue;
+
+    const sql = await readFile(join(process.cwd(), migrationPath), "utf8");
+    await client.query("BEGIN");
+    try {
+      await client.query(sql);
+      await client.query("INSERT INTO schema_migrations (version) VALUES ($1)", [version]);
+      await client.query("COMMIT");
+      console.log(`✓ Applied ${version}`);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw new Error(`Migration ${version} failed.`, { cause: error });
+    }
+  }
+}
+
+async function assertCanonicalSchema(client: PoolClient): Promise<void> {
+  const requiredTables = ["organizations", "repos", "artifacts", "work_items", "vercel_projects"];
+  const result = await client.query<{ table_name: string }>(
+    `SELECT table_name FROM information_schema.tables
+     WHERE table_schema = 'public' AND table_name = ANY($1::text[])`,
+    [requiredTables]
+  );
+  const present = new Set(result.rows.map((row) => row.table_name));
+  const missing = requiredTables.filter((table) => !present.has(table));
+  if (missing.length > 0)
+    throw new Error(`Canonical Schema A is incomplete. Missing tables: ${missing.join(", ")}.`);
+}
+
+async function recordMigrationStatus(
+  client: PoolClient,
+  tenantId: string,
+  status: "completed" | "failed",
+  failureDetails?: string
+): Promise<void> {
+  await client.query(
+    `INSERT INTO migration_status
+      (tenant_id, source_model, target_model, version, status, completed_at, failure_details)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (tenant_id, source_model, target_model, version) DO UPDATE SET
+       status = EXCLUDED.status,
+       completed_at = EXCLUDED.completed_at,
+       failure_details = EXCLUDED.failure_details`,
+    [
+      tenantId,
+      "local-json",
+      "normalized-neon",
+      "hosted-state-import-v1",
+      status,
+      status === "completed" ? new Date() : null,
+      failureDetails ?? null,
+    ]
+  );
+}
+
 async function getClient(): Promise<PoolClient> {
   return pool.connect();
 }
@@ -310,26 +383,19 @@ async function loadExistingState(): Promise<MigrationState> {
 
 async function main() {
   const client = await getClient();
+  let tenantId: string | undefined;
 
   try {
     console.log("🚀 Starting migration: JSON → Neon");
     console.log("=====================================\n");
 
-    // Verify schema exists
-    console.log("Verifying schema...");
-    const schemaCheck = await client.query(
-      "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' LIMIT 1"
-    );
-    if (schemaCheck.rows.length === 0) {
-      console.error(
-        "ERROR: Schema not found in Neon. Run migrations first: psql $DATABASE_URL < migrations/001-init.sql"
-      );
-      process.exit(1);
-    }
-    console.log("✓ Schema exists\n");
+    console.log("Applying canonical Schema A migrations...");
+    await applyCanonicalMigrations(client);
+    await assertCanonicalSchema(client);
+    console.log("✓ Canonical Schema A is ready\n");
 
     // Create or get tenant
-    const tenantId = await createOrGetTenant(client);
+    tenantId = await createOrGetTenant(client);
     console.log();
 
     // Load existing state
@@ -342,12 +408,21 @@ async function main() {
     await migrateSkills(client, tenantId, state.skills);
     await migrateRoutines(client, tenantId, state.routines);
     await migrateRepos(client, tenantId, state.repos);
+    await recordMigrationStatus(client, tenantId, "completed");
 
     console.log("\n=====================================");
     console.log("✅ Migration complete!");
     console.log(`\nAll data migrated to tenant: ${tenantId}`);
     console.log(`Clerk org ID: ${CLERK_ORG_ID}\n`);
   } catch (error) {
+    if (tenantId) {
+      await recordMigrationStatus(
+        client,
+        tenantId,
+        "failed",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
     console.error("❌ Migration failed:", error);
     process.exit(1);
   } finally {

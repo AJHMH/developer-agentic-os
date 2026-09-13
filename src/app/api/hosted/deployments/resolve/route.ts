@@ -1,5 +1,11 @@
-import { resolveGitHubActionsDeployment } from "@/app/api/hosted/deployments/route";
+import {
+  resolveGitHubActionsDeployment,
+  type GitHubActionsDeploymentDependencies,
+} from "@/app/api/hosted/deployments/route";
 
-export async function POST(request: Request) {
-  return resolveGitHubActionsDeployment(request);
+export async function POST(
+  request: Request,
+  dependencies?: GitHubActionsDeploymentDependencies
+) {
+  return resolveGitHubActionsDeployment(request, dependencies);
 }

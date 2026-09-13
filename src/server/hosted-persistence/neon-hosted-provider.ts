@@ -35,37 +35,6 @@ ALTER TABLE developer_agentic_os_hosted_state DROP CONSTRAINT IF EXISTS develope
 ALTER TABLE developer_agentic_os_workspace_state DROP CONSTRAINT IF EXISTS developer_agentic_os_workspace_state_pkey;
 CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_hosted_state_tenant_key ON developer_agentic_os_hosted_state (tenant_id, state_key);
 CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_workspace_state_tenant_key ON developer_agentic_os_workspace_state (tenant_id, state_key);`;
-const deploymentSchema = `
-CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_project_mapping (
-  tenant_id text PRIMARY KEY,
-  project_id text NOT NULL,
-  team_id text,
-  updated_at timestamptz NOT NULL
-);
-CREATE TABLE IF NOT EXISTS developer_agentic_os_vercel_project_history (
-  tenant_id text NOT NULL,
-  project_id text NOT NULL,
-  team_id text,
-  updated_at timestamptz NOT NULL
-);
-CREATE TABLE IF NOT EXISTS developer_agentic_os_github_repository_registration (
-  id text PRIMARY KEY,
-  tenant_id text NOT NULL,
-  owner text NOT NULL,
-  repository text NOT NULL,
-  workflow text NOT NULL,
-  ref text NOT NULL,
-  created_at timestamptz NOT NULL,
-  UNIQUE (owner, repository)
-);`;
-const webhookSchema = `
-ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS webhook_secret_reference text;
-ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_reference text;
-ALTER TABLE developer_agentic_os_vercel_project_mapping ADD COLUMN IF NOT EXISTS previous_webhook_secret_expires_at timestamptz;
-CREATE UNIQUE INDEX IF NOT EXISTS developer_agentic_os_github_repository_identity
-  ON developer_agentic_os_github_repository_registration (lower(owner), lower(repository));
-`;
-
 const emptyHostedState = (): HostedState => ({
   repositories: {},
   records: {},
@@ -99,11 +68,16 @@ export async function findHostedTenantForGitHubRepository(
 ): Promise<string | null> {
   const pool = new Pool({ connectionString: hostedDatabaseUrl() });
   try {
-    const result = await pool.query<{ tenant_id: string }>(
-      "SELECT tenant_id FROM developer_agentic_os_github_repository_registration WHERE lower(owner) = lower($1) AND lower(repository) = lower($2)",
+    const result = await pool.query<{ clerk_org_id: string }>(
+      `SELECT organizations.clerk_org_id
+       FROM repos
+       JOIN organizations ON organizations.id = repos.tenant_id
+       WHERE lower(repos.github_owner) = lower($1)
+         AND lower(repos.github_repo) = lower($2)
+         AND repos.deployment_workflow IS NOT NULL`,
       [owner, repository]
     );
-    return result.rows.length === 1 ? result.rows[0].tenant_id : null;
+    return result.rows.length === 1 ? result.rows[0].clerk_org_id : null;
   } finally {
     await pool.end();
   }
@@ -141,52 +115,63 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     await this.ensureDeploymentSchema();
     const client = this.transactionClient.getStore() ?? this.pool;
     const mapping = await client.query<{
-      project_id: string;
-      team_id: string | null;
+      vercel_project_id: string;
+      vercel_team_id: string | null;
       updated_at: string;
     }>(
-      "SELECT project_id, team_id, updated_at FROM developer_agentic_os_vercel_project_mapping WHERE tenant_id = $1",
+      `SELECT vercel_project_id, vercel_team_id, updated_at
+       FROM vercel_projects
+       JOIN organizations ON organizations.id = vercel_projects.tenant_id
+       WHERE organizations.clerk_org_id = $1
+       ORDER BY updated_at DESC LIMIT 1`,
       [this.tenantId]
     );
     const history = await client.query<{
-      project_id: string;
-      team_id: string | null;
-      updated_at: string;
+      vercel_project_id: string;
+      vercel_team_id: string | null;
+      changed_at: string;
     }>(
-      "SELECT project_id, team_id, updated_at FROM developer_agentic_os_vercel_project_history WHERE tenant_id = $1 ORDER BY updated_at",
+      `SELECT vercel_project_id, vercel_team_id, changed_at
+       FROM vercel_project_history
+       JOIN organizations ON organizations.id = vercel_project_history.tenant_id
+       WHERE organizations.clerk_org_id = $1 ORDER BY changed_at`,
       [this.tenantId]
     );
     const repositories = await client.query<{
       id: string;
-      owner: string;
-      repository: string;
-      workflow: string;
-      ref: string;
+      github_owner: string;
+      github_repo: string;
+      deployment_workflow: string;
+      deployment_ref: string;
       created_at: string;
     }>(
-      "SELECT id, owner, repository, workflow, ref, created_at FROM developer_agentic_os_github_repository_registration WHERE tenant_id = $1",
+      `SELECT repos.id, repos.github_owner, repos.github_repo,
+              repos.deployment_workflow, repos.deployment_ref, repos.created_at
+       FROM repos
+       JOIN organizations ON organizations.id = repos.tenant_id
+       WHERE organizations.clerk_org_id = $1 AND repos.deployment_workflow IS NOT NULL`,
       [this.tenantId]
     );
     return {
       vercelProject: mapping.rows[0]
         ? {
-            projectId: mapping.rows[0].project_id,
-            ...(mapping.rows[0].team_id ? { teamId: mapping.rows[0].team_id } : {}),
+            projectId: mapping.rows[0].vercel_project_id,
+            ...(mapping.rows[0].vercel_team_id ? { teamId: mapping.rows[0].vercel_team_id } : {}),
             updatedAt: mapping.rows[0].updated_at,
           }
         : null,
       vercelProjectHistory: history.rows.map((item) => ({
-        projectId: item.project_id,
-        ...(item.team_id ? { teamId: item.team_id } : {}),
-        updatedAt: item.updated_at,
+        projectId: item.vercel_project_id,
+        ...(item.vercel_team_id ? { teamId: item.vercel_team_id } : {}),
+        updatedAt: item.changed_at,
       })),
       githubRepositories: repositories.rows.map((repository) => ({
         id: repository.id,
         tenantId: this.tenantId,
-        owner: repository.owner,
-        repository: repository.repository,
-        workflow: repository.workflow,
-        ref: repository.ref,
+        owner: repository.github_owner,
+        repository: repository.github_repo,
+        workflow: repository.deployment_workflow,
+        ref: repository.deployment_ref,
         createdAt: repository.created_at,
       })),
     };
@@ -195,44 +180,49 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     await this.ensureDeploymentSchema();
     const client = this.transactionClient.getStore();
     if (!client) return this.withMutationLock(() => this.writeDeploymentState(state));
+    const tenant = await client.query<{ id: string }>(
+      "SELECT id FROM organizations WHERE clerk_org_id = $1",
+      [this.tenantId]
+    );
+    if (tenant.rows.length !== 1) throw new Error(`Tenant ${this.tenantId} is not registered.`);
+    const tenantId = tenant.rows[0].id;
+    await client.query("DELETE FROM vercel_projects WHERE tenant_id = $1", [tenantId]);
     if (state.vercelProject) {
       await client.query(
-        `INSERT INTO developer_agentic_os_vercel_project_mapping (tenant_id, project_id, team_id, updated_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (tenant_id) DO UPDATE SET project_id = EXCLUDED.project_id,
-           team_id = EXCLUDED.team_id, updated_at = EXCLUDED.updated_at`,
+        `INSERT INTO vercel_projects (tenant_id, vercel_project_id, vercel_team_id, updated_at)
+         VALUES ($1, $2, $3, $4)`,
         [
-          this.tenantId,
+          tenantId,
           state.vercelProject.projectId,
           state.vercelProject.teamId ?? null,
           state.vercelProject.updatedAt,
         ]
       );
-    } else {
-      await client.query(
-        "DELETE FROM developer_agentic_os_vercel_project_mapping WHERE tenant_id = $1",
-        [this.tenantId]
-      );
     }
     await client.query(
-      "DELETE FROM developer_agentic_os_vercel_project_history WHERE tenant_id = $1",
-      [this.tenantId]
+      "DELETE FROM vercel_project_history WHERE tenant_id = $1",
+      [tenantId]
     );
     for (const historical of state.vercelProjectHistory)
       await client.query(
-        "INSERT INTO developer_agentic_os_vercel_project_history (tenant_id, project_id, team_id, updated_at) VALUES ($1, $2, $3, $4)",
-        [this.tenantId, historical.projectId, historical.teamId ?? null, historical.updatedAt]
+        "INSERT INTO vercel_project_history (tenant_id, vercel_project_id, vercel_team_id, changed_at) VALUES ($1, $2, $3, $4)",
+        [tenantId, historical.projectId, historical.teamId ?? null, historical.updatedAt]
       );
     await client.query(
-      "DELETE FROM developer_agentic_os_github_repository_registration WHERE tenant_id = $1",
-      [this.tenantId]
+      "DELETE FROM repos WHERE tenant_id = $1 AND deployment_workflow IS NOT NULL",
+      [tenantId]
     );
     for (const repository of state.githubRepositories)
       await client.query(
-        "INSERT INTO developer_agentic_os_github_repository_registration (id, tenant_id, owner, repository, workflow, ref, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        `INSERT INTO repos (id, tenant_id, github_owner, github_repo, deployment_workflow, deployment_ref, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+          ON CONFLICT (tenant_id, github_owner, github_repo) DO UPDATE SET
+            deployment_workflow = EXCLUDED.deployment_workflow,
+            deployment_ref = EXCLUDED.deployment_ref,
+            updated_at = EXCLUDED.updated_at`,
         [
           repository.id,
-          this.tenantId,
+          tenantId,
           repository.owner,
           repository.repository,
           repository.workflow,
@@ -248,7 +238,11 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     await this.ensureDeploymentSchema();
     const client = this.transactionClient.getStore() ?? this.pool;
     await client.query(
-      "UPDATE developer_agentic_os_vercel_project_mapping SET previous_webhook_secret_reference = webhook_secret_reference, previous_webhook_secret_expires_at = now() + interval '15 minutes', webhook_secret_reference = $1, updated_at = now() WHERE tenant_id = $2 AND project_id = $3",
+      `UPDATE vercel_projects SET previous_webhook_secret_reference = webhook_secret_reference,
+       previous_webhook_secret_expires_at = now() + interval '15 minutes',
+       webhook_secret_reference = $1, updated_at = now()
+       WHERE tenant_id = (SELECT id FROM organizations WHERE clerk_org_id = $2)
+         AND vercel_project_id = $3`,
       [input.activeReference, this.tenantId, input.projectId]
     );
   }
@@ -278,8 +272,15 @@ export class NeonHostedStateProvider implements HostedStateProvider {
   }
   private ensureDeploymentSchema(): Promise<void> {
     return (this.deploymentReady ??= this.pool
-      .query(`${deploymentSchema}${webhookSchema}`)
-      .then(() => undefined));
+      .query(
+        `SELECT 1 FROM information_schema.tables
+         WHERE table_schema = 'public' AND table_name IN
+         ('organizations', 'repos', 'vercel_projects', 'vercel_project_history')
+         GROUP BY table_schema HAVING COUNT(*) = 4`
+      )
+      .then((result) => {
+        if (result.rowCount !== 1) throw new Error("Canonical deployment schema is not installed.");
+      }));
   }
 }
 
