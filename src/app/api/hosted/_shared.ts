@@ -17,7 +17,7 @@ export async function hostedIdentity(request: Request) {
   } catch (error) {
     if (error instanceof AuthError)
       return NextResponse.json({ error: error.message }, { status: 401 });
-    throw error;
+    return hostedError(error);
   }
 }
 
@@ -38,5 +38,6 @@ export function hostedError(error: unknown) {
       { status: code === "NOT_FOUND" ? 404 : 400 }
     );
   }
-  throw error;
+  const message = error instanceof Error ? error.message : "An unexpected error occurred.";
+  return NextResponse.json({ error: message }, { status: 500 });
 }

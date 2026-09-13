@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Pool } from "@neondatabase/serverless";
 
 import {
@@ -151,8 +152,17 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       "SELECT id FROM organizations WHERE clerk_org_id = $1",
       [clerkOrgId]
     );
-    if (result.rows.length !== 1) throw new Error(`Tenant ${clerkOrgId} is not registered.`);
-    return result.rows[0].id;
+    if (result.rows.length === 1) return result.rows[0].id;
+
+    const tenantId = randomUUID();
+    const insertResult = await this.pool.query<{ id: string }>(
+      `INSERT INTO organizations (id, name, clerk_org_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
+       RETURNING id`,
+      [tenantId, `Organization ${clerkOrgId}`, clerkOrgId]
+    );
+    return insertResult.rows[0].id;
   }
 
   async recordAudit(entry: VercelWebhookAuditEntry): Promise<void> {
