@@ -20,12 +20,27 @@ const isPublicRoute = createRouteMatcher([
   "/api/hosted/deployments/resolve(.*)",
 ]);
 
+export function unauthenticatedApiResponse(request: Request) {
+  const pathname = new URL(request.url).pathname;
+  if (pathname !== "/api" && !pathname.startsWith("/api/")) return null;
+
+  return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+}
+
 // Local (non-Vercel) mode has no Clerk configuration and renders the unauthenticated
 // CommandCentreShell instead — never gate it behind Clerk auth.
 export default !hostedMode || fixtureMode
   ? () => NextResponse.next()
   : clerkMiddleware(async (auth, request) => {
-      if (!isPublicRoute(request)) await auth.protect();
+      if (isPublicRoute(request)) return;
+
+      const session = await auth();
+      if (session.userId) return;
+
+      const apiResponse = unauthenticatedApiResponse(request);
+      if (apiResponse) return apiResponse;
+
+      return session.redirectToSignIn({ returnBackUrl: request.url });
     });
 
 export const config = {
