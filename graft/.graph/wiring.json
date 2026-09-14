@@ -1,8 +1,8 @@
 {
   "meta": {
     "version": 1,
-    "nodeCount": 1040,
-    "edgeCount": 2788,
+    "nodeCount": 1038,
+    "edgeCount": 2784,
     "languages": [
       "javascript",
       "tsx",
@@ -43,8 +43,8 @@
       "signature": null,
       "exported": true,
       "origin": "ast",
-      "body_hash": "1b59d4c6b83807db275d43f3cf2cc8e9323f465fab764eea091cc5becd5bad37",
-      "chars": 295,
+      "body_hash": "b8b3a344484b959af5e4e3fc1a1609dac3cb9ece0cdeb6c145be29bc4c491000",
+      "chars": 303,
       "summary_state": "pending",
       "summary": null,
       "crux": null
@@ -2308,12 +2308,12 @@
       "name": "page.tsx",
       "kind": "file",
       "path": "src/app/page.tsx",
-      "span": "L1-L20",
+      "span": "L1-L19",
       "signature": null,
       "exported": true,
       "origin": "ast",
-      "body_hash": "845db026151b76b78cfb7f590489e618ab8bea0554c19375af6408fe1393af07",
-      "chars": 757,
+      "body_hash": "4fe7c187fbc577a175639750c2553a54fc23177ddb50b80d9b0195d3f367b1c0",
+      "chars": 678,
       "summary_state": "pending",
       "summary": null,
       "crux": null
@@ -2323,40 +2323,11 @@
       "name": "Home",
       "kind": "function",
       "path": "src/app/page.tsx",
-      "span": "L7-L19",
+      "span": "L7-L18",
       "signature": "async function Home()",
       "exported": true,
       "origin": "ast",
-      "body_hash": "1395c94779065a5dae00ba9646b179bbb6653c68958f6b54823fb6a06bdaa355",
-      "summary_state": "pending",
-      "summary": null,
-      "crux": null
-    },
-    {
-      "id": "src/app/select-organization/page.tsx",
-      "name": "page.tsx",
-      "kind": "file",
-      "path": "src/app/select-organization/page.tsx",
-      "span": "L1-L15",
-      "signature": null,
-      "exported": true,
-      "origin": "ast",
-      "body_hash": "2fcf82706c4b88d29d8350dab398c669889da432cf44bd7b85e28ff09288bcf5",
-      "chars": 476,
-      "summary_state": "pending",
-      "summary": null,
-      "crux": null
-    },
-    {
-      "id": "src/app/select-organization/page.tsx#SelectOrganizationPage",
-      "name": "SelectOrganizationPage",
-      "kind": "function",
-      "path": "src/app/select-organization/page.tsx",
-      "span": "L5-L15",
-      "signature": "async function SelectOrganizationPage()",
-      "exported": true,
-      "origin": "ast",
-      "body_hash": "9fc36545729a384ab8fef3a85094c2b82fedcb9e7c1da9a6bcb8f05820ebca9a",
+      "body_hash": "4cecbba0f1218e522ac37bf202087ed7dd16a4652c67635c468a0cf9f6286546",
       "summary_state": "pending",
       "summary": null,
       "crux": null
@@ -15073,13 +15044,13 @@
     },
     {
       "source": "next-env.d.ts",
-      "target": "./.next/types/root-params.d.ts",
+      "target": "./.next/dev/types/root-params.d.ts",
       "relation": "imports",
       "confidence": "extracted"
     },
     {
       "source": "next-env.d.ts",
-      "target": "./.next/types/routes.d.ts",
+      "target": "./.next/dev/types/routes.d.ts",
       "relation": "imports",
       "confidence": "extracted"
     },
@@ -18247,30 +18218,6 @@
     },
     {
       "source": "src/app/page.tsx",
-      "target": "next/navigation",
-      "relation": "imports",
-      "confidence": "extracted"
-    },
-    {
-      "source": "src/app/select-organization/page.tsx",
-      "target": "src/app/select-organization/page.tsx#SelectOrganizationPage",
-      "relation": "contains",
-      "confidence": "extracted"
-    },
-    {
-      "source": "src/app/select-organization/page.tsx",
-      "target": "@clerk/nextjs",
-      "relation": "imports",
-      "confidence": "extracted"
-    },
-    {
-      "source": "src/app/select-organization/page.tsx",
-      "target": "@clerk/nextjs/server",
-      "relation": "imports",
-      "confidence": "extracted"
-    },
-    {
-      "source": "src/app/select-organization/page.tsx",
       "target": "next/navigation",
       "relation": "imports",
       "confidence": "extracted"
