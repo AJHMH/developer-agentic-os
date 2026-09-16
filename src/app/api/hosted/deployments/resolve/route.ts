@@ -1,5 +1,16 @@
 import { resolveGitHubActionsDeployment } from "@/app/api/hosted/deployments/route";
 
 export async function POST(request: Request) {
-  return resolveGitHubActionsDeployment(request);
+  let requestBody: Record<string, unknown> | undefined;
+  if (
+    (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") &&
+    process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
+  ) {
+    try {
+      const parsed: unknown = await request.clone().json();
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        requestBody = parsed as Record<string, unknown>;
+    } catch {}
+  }
+  return resolveGitHubActionsDeployment(request, {}, requestBody);
 }

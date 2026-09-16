@@ -6,6 +6,7 @@ process.env.HOSTED_JSON_FIXTURE_MODE = "true";
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
 
 import { DELETE, GET, POST } from "../src/app/api/hosted/deployments/route";
+import { POST as resolveDeployment } from "../src/app/api/hosted/deployments/resolve/route";
 import { POST as createWorkspace } from "../src/app/api/hosted/workspaces/route";
 
 async function json(response: Response): Promise<Record<string, unknown>> {
@@ -198,6 +199,68 @@ test("hosted deployment resolve action works without hosted user identity header
   assert.equal(publicResolve.status, 200);
   const resolvedBody = await json(publicResolve);
   assert.equal(resolvedBody.projectId, "prj_public");
+});
+
+test("dedicated hosted deployment resolve route honors fixture-mode request bodies", async () => {
+  const tenantId = `tenant-resolve-route-${Date.now()}`;
+  const userId = `resolve-route-admin-${Date.now()}`;
+  process.env.GITHUB_ORG_MAP = JSON.stringify({ [tenantId]: "acme" });
+  const workspaceResponse = await createWorkspace(
+    request(userId, tenantId, "org:admin", {
+      method: "POST",
+      body: JSON.stringify({ name: "Dedicated resolve workspace" }),
+    })
+  );
+  const workspaceId = ((await json(workspaceResponse)).workspace as { id: string }).id;
+
+  const mapping = await POST(
+    request(userId, tenantId, "org:admin", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "set-project",
+        workspaceId,
+        projectId: "prj_resolve_route",
+        webhookSecret: "resolve-route-secret",
+      }),
+    })
+  );
+  assert.equal(mapping.status, 200);
+
+  const registration = await POST(
+    request(userId, tenantId, "org:admin", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "register-repository",
+        workspaceId,
+        owner: "acme",
+        repository: "checkout",
+        workflow: "deploy.yml",
+        ref: "refs/heads/main",
+      }),
+    })
+  );
+  assert.equal(registration.status, 201);
+
+  const response = await resolveDeployment(
+    new Request("http://localhost/api/hosted/deployments/resolve", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-hosted-tenant-id": tenantId,
+      },
+      body: JSON.stringify({
+        owner: "acme",
+        repository: "checkout",
+        workflow: "deploy.yml",
+        ref: "refs/heads/main",
+        audience: "developer-agentic-os",
+      }),
+    })
+  );
+
+  assert.equal(response.status, 200);
+  const resolvedBody = await json(response);
+  assert.equal(resolvedBody.projectId, "prj_resolve_route");
 });
 
 test("hosted deployment route exposes tenant-scoped mapping and registrations", async () => {
