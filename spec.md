@@ -62,93 +62,93 @@ for this phase.
 9. As a developer, I want to inspect all signals in an Incident, so that I can
    distinguish a single failure from a recurring pattern.
 10. As a developer, I want Incidents to remain repository-scoped, so that
-  operational context cannot leak across repositories.
+    operational context cannot leak across repositories.
 11. As a developer, I want repository-local Automation Policies, so that each
-  repository can define its own schedules, triggers, and actions.
+    repository can define its own schedules, triggers, and actions.
 12. As a developer, I want policies to be inspectable, so that I understand why
-  a workflow ran or did not run.
+    a workflow ran or did not run.
 13. As a developer, I want policies to contain no credentials, so that local
-  configuration cannot expose secrets.
+    configuration cannot expose secrets.
 14. As a developer, I want to enable automation explicitly, so that opening
-  the application does not unexpectedly start work.
+    the application does not unexpectedly start work.
 15. As a developer, I want a global pause control, so that I can stop new
-  actions while preserving history.
+    actions while preserving history.
 16. As a developer, I want per-policy pause controls, so that one problematic
-  automation path does not stop everything.
+    automation path does not stop everything.
 17. As a developer, I want visible executor health, so that enabled, paused,
-  running, failed, and idle states are understandable.
+    running, failed, and idle states are understandable.
 18. As a developer, I want each Automation Run to show its trigger, policy,
-  inputs, steps, outputs, and result, so that execution is auditable.
+    inputs, steps, outputs, and result, so that execution is auditable.
 19. As a developer, I want approval state visible, so that I know when work is
-  waiting for my decision.
+    waiting for my decision.
 20. As a developer, I want transient failures retried within a bounded budget,
-  so that temporary provider problems do not become manual work immediately.
+    so that temporary provider problems do not become manual work immediately.
 21. As a developer, I want retry attempts and backoff recorded, so that retries
-  do not conceal instability.
+    do not conceal instability.
 22. As a developer, I want exhausted retries to create an Incoming Signal, so
-  that unresolved failures appear in Agent Inbox.
+    that unresolved failures appear in Agent Inbox.
 23. As a developer, I want missed schedules recorded after restart, so that
-  work is never silently lost.
+    work is never silently lost.
 24. As a developer, I want eligible missed work caught up within a bounded
-  window, so that short interruptions do not require manual recovery.
+    window, so that short interruptions do not require manual recovery.
 25. As a developer, I want stale work left visibly missed, so that it does not
-  run unexpectedly.
+    run unexpectedly.
 26. As a developer, I want to cancel eligible runs, so that obsolete actions
-  cannot proceed.
+    cannot proceed.
 27. As a developer, I want interrupted runs to have explicit outcomes, so that
-  process stops are distinguishable from success.
+    process stops are distinguishable from success.
 28. As a developer, I want Sentry errors and health data visible, so that
-  application failures appear beside repository work.
+    application failures appear beside repository work.
 29. As a developer, I want Sentry failures normalized like other provider
-  events, so that triage is provider-neutral.
+    events, so that triage is provider-neutral.
 30. As a developer, I want Sentry setup and outage states distinguished, so
-  that I know whether to fix credentials, connectivity, or code.
+    that I know whether to fix credentials, connectivity, or code.
 31. As a developer, I want deterministic provider fixtures, so that failure
-  handling does not depend on live services.
+    handling does not depend on live services.
 32. As a developer, I want operational failures to invoke typed Skills, so
-  that diagnosis avoids arbitrary shell commands.
+    that diagnosis avoids arbitrary shell commands.
 33. As a developer, I want diagnostic Skills to produce linked Artifacts or
-  Work Items, so that conclusions remain useful after the run.
+    Work Items, so that conclusions remain useful after the run.
 34. As a developer, I want failed GitHub Actions rerunnable from the command
-  centre, so that transient failures can be recovered quickly.
+    centre, so that transient failures can be recovered quickly.
 35. As a developer, I want failed Vercel deployments redeployable from the
-  command centre, so that recovery does not require dashboard switching.
+    command centre, so that recovery does not require dashboard switching.
 36. As a developer, I want provider actions opt-in per integration, so that a
-  new connection cannot mutate external state unexpectedly.
+    new connection cannot mutate external state unexpectedly.
 37. As a developer, I want consequential actions to require approval, so that
-  automation cannot make important changes without my decision.
+    automation cannot make important changes without my decision.
 38. As a developer, I want one approval to cover a reviewed run, so that I do
-  not approve every harmless step separately.
+    not approve every harmless step separately.
 39. As a developer, I want approval invalidated when inputs materially change,
-  so that an old decision cannot authorize a different action.
+    so that an old decision cannot authorize a different action.
 40. As a developer, I want provider actions to record their approval, so that
-  I can explain why they were allowed.
+    I can explain why they were allowed.
 41. As a developer, I want consequential provider responses retained, so that
-  actions can be investigated after provider state changes.
+    actions can be investigated after provider state changes.
 42. As a developer, I want failed recovery actions to remain visible, so that
-  attempts are not confused with successful recovery.
+    attempts are not confused with successful recovery.
 43. As a developer, I want automation outputs to reuse existing Work Item,
-  Skill Run, and Artifact boundaries, so that data is not duplicated.
+    Skill Run, and Artifact boundaries, so that data is not duplicated.
 44. As a developer, I want Incident-derived Work Items to retain signal,
-  event, Incident, and Repository Context references, so that commitments
-  remain traceable.
+    event, Incident, and Repository Context references, so that commitments
+    remain traceable.
 45. As a developer, I want the Focus Board to surface active Incidents and
-  failed Automation Runs, so that operational work appears in my daily view.
+    failed Automation Runs, so that operational work appears in my daily view.
 46. As a developer, I want Agent Inbox to show unresolved operational Signals,
-  so that failures use the existing triage workflow.
+    so that failures use the existing triage workflow.
 47. As a developer, I want Second Brain to use explicit operational links, so
-  that it does not invent relationships from titles or timestamps.
+    that it does not invent relationships from titles or timestamps.
 48. As a developer, I want automation usable without external credentials, so
-  that local and fixture-backed workflows remain testable.
+    that local and fixture-backed workflows remain testable.
 49. As a developer, I want two repositories isolated during automation, so
-  that one outage cannot alter another repository's state.
+    that one outage cannot alter another repository's state.
 50. As a developer, I want reset to clear only the selected repository's
-  operational data, so that troubleshooting is safe.
+    operational data, so that troubleshooting is safe.
 51. As a developer, I want existing Phase Three and Integration Operations
-  flows to continue working, so that automation extends the product.
+    flows to continue working, so that automation extends the product.
 52. As a future hosted user, I want event, policy, run, approval, and audit
-  contracts suitable for a hosted worker, so that local-first work transfers
-  without a second product model.
+    contracts suitable for a hosted worker, so that local-first work transfers
+    without a second product model.
 
 ## Product Outcome
 

@@ -4,75 +4,211 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 test.describe("Developer Agentic OS dashboard", () => {
-  test("hosted domain browser contract supports migration review, scoped connector use, and backup", async ({ page }) => {
+  test("hosted domain browser contract supports migration review, scoped connector use, and backup", async ({
+    page,
+  }) => {
     const userId = `browser-hosted-${Date.now()}`;
     const headers = { "x-hosted-user-id": userId };
-    const workspaceResponse = await page.request.post("/api/hosted/workspaces", { headers, data: { name: "Browser workspace" } });
+    const workspaceResponse = await page.request.post("/api/hosted/workspaces", {
+      headers,
+      data: { name: "Browser workspace" },
+    });
     expect(workspaceResponse.status()).toBe(201);
     const createdWorkspace = (await workspaceResponse.json()).workspace as { id: string };
-    const secondWorkspaceResponse = await page.request.post("/api/hosted/workspaces", { headers, data: { name: "Browser second workspace" } });
+    const secondWorkspaceResponse = await page.request.post("/api/hosted/workspaces", {
+      headers,
+      data: { name: "Browser second workspace" },
+    });
     expect(secondWorkspaceResponse.status()).toBe(201);
     const secondWorkspace = (await secondWorkspaceResponse.json()).workspace as { id: string };
-    const repositoryResponse = await page.request.post("/api/hosted/domain", { headers, data: { action: "register-repository", workspaceId: createdWorkspace.id, localPath: "D:/repos/browser" } });
+    const repositoryResponse = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "register-repository",
+        workspaceId: createdWorkspace.id,
+        localPath: "D:/repos/browser",
+      },
+    });
     expect(repositoryResponse.status()).toBe(201);
     const repository = (await repositoryResponse.json()).repository as { id: string };
-    const secondRepositoryResponse = await page.request.post("/api/hosted/domain", { headers, data: { action: "register-repository", workspaceId: secondWorkspace.id, localPath: "D:/repos/browser-second" } });
+    const secondRepositoryResponse = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "register-repository",
+        workspaceId: secondWorkspace.id,
+        localPath: "D:/repos/browser-second",
+      },
+    });
     expect(secondRepositoryResponse.status()).toBe(201);
     const secondRepository = (await secondRepositoryResponse.json()).repository as { id: string };
-    const isolated = await page.request.get(`/api/hosted/domain?workspaceId=${createdWorkspace.id}&view=repositories`, { headers });
-    expect((await isolated.json()).repositories.map((item: { id: string }) => item.id)).toEqual([repository.id]);
-    const secondScoped = await page.request.get(`/api/hosted/domain?workspaceId=${secondWorkspace.id}&view=repositories`, { headers });
-    expect((await secondScoped.json()).repositories.map((item: { id: string }) => item.id)).toEqual([secondRepository.id]);
-    const connectorResponse = await page.request.post("/api/hosted/domain", { headers, data: { action: "register-connector", workspaceId: createdWorkspace.id } });
+    const isolated = await page.request.get(
+      `/api/hosted/domain?workspaceId=${createdWorkspace.id}&view=repositories`,
+      { headers }
+    );
+    expect((await isolated.json()).repositories.map((item: { id: string }) => item.id)).toEqual([
+      repository.id,
+    ]);
+    const secondScoped = await page.request.get(
+      `/api/hosted/domain?workspaceId=${secondWorkspace.id}&view=repositories`,
+      { headers }
+    );
+    expect((await secondScoped.json()).repositories.map((item: { id: string }) => item.id)).toEqual(
+      [secondRepository.id]
+    );
+    const connectorResponse = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: { action: "register-connector", workspaceId: createdWorkspace.id },
+    });
     const connector = (await connectorResponse.json()).connector as { id: string };
-    await page.request.post("/api/hosted/domain", { headers, data: { action: "grant-repository", workspaceId: createdWorkspace.id, connectorId: connector.id, repositoryId: repository.id } });
-    const offline = await page.request.post("/api/hosted/domain", { headers, data: { action: "set-connector-offline", workspaceId: createdWorkspace.id, connectorId: connector.id } });
+    await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "grant-repository",
+        workspaceId: createdWorkspace.id,
+        connectorId: connector.id,
+        repositoryId: repository.id,
+      },
+    });
+    const offline = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "set-connector-offline",
+        workspaceId: createdWorkspace.id,
+        connectorId: connector.id,
+      },
+    });
     expect(offline.ok()).toBeTruthy();
-    const pending = await page.request.post("/api/hosted/domain", { headers, data: { action: "queue-local-work", workspaceId: createdWorkspace.id, repositoryId: repository.id, description: "Browser offline work" } });
+    const pending = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "queue-local-work",
+        workspaceId: createdWorkspace.id,
+        repositoryId: repository.id,
+        description: "Browser offline work",
+      },
+    });
     expect(pending.status()).toBe(202);
-    const reconnected = await page.request.post("/api/hosted/domain", { headers, data: { action: "reconnect-connector", workspaceId: createdWorkspace.id, connectorId: connector.id } });
+    const reconnected = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "reconnect-connector",
+        workspaceId: createdWorkspace.id,
+        connectorId: connector.id,
+      },
+    });
     expect(reconnected.ok()).toBeTruthy();
-    const resumed = await page.request.post("/api/hosted/domain", { headers, data: { action: "resume-local-work", workspaceId: createdWorkspace.id, connectorId: connector.id } });
+    const resumed = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "resume-local-work",
+        workspaceId: createdWorkspace.id,
+        connectorId: connector.id,
+      },
+    });
     expect((await resumed.json()).resumed).toBe(1);
     for (const view of ["connector-status", "repository-grants", "capability-grants"]) {
-      const response = await page.request.get(`/api/hosted/domain?workspaceId=${createdWorkspace.id}&view=${view}`, { headers });
+      const response = await page.request.get(
+        `/api/hosted/domain?workspaceId=${createdWorkspace.id}&view=${view}`,
+        { headers }
+      );
       expect(response.ok()).toBeTruthy();
     }
-    const skill = await page.request.post("/api/hosted/domain", { headers, data: { action: "run-read-only-skill", workspaceId: createdWorkspace.id, connectorId: connector.id, repositoryId: repository.id, skillId: "repo-summary" } });
+    const skill = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "run-read-only-skill",
+        workspaceId: createdWorkspace.id,
+        connectorId: connector.id,
+        repositoryId: repository.id,
+        skillId: "repo-summary",
+      },
+    });
     expect(skill.ok()).toBeTruthy();
     expect((await skill.json()).run.skillId).toBe("repo-summary");
-    const revoked = await page.request.post("/api/hosted/domain", { headers, data: { action: "revoke-connector", workspaceId: createdWorkspace.id, connectorId: connector.id } });
+    const revoked = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "revoke-connector",
+        workspaceId: createdWorkspace.id,
+        connectorId: connector.id,
+      },
+    });
     expect(revoked.ok()).toBeTruthy();
-    const denied = await page.request.post("/api/hosted/domain", { headers, data: { action: "connector-request", workspaceId: createdWorkspace.id, connectorId: connector.id, repositoryId: repository.id, capability: "git.read" } });
+    const denied = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "connector-request",
+        workspaceId: createdWorkspace.id,
+        connectorId: connector.id,
+        repositoryId: repository.id,
+        capability: "git.read",
+      },
+    });
     expect(denied.status()).toBe(403);
-    const backup = await page.request.get(`/api/hosted/domain?workspaceId=${createdWorkspace.id}&view=backup`, { headers });
+    const backup = await page.request.get(
+      `/api/hosted/domain?workspaceId=${createdWorkspace.id}&view=backup`,
+      { headers }
+    );
     expect(backup.ok()).toBeTruthy();
     expect((await backup.json()).backup.version).toBe(1);
-    await page.request.post("/api/hosted/domain", { headers, data: { action: "hosted-safe-work", workspaceId: createdWorkspace.id, description: "Hosted release import fixture" } });
-    const migration = await page.request.get(`/api/hosted/domain?workspaceId=${createdWorkspace.id}&view=migration`, { headers });
+    await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "hosted-safe-work",
+        workspaceId: createdWorkspace.id,
+        description: "Hosted release import fixture",
+      },
+    });
+    const migration = await page.request.get(
+      `/api/hosted/domain?workspaceId=${createdWorkspace.id}&view=migration`,
+      { headers }
+    );
     const migrationPackage = (await migration.json()).package;
     expect(migrationPackage.warnings).toContain("Some records have missing repository provenance.");
-    const selectedImport = await page.request.post("/api/hosted/domain", { headers, data: { action: "import-migration", workspaceId: secondWorkspace.id, package: migrationPackage, selectedKinds: ["automationRuns"], selectedRepositoryIds: [repository.id] } });
+    const selectedImport = await page.request.post("/api/hosted/domain", {
+      headers,
+      data: {
+        action: "import-migration",
+        workspaceId: secondWorkspace.id,
+        package: migrationPackage,
+        selectedKinds: ["automationRuns"],
+        selectedRepositoryIds: [repository.id],
+      },
+    });
     expect(selectedImport.ok()).toBeTruthy();
     expect((await selectedImport.json()).result.imported).toBeGreaterThan(0);
     const audit = await page.request.get("/api/hosted/audit", { headers });
     expect(audit.ok()).toBeTruthy();
-    expect((await audit.json()).events.some((event: { action: string }) => event.action === "migration.imported")).toBeTruthy();
+    expect(
+      (await audit.json()).events.some(
+        (event: { action: string }) => event.action === "migration.imported"
+      )
+    ).toBeTruthy();
   });
 
-  test("hosted API keeps authenticated workspaces private in a browser session", async ({ page }) => {
+  test("hosted API keeps authenticated workspaces private in a browser session", async ({
+    page,
+  }) => {
     const anonymous = await page.request.get("/api/hosted/workspaces");
     expect(anonymous.status()).toBe(401);
 
     const aliceHeaders = { "x-hosted-user-id": `browser-alice-${Date.now()}` };
-    const alice = await page.request.post("/api/hosted/workspaces", { headers: aliceHeaders, data: { name: "Browser private workspace" } });
+    const alice = await page.request.post("/api/hosted/workspaces", {
+      headers: aliceHeaders,
+      data: { name: "Browser private workspace" },
+    });
     expect(alice.status()).toBe(201);
     const workspace = (await alice.json()).workspace as { id: string };
 
     const bobHeaders = { "x-hosted-user-id": `browser-bob-${Date.now()}` };
     const bob = await page.request.get("/api/hosted/workspaces", { headers: bobHeaders });
-    expect((await bob.json()).workspaces).toEqual([]);
-    const crossUser = await page.request.post(`/api/hosted/workspaces/${workspace.id}/select`, { headers: bobHeaders });
+    const bobWorkspaces = (await bob.json()).workspaces as Array<{ id: string; name: string }>;
+    expect(bobWorkspaces).toHaveLength(1);
+    expect(bobWorkspaces[0].name).toBe("Personal");
+    expect(bobWorkspaces[0].id).not.toBe(workspace.id);
+    const crossUser = await page.request.post(`/api/hosted/workspaces/${workspace.id}/select`, {
+      headers: bobHeaders,
+    });
     expect(crossUser.status()).toBe(404);
   });
 
@@ -86,37 +222,85 @@ test.describe("Developer Agentic OS dashboard", () => {
 
   test("shows all major panels", async ({ page }) => {
     await page.goto("/");
-    for (const title of ["Micro Apps", "Calendar", "Artifacts", "Email", "Skills Deck", "Routines"]) {
+    for (const title of [
+      "Micro Apps",
+      "Calendar",
+      "Artifacts",
+      "Email",
+      "Skills Deck",
+      "Routines",
+    ]) {
       await expect(page.getByRole("heading", { name: title })).toBeVisible();
     }
     await expect(page.getByLabel("Central workspace graph")).toBeVisible();
   });
 
-  test("shows the repository-scoped Today / Focus Board and preserves its existing actions", async ({ page }) => {
+  test("shows the repository-scoped Today / Focus Board and preserves its existing actions", async ({
+    page,
+  }) => {
     await page.goto("/");
-    const board = page.getByRole("complementary", { name: "Agent Inbox, Email, skills, and routines" }).getByRole("region", { name: "Today and Focus Board" });
+    const board = page
+      .getByRole("complementary", { name: "Agent Inbox, Email, skills, and routines" })
+      .getByRole("region", { name: "Today and Focus Board" });
     await expect(board).toBeVisible();
     await expect(board.getByRole("heading", { name: "Today / Focus Board" })).toBeVisible();
     await expect(board.getByText(/active|selected repository/).first()).toBeVisible();
-    const focusApp = page.getByRole("button", { name: "Today / Focus Board: Daily attention for the selected repository" });
+    const focusApp = page.getByRole("button", {
+      name: "Today / Focus Board: Daily attention for the selected repository",
+    });
     await focusApp.click();
     await expect(board).toBeHidden();
     await focusApp.click();
     await expect(board).toBeVisible();
   });
 
-  test("inspects, approves, pauses, resumes, and audits an operational provider action", async ({ page }) => {
+  test("inspects, approves, pauses, resumes, and audits an operational provider action", async ({
+    page,
+  }) => {
     await page.goto("/");
-    const context = await (await page.request.get("/api/workspace/context")).json() as { context: { id: string } };
-    const policy = await page.request.post("/api/operational/policies", { data: { repositoryId: context.context.id, name: "Browser provider policy", enabled: true, triggers: ["provider"], workflows: ["repo-summary"], requiresApproval: true, maxRetries: 1, catchUpWindowMinutes: 60 } });
+    const context = (await (await page.request.get("/api/workspace/context")).json()) as {
+      context: { id: string };
+    };
+    const policy = await page.request.post("/api/operational/policies", {
+      data: {
+        repositoryId: context.context.id,
+        name: "Browser provider policy",
+        enabled: true,
+        triggers: ["provider"],
+        workflows: ["repo-summary"],
+        requiresApproval: true,
+        maxRetries: 1,
+        catchUpWindowMinutes: 60,
+      },
+    });
     expect(policy.ok()).toBeTruthy();
     const policyId = (await policy.json()).id as string;
-    const created = await page.request.post("/api/operational/runs", { data: { repositoryId: context.context.id, policyId, trigger: "provider", input: { actionRunId: "12345" } } });
+    const created = await page.request.post("/api/operational/runs", {
+      data: {
+        repositoryId: context.context.id,
+        policyId,
+        trigger: "provider",
+        input: { actionRunId: "12345" },
+      },
+    });
     expect(created.ok()).toBeTruthy();
-    const createdRun = await created.json() as { id: string };
+    const createdRun = (await created.json()) as { id: string };
 
     await page.route("**/api/operational/runs/*/action", async (route) => {
-      await route.fulfill({ json: { action: { ok: true, status: 200, response: { rerun: true } }, audit: { id: "audit-browser", runId: createdRun.id, action: "github-rerun", approval: {}, request: { actionRunId: "12345" }, response: { rerun: true }, recordedAt: new Date().toISOString() } } });
+      await route.fulfill({
+        json: {
+          action: { ok: true, status: 200, response: { rerun: true } },
+          audit: {
+            id: "audit-browser",
+            runId: createdRun.id,
+            action: "github-rerun",
+            approval: {},
+            request: { actionRunId: "12345" },
+            response: { rerun: true },
+            recordedAt: new Date().toISOString(),
+          },
+        },
+      });
     });
     await page.reload();
     const run = page.locator(`.focus-board-failure[data-run-id="${createdRun.id}"]`);
@@ -136,9 +320,13 @@ test.describe("Developer Agentic OS dashboard", () => {
     await expect(inspector).toContainText("rerun");
   });
 
-  test("shows the live workspace switcher and keeps the active selection after reload", async ({ page }) => {
+  test("shows the live workspace switcher and keeps the active selection after reload", async ({
+    page,
+  }) => {
     await page.goto("/");
-    const switcher = page.getByRole("button", { name: "Workspace Switcher: Change the active repository context" });
+    const switcher = page.getByRole("button", {
+      name: "Workspace Switcher: Change the active repository context",
+    });
     await expect(switcher).toBeVisible();
     await switcher.click();
     await expect(page.locator("#workspace-switcher")).toBeVisible();
@@ -149,8 +337,12 @@ test.describe("Developer Agentic OS dashboard", () => {
       await first.click();
       await expect(first).toHaveAttribute("aria-pressed", "true");
       await page.reload();
-      await page.getByRole("button", { name: "Workspace Switcher: Change the active repository context" }).click();
-      await expect(page.getByRole("button", { name: /Git available|Git unavailable/ }).first()).toHaveAttribute("aria-pressed", "true");
+      await page
+        .getByRole("button", { name: "Workspace Switcher: Change the active repository context" })
+        .click();
+      await expect(
+        page.getByRole("button", { name: /Git available|Git unavailable/ }).first()
+      ).toHaveAttribute("aria-pressed", "true");
     }
   });
 
@@ -197,7 +389,7 @@ test.describe("Developer Agentic OS dashboard", () => {
   test("triages an integration failure into a linked Work Item", async ({ page }) => {
     await page.goto("/");
     const contextResponse = await page.request.get("/api/workspace/context");
-    const context = await contextResponse.json() as { context: { id: string } };
+    const context = (await contextResponse.json()) as { context: { id: string } };
     const failureTitle = `Integration failure ${Date.now()}`;
     const created = await page.request.post("/api/incoming-signals", {
       data: {
@@ -219,7 +411,9 @@ test.describe("Developer Agentic OS dashboard", () => {
     await expect(inspector).toContainText("Linked to work item");
   });
 
-  test("keeps operations, signals, and Work Items isolated across repositories", async ({ page }) => {
+  test("keeps operations, signals, and Work Items isolated across repositories", async ({
+    page,
+  }) => {
     const firstRoot = await mkdtemp(join(tmpdir(), "developer-agentic-os-e2e-first-"));
     const secondRoot = await mkdtemp(join(tmpdir(), "developer-agentic-os-e2e-second-"));
     const repositoryIds: string[] = [];
@@ -231,18 +425,35 @@ test.describe("Developer Agentic OS dashboard", () => {
         repositoryIds.push((await response.json()).id);
       }
       await page.reload();
-      const switcher = page.getByRole("button", { name: "Workspace Switcher: Change the active repository context" });
+      const switcher = page.getByRole("button", {
+        name: "Workspace Switcher: Change the active repository context",
+      });
       await switcher.click();
-      const firstRepository = page.locator(".repository-option").filter({ hasText: firstRoot.split(/[\\/]/).pop() ?? "" });
-      const secondRepository = page.locator(".repository-option").filter({ hasText: secondRoot.split(/[\\/]/).pop() ?? "" });
+      const firstRepository = page
+        .locator(".repository-option")
+        .filter({ hasText: firstRoot.split(/[\\/]/).pop() ?? "" });
+      const secondRepository = page
+        .locator(".repository-option")
+        .filter({ hasText: secondRoot.split(/[\\/]/).pop() ?? "" });
       await expect(firstRepository).toHaveCount(1);
       await expect(secondRepository).toHaveCount(1);
       await firstRepository.click();
       await expect(firstRepository).toHaveAttribute("aria-pressed", "true");
 
-      const firstContext = await (await page.request.get("/api/workspace/context")).json() as { context: { id: string } };
+      const firstContext = (await (await page.request.get("/api/workspace/context")).json()) as {
+        context: { id: string };
+      };
       const firstTitle = `First repository signal ${Date.now()}`;
-      const firstSignal = await page.request.post("/api/incoming-signals", { data: { source: "integration", provider: "github", sourceId: `github:first:${Date.now()}`, title: firstTitle, body: "First repository failure", repositoryId: firstContext.context.id } });
+      const firstSignal = await page.request.post("/api/incoming-signals", {
+        data: {
+          source: "integration",
+          provider: "github",
+          sourceId: `github:first:${Date.now()}`,
+          title: firstTitle,
+          body: "First repository failure",
+          repositoryId: firstContext.context.id,
+        },
+      });
       expect(firstSignal.ok()).toBeTruthy();
       await page.reload();
       await expect(page.locator(".signal-row").filter({ hasText: firstTitle })).toBeVisible();
@@ -257,9 +468,12 @@ test.describe("Developer Agentic OS dashboard", () => {
       await expect(page.locator(".signal-row").filter({ hasText: firstTitle })).toHaveCount(0);
       await expect(page.getByRole("status", { name: "Integration status" })).toHaveCount(0);
       await page.getByRole("button", { name: "Integration status" }).click();
-      await expect(page.getByRole("status", { name: "Integration status" })).toContainText("Vercel operations");
+      await expect(page.getByRole("status", { name: "Integration status" })).toContainText(
+        "Vercel operations"
+      );
     } finally {
-      for (const id of repositoryIds) await page.request.delete(`/api/workspace/repositories/${id}`);
+      for (const id of repositoryIds)
+        await page.request.delete(`/api/workspace/repositories/${id}`);
       await rm(firstRoot, { recursive: true, force: true });
       await rm(secondRoot, { recursive: true, force: true });
     }
@@ -276,19 +490,63 @@ test.describe("Developer Agentic OS dashboard", () => {
     await expect(email.getByRole("button")).toHaveCount(0);
   });
 
-  test("shows the operations provider catalog and refreshes integration health", async ({ page }) => {
+  test("shows the operations provider catalog and refreshes integration health", async ({
+    page,
+  }) => {
     let integrationRequests = 0;
     await page.route("**/api/integrations**", async (route) => {
       integrationRequests += 1;
       await route.continue();
     });
-    await page.route("**/api/integrations/github**", (route) => route.fulfill({ json: { status: "healthy", message: "GitHub operations are available.", issues: [{ number: 1, title: "Fix health", url: "https://github.com/example/1" }], pullRequests: [], actions: [], mergeStatus: { state: "ready", message: "All open pull requests are mergeable." } } }));
-    await page.route("**/api/integrations/vercel**", (route) => route.fulfill({ json: { status: "unhealthy", message: "Vercel deployment failed.", deployments: [{ id: "dpl_1", name: "broken", state: "error", buildLogUrl: "https://vercel.com/deployments/dpl_1", runtimeLogUrl: "https://vercel.com/project/logs" },], failure: { kind: "unavailable", message: "Deployment broken reported an error." } } }));
+    await page.route("**/api/integrations/github**", (route) =>
+      route.fulfill({
+        json: {
+          status: "healthy",
+          message: "GitHub operations are available.",
+          issues: [{ number: 1, title: "Fix health", url: "https://github.com/example/1" }],
+          pullRequests: [],
+          actions: [],
+          mergeStatus: { state: "ready", message: "All open pull requests are mergeable." },
+        },
+      })
+    );
+    await page.route("**/api/integrations/vercel**", (route) =>
+      route.fulfill({
+        json: {
+          status: "unhealthy",
+          message: "Vercel deployment failed.",
+          deployments: [
+            {
+              id: "dpl_1",
+              name: "broken",
+              state: "error",
+              buildLogUrl: "https://vercel.com/deployments/dpl_1",
+              runtimeLogUrl: "https://vercel.com/project/logs",
+            },
+          ],
+          failure: { kind: "unavailable", message: "Deployment broken reported an error." },
+        },
+      })
+    );
 
     await page.goto("/");
     await page.getByRole("button", { name: "Integration status" }).click();
     const status = page.getByRole("status", { name: "Integration status" });
-    for (const name of ["Local Git", "GitHub", "Vercel", "Sentry", "Cloudflare", "CodeRabbit", "WorkOS", "Clerk", "Convex", "NeonDB", "Upstash", "Email", "Slack"]) {
+    for (const name of [
+      "Local Git",
+      "GitHub",
+      "Vercel",
+      "Sentry",
+      "Cloudflare",
+      "CodeRabbit",
+      "WorkOS",
+      "Clerk",
+      "Convex",
+      "NeonDB",
+      "Upstash",
+      "Email",
+      "Slack",
+    ]) {
       await expect(status).toContainText(name);
     }
     await expect(status).toContainText("GitHub operations");
@@ -301,29 +559,72 @@ test.describe("Developer Agentic OS dashboard", () => {
   });
 
   test("shows missing credentials and staged integration states", async ({ page }) => {
-    await page.route("**/api/integrations?*", (route) => route.fulfill({ json: {
-      integrations: [
-        { id: "local-git", name: "Local Git", status: "connected", message: "Local git is connected." },
-        { id: "github", name: "GitHub", status: "unconfigured", setup: "Set GITHUB_TOKEN or GH_TOKEN to enable GitHub operations." },
-        { id: "vercel", name: "Vercel", status: "unconfigured", setup: "Set VERCEL_TOKEN or VERCEL_API_TOKEN and VERCEL_PROJECT_ID to enable Vercel operations." },
-        { id: "sentry", name: "Sentry", status: "deferred", setup: "This integration is staged for a later milestone." },
-        { id: "slack", name: "Slack", status: "deferred", setup: "This integration is staged for a later milestone." },
-        { id: "email", name: "Email", status: "available", message: "Email adapter is read-only." },
-      ],
-    } }));
-    await page.route("**/api/integrations/github**", (route) => route.fulfill({ json: {
-      status: "unconfigured",
-      message: "GitHub credentials are not configured.",
-      issues: [],
-      pullRequests: [],
-      actions: [],
-      mergeStatus: { state: "unavailable", message: "GitHub credentials are not configured." },
-    } }));
-    await page.route("**/api/integrations/vercel**", (route) => route.fulfill({ json: {
-      status: "unconfigured",
-      message: "Vercel credentials are not configured.",
-      deployments: [],
-    } }));
+    await page.route("**/api/integrations?*", (route) =>
+      route.fulfill({
+        json: {
+          integrations: [
+            {
+              id: "local-git",
+              name: "Local Git",
+              status: "connected",
+              message: "Local git is connected.",
+            },
+            {
+              id: "github",
+              name: "GitHub",
+              status: "unconfigured",
+              setup: "Set GITHUB_TOKEN or GH_TOKEN to enable GitHub operations.",
+            },
+            {
+              id: "vercel",
+              name: "Vercel",
+              status: "unconfigured",
+              setup:
+                "Set VERCEL_TOKEN or VERCEL_API_TOKEN and VERCEL_PROJECT_ID to enable Vercel operations.",
+            },
+            {
+              id: "sentry",
+              name: "Sentry",
+              status: "deferred",
+              setup: "This integration is staged for a later milestone.",
+            },
+            {
+              id: "slack",
+              name: "Slack",
+              status: "deferred",
+              setup: "This integration is staged for a later milestone.",
+            },
+            {
+              id: "email",
+              name: "Email",
+              status: "available",
+              message: "Email adapter is read-only.",
+            },
+          ],
+        },
+      })
+    );
+    await page.route("**/api/integrations/github**", (route) =>
+      route.fulfill({
+        json: {
+          status: "unconfigured",
+          message: "GitHub credentials are not configured.",
+          issues: [],
+          pullRequests: [],
+          actions: [],
+          mergeStatus: { state: "unavailable", message: "GitHub credentials are not configured." },
+        },
+      })
+    );
+    await page.route("**/api/integrations/vercel**", (route) =>
+      route.fulfill({
+        json: {
+          status: "unconfigured",
+          message: "Vercel credentials are not configured.",
+          deployments: [],
+        },
+      })
+    );
     await page.goto("/");
     await page.getByRole("button", { name: "Integration status" }).click();
     const status = page.getByRole("status", { name: "Integration status" });
@@ -334,7 +635,9 @@ test.describe("Developer Agentic OS dashboard", () => {
 
   test("creates, edits, finalizes, and inspects a Session Handoff", async ({ page }) => {
     await page.goto("/");
-    const app = page.getByRole("button", { name: "Session Handoff: Draft and finalize repository context" });
+    const app = page.getByRole("button", {
+      name: "Session Handoff: Draft and finalize repository context",
+    });
     await app.click();
     const handoff = page.getByRole("region", { name: "Session Handoff" });
     await expect(handoff).toBeVisible();
@@ -349,7 +652,9 @@ test.describe("Developer Agentic OS dashboard", () => {
     await draft.click();
     const inspector = page.getByRole("complementary", { name: "Session Handoff Inspector" });
     await expect(inspector).toContainText("Repository:");
-    await inspector.getByLabel("Edit handoff next actions").fill("Review and share the immutable artifact");
+    await inspector
+      .getByLabel("Edit handoff next actions")
+      .fill("Review and share the immutable artifact");
     await inspector.getByRole("button", { name: "Save Draft" }).click();
     await expect(inspector.getByRole("status")).toContainText("Draft saved");
     await inspector.getByRole("button", { name: "Finalize Handoff" }).click();
@@ -378,13 +683,19 @@ test.describe("Developer Agentic OS dashboard", () => {
 
   test("opens graph inspector, layout controls, and runs a routine", async ({ page }) => {
     await page.goto("/");
-    await page.getByRole("button", { name: /Inspect/ }).first().click();
+    await page
+      .getByRole("button", { name: /Inspect/ })
+      .first()
+      .click();
     await expect(page.getByRole("complementary", { name: "Inspector Panel" })).toBeVisible();
     await page.getByRole("button", { name: "Layout" }).click();
     await expect(page.getByRole("dialog", { name: "Layout resize" })).toBeVisible();
     await page.getByRole("button", { name: "Reset Layout" }).click();
     await page.getByRole("button", { name: "Close layout controls" }).click();
-    await page.getByRole("button", { name: /Run .* Digest/ }).first().click();
+    await page
+      .getByRole("button", { name: /Run .* Digest/ })
+      .first()
+      .click();
     await expect(page.getByRole("status")).toContainText(/Routine completed|Routine failed/);
   });
 
@@ -396,7 +707,9 @@ test.describe("Developer Agentic OS dashboard", () => {
 
   test("has no horizontal overflow on desktop and mobile", async ({ page }) => {
     await page.goto("/");
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth
+    );
     expect(overflow).toBeLessThanOrEqual(1);
   });
 });

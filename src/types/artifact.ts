@@ -1,12 +1,28 @@
-export type ArtifactContent = string | number | boolean | null | ArtifactContent[] | { [key: string]: ArtifactContent };
+export type ArtifactContent =
+  string | number | boolean | null | ArtifactContent[] | { [key: string]: ArtifactContent };
 
 export type ContextReference = {
-  kind: "file" | "area" | "repo" | "repo_context" | "skill" | "work_item" | "routine" | "incoming_signal";
+  kind:
+    | "file"
+    | "area"
+    | "repo"
+    | "repo_context"
+    | "skill"
+    | "work_item"
+    | "routine"
+    | "incoming_signal";
   ref: string;
 };
 
 export type WorkflowReference = {
-  kind: "skill" | "routine" | "work_item" | "incoming_signal" | "policy" | "operational_event" | "operational_incident";
+  kind:
+    | "skill"
+    | "routine"
+    | "work_item"
+    | "incoming_signal"
+    | "policy"
+    | "operational_event"
+    | "operational_incident";
   ref: string;
   label?: string;
 };

@@ -1,19 +1,19 @@
 import { ArtifactStore } from "../artifacts/artifact-store";
 import { SkillRunStore } from "../skill-runs/skill-run-store";
 import type { WorkflowReference } from "@/types/artifact";
-import type { SkillCommand, SkillHandlerResult, SkillRunResult } from "@/types/skill";
+import type { SkillCommand, SkillRunResult } from "@/types/skill";
 import { contextFromRoot } from "../workspace/repository-context";
 import type { SkillHandler } from "./skill-handlers";
 
 /**
  * SkillOrchestrator: Deep module that coordinates skill execution.
- * 
+ *
  * Responsibilities:
  * - Create and manage skill runs (state tracking)
  * - Execute skill handlers (invoke business logic)
  * - Create artifacts from results
  * - Handle errors and failures
- * 
+ *
  * Dependencies (injected):
  * - skill definitions
  * - skill handlers
@@ -26,14 +26,18 @@ export class SkillOrchestrator {
     private skillDefinitions: Map<string, SkillCommand>,
     private handlers: Record<string, SkillHandler>,
     private runStore: SkillRunStore,
-    private artifactStore: ArtifactStore,
+    private artifactStore: ArtifactStore
   ) {}
 
   /**
    * Execute a skill by ID with input parameters.
    * Returns a complete SkillRunResult with artifact references.
    */
-  async runSkill(id: string, input: Record<string, string> = {}, options: { workflowRefs?: WorkflowReference[] } = {}): Promise<SkillRunResult> {
+  async runSkill(
+    id: string,
+    input: Record<string, string> = {},
+    options: { workflowRefs?: WorkflowReference[] } = {}
+  ): Promise<SkillRunResult> {
     const skill = this.skillDefinitions.get(id);
     if (!skill) throw new Error(`Unknown skill: ${id}`);
 
@@ -45,7 +49,11 @@ export class SkillOrchestrator {
 
     // Placeholder skills cannot be executed
     if (skill.kind === "placeholder") {
-      return failRun(this.runStore, { ...run, status: "running" }, "Placeholder skills do not have executable handlers yet.");
+      return failRun(
+        this.runStore,
+        { ...run, status: "running" },
+        "Placeholder skills do not have executable handlers yet."
+      );
     }
 
     try {
@@ -73,7 +81,10 @@ export class SkillOrchestrator {
         provenance: {
           repositoryId: run.repositoryId ?? "",
           repositoryRoot: run.repositoryRoot ?? this.root,
-          workflowRefs: [{ kind: "skill", ref: skill.id, label: skill.label }, ...(options.workflowRefs ?? [])],
+          workflowRefs: [
+            { kind: "skill", ref: skill.id, label: skill.label },
+            ...(options.workflowRefs ?? []),
+          ],
         },
       });
 
@@ -87,12 +98,26 @@ export class SkillOrchestrator {
 
       return { status: "succeeded", run: completed };
     } catch (error) {
-      return failRun(this.runStore, { ...run, status: "running" }, error instanceof Error ? error.message : "Skill failed.");
+      return failRun(
+        this.runStore,
+        { ...run, status: "running" },
+        error instanceof Error ? error.message : "Skill failed."
+      );
     }
   }
 }
 
-async function failRun(runStore: SkillRunStore, run: Awaited<ReturnType<SkillRunStore["createRun"]>>, error: string): Promise<SkillRunResult> {
-  const failed = await runStore.updateRun({ ...run, status: "failed", artifactId: null, error, completedAt: new Date().toISOString() });
+async function failRun(
+  runStore: SkillRunStore,
+  run: Awaited<ReturnType<SkillRunStore["createRun"]>>,
+  error: string
+): Promise<SkillRunResult> {
+  const failed = await runStore.updateRun({
+    ...run,
+    status: "failed",
+    artifactId: null,
+    error,
+    completedAt: new Date().toISOString(),
+  });
   return { status: "failed", run: failed };
 }

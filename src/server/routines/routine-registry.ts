@@ -22,7 +22,7 @@ type RoutineRegistryOptions = {
  * - Routine definitions (from routine-definitions.ts)
  * - Routine orchestrator (from routine-orchestrator.ts)
  * - Skill orchestrator (for executing routine workflows)
- * 
+ *
  * Benefits:
  * - Definitions can be tested independently
  * - Orchestration logic is clear and centralized
@@ -31,16 +31,19 @@ type RoutineRegistryOptions = {
 export function createRoutineRegistry(options: RoutineRegistryOptions = {}) {
   const context = options.context;
   const root = context?.root ?? options.root ?? process.cwd();
-  const history = context?.routineHistoryStore ?? options.historyStore ?? new RoutineHistoryStore(root);
+  const history =
+    context?.routineHistoryStore ?? options.historyStore ?? new RoutineHistoryStore(root);
   const now = options.now ?? (() => new Date());
 
   // Create skill orchestrator for executing routine workflows
   const skillRegistry = createSkillRegistry(
-    context ? { context } : {
-      root,
-      artifactStore: options.artifactStore ?? new ArtifactStore(root),
-      runStore: options.skillRunStore ?? new SkillRunStore(root),
-    }
+    context
+      ? { context }
+      : {
+          root,
+          artifactStore: options.artifactStore ?? new ArtifactStore(root),
+          runStore: options.skillRunStore ?? new SkillRunStore(root),
+        }
   );
 
   // Build definitions map for fast lookup
@@ -49,34 +52,51 @@ export function createRoutineRegistry(options: RoutineRegistryOptions = {}) {
 
   return {
     async listRoutines(): Promise<RoutineDefinition[]> {
-      return Promise.all(allRoutines.map(async (routine, index) => {
-        const executions = await history.listExecutions({ routineId: routine.id, limit: 1 });
-        const latest = executions[0];
-        const lastRunAt = latest?.startedAt ?? null;
-        const isPaused = await history.isPaused(routine.id);
+      return Promise.all(
+        allRoutines.map(async (routine, index) => {
+          const executions = await history.listExecutions({ routineId: routine.id, limit: 1 });
+          const latest = executions[0];
+          const lastRunAt = latest?.startedAt ?? null;
+          const isPaused = await history.isPaused(routine.id);
 
-        return {
-          ...routine,
-          status: isPaused ? "paused" : index === 0 ? "next" : routine.status,
-          lastRunAt,
-          nextDueAt: lastRunAt ? calculateNextDueAt(routine.scheduleLabel, new Date(lastRunAt)).toISOString() : now().toISOString(),
-          lastExecutionSource: latest?.source ?? null,
-        };
-      }));
+          return {
+            ...routine,
+            status: isPaused ? "paused" : index === 0 ? "next" : routine.status,
+            lastRunAt,
+            nextDueAt: lastRunAt
+              ? calculateNextDueAt(routine.scheduleLabel, new Date(lastRunAt)).toISOString()
+              : now().toISOString(),
+            lastExecutionSource: latest?.source ?? null,
+          };
+        })
+      );
     },
 
-    async runRoutine(id: string, options: { source?: RoutineExecutionSource } = {}): Promise<RoutineRunResult> {
+    async runRoutine(
+      id: string,
+      options: { source?: RoutineExecutionSource } = {}
+    ): Promise<RoutineRunResult> {
       const routine = routinesMap.get(id);
       if (!routine) throw new Error(`Unknown routine: ${id}`);
       await contextFromRoot(root);
-      const execution = await history.createExecution(id, { source: options.source ?? "manual", startedAt: now().toISOString() });
+      const execution = await history.createExecution(id, {
+        source: options.source ?? "manual",
+        startedAt: now().toISOString(),
+      });
 
       if (routine.kind === "placeholder" || !routine.skillId) {
-        const failed = await history.completeExecution(execution, { status: "failed", error: "Placeholder routine does not have executable behavior yet." });
+        const failed = await history.completeExecution(execution, {
+          status: "failed",
+          error: "Placeholder routine does not have executable behavior yet.",
+        });
         return { status: "failed", execution: failed, artifactIds: [], error: failed.error };
       }
 
-      const skillResult = await skillRegistry.runSkill(routine.skillId, {}, { workflowRefs: [{ kind: "routine", ref: routine.id, label: routine.name }] });
+      const skillResult = await skillRegistry.runSkill(
+        routine.skillId,
+        {},
+        { workflowRefs: [{ kind: "routine", ref: routine.id, label: routine.name }] }
+      );
       const artifactIds = skillResult.run.artifactId ? [skillResult.run.artifactId] : [];
       const completed = await history.completeExecution(execution, {
         status: skillResult.status === "succeeded" ? "succeeded" : "failed",
@@ -85,7 +105,12 @@ export function createRoutineRegistry(options: RoutineRegistryOptions = {}) {
         error: skillResult.run.error,
         completedAt: now().toISOString(),
       });
-      return { status: completed.status, execution: completed, artifactIds, error: completed.error };
+      return {
+        status: completed.status,
+        execution: completed,
+        artifactIds,
+        error: completed.error,
+      };
     },
 
     async pauseRoutine(id: string): Promise<RoutineDefinition> {

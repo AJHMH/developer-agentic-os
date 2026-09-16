@@ -1,5 +1,23 @@
-export type GraphNodeType = "repo" | "repo_context" | "area" | "file" | "artifact" | "skill" | "work_item" | "incoming_signal" | "handoff" | "routine";
-export type GraphLinkType = "contains" | "references" | "produced" | "used_context" | "triggers" | "scoped_to" | "includes" | "finalized_as";
+export type GraphNodeType =
+  | "repo"
+  | "repo_context"
+  | "area"
+  | "file"
+  | "artifact"
+  | "skill"
+  | "work_item"
+  | "incoming_signal"
+  | "handoff"
+  | "routine";
+export type GraphLinkType =
+  | "contains"
+  | "references"
+  | "produced"
+  | "used_context"
+  | "triggers"
+  | "scoped_to"
+  | "includes"
+  | "finalized_as";
 
 export type GraphNode = {
   id: string;

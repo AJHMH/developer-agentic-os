@@ -25,7 +25,12 @@ async function createGitRepo() {
 
 function fakeClock(value: string) {
   let current = new Date(value);
-  return { now: () => new Date(current), advance: (days: number) => { current = new Date(current.getTime() + days * 86_400_000); } };
+  return {
+    now: () => new Date(current),
+    advance: (days: number) => {
+      current = new Date(current.getTime() + days * 86_400_000);
+    },
+  };
 }
 
 test("executor runs due background routines once, excludes paused routines, and records source", async () => {
@@ -41,11 +46,17 @@ test("executor runs due background routines once, excludes paused routines, and 
     assert.equal(history.length, 3);
     assert.ok(history.every((execution) => execution.source === "local_background"));
 
-    const registry = (await import("../src/server/routines/routine-registry")).createRoutineRegistry({ root });
+    const registry = (
+      await import("../src/server/routines/routine-registry")
+    ).createRoutineRegistry({ root });
     await registry.pauseRoutine("nightly_repo_digest");
     clock.advance(1);
     assert.equal((await executor.trigger()).executed, 2);
-    assert.equal((await new RoutineHistoryStore(root).listExecutions({ routineId: "nightly_repo_digest" })).length, 1);
+    assert.equal(
+      (await new RoutineHistoryStore(root).listExecutions({ routineId: "nightly_repo_digest" }))
+        .length,
+      1
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -57,13 +68,29 @@ test("executor recovers an expired lease and reports a live lease as busy", asyn
     const clock = fakeClock("2026-09-04T08:00:00.000Z");
     const paths = getLocalStorePaths(root);
     const executorPath = join(paths.routines, "executor.json");
-    await import("../src/server/local-store/paths").then(({ initializeLocalStore }) => initializeLocalStore(root));
-    await writeFile(executorPath, JSON.stringify({ running: true, leaseToken: "held", leaseExpiresAt: "2026-09-04T08:00:05.000Z", lastTickAt: null, lastRunAt: null, lastError: null }), "utf8");
+    await import("../src/server/local-store/paths").then(({ initializeLocalStore }) =>
+      initializeLocalStore(root)
+    );
+    await writeFile(
+      executorPath,
+      JSON.stringify({
+        running: true,
+        leaseToken: "held",
+        leaseExpiresAt: "2026-09-04T08:00:05.000Z",
+        lastTickAt: null,
+        lastRunAt: null,
+        lastError: null,
+      }),
+      "utf8"
+    );
     const executor = createLocalBackgroundExecutor({ root, clock, leaseTtlMs: 10_000 });
     assert.equal((await executor.trigger()).executed, 0);
     clock.advance(1);
     assert.equal((await executor.trigger()).executed, 3);
-    const state = JSON.parse(await readFile(executorPath, "utf8")) as { running: boolean; leaseToken: string | null };
+    const state = JSON.parse(await readFile(executorPath, "utf8")) as {
+      running: boolean;
+      leaseToken: string | null;
+    };
     assert.equal(state.running, true);
     assert.equal(state.leaseToken, null);
   } finally {

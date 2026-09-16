@@ -30,7 +30,9 @@ test("collection routes return their typed top-level contracts", async () => {
   const skills = await getSkills();
   const skillRuns = await getSkillRuns(new Request("http://localhost/api/skill-runs?limit=1"));
   const routines = await getRoutines();
-  const routineRuns = await getRoutineRuns(new Request("http://localhost/api/routine-runs?limit=1"));
+  const routineRuns = await getRoutineRuns(
+    new Request("http://localhost/api/routine-runs?limit=1")
+  );
   const integrations = await getIntegrations();
   const graph = await getGraph();
   const graphBody = await body(graph);
@@ -48,24 +50,42 @@ test("collection routes return their typed top-level contracts", async () => {
 });
 
 test("integration routes preserve repository context boundaries", async () => {
-  const response = await getIntegrations(new Request("http://localhost/api/integrations?repositoryId=missing-context"));
+  const response = await getIntegrations(
+    new Request("http://localhost/api/integrations?repositoryId=missing-context")
+  );
   assert.equal(response.status, 404);
   assert.match(JSON.stringify(await body(response)), /Repository context not found/);
 });
 
 test("artifact routes validate input and reject unknown artifacts", async () => {
-  const invalid = await postArtifact(new Request("http://localhost/api/artifacts", { method: "POST", body: "{}" }));
+  const invalid = await postArtifact(
+    new Request("http://localhost/api/artifacts", { method: "POST", body: "{}" })
+  );
   assert.equal(invalid.status, 400);
 
-  const missing = await getArtifact(new Request("http://localhost/api/artifacts/missing"), { params: Promise.resolve({ id: "missing" }) });
+  const missing = await getArtifact(new Request("http://localhost/api/artifacts/missing"), {
+    params: Promise.resolve({ id: "missing" }),
+  });
   assert.equal(missing.status, 404);
 });
 
 test("run and routine mutation routes return not-found errors for unknown ids", async () => {
-  const skill = await runSkill(new Request("http://localhost/api/skills/missing/run", { method: "POST", body: "{}" }), { params: Promise.resolve({ id: "missing" }) });
-  const routine = await runRoutine(new Request("http://localhost/api/routines/missing/run", { method: "POST" }), { params: Promise.resolve({ id: "missing" }) });
-  const pause = await pauseRoutine(new Request("http://localhost/api/routines/missing/pause", { method: "POST" }), { params: Promise.resolve({ id: "missing" }) });
-  const resume = await resumeRoutine(new Request("http://localhost/api/routines/missing/resume", { method: "POST" }), { params: Promise.resolve({ id: "missing" }) });
+  const skill = await runSkill(
+    new Request("http://localhost/api/skills/missing/run", { method: "POST", body: "{}" }),
+    { params: Promise.resolve({ id: "missing" }) }
+  );
+  const routine = await runRoutine(
+    new Request("http://localhost/api/routines/missing/run", { method: "POST" }),
+    { params: Promise.resolve({ id: "missing" }) }
+  );
+  const pause = await pauseRoutine(
+    new Request("http://localhost/api/routines/missing/pause", { method: "POST" }),
+    { params: Promise.resolve({ id: "missing" }) }
+  );
+  const resume = await resumeRoutine(
+    new Request("http://localhost/api/routines/missing/resume", { method: "POST" }),
+    { params: Promise.resolve({ id: "missing" }) }
+  );
 
   assert.equal(skill.status, 404);
   assert.equal(routine.status, 404);
@@ -83,27 +103,36 @@ test("repo refresh route returns a refreshable snapshot", async () => {
 });
 
 test("invalid repository context is rejected before a skill run is created", async () => {
-  const response = await runSkill(new Request("http://localhost/api/skills/repo-summary/run", {
-    method: "POST",
-    body: JSON.stringify({ repositoryId: "missing-context" }),
-  }), { params: Promise.resolve({ id: "repo-summary" }) });
+  const response = await runSkill(
+    new Request("http://localhost/api/skills/repo-summary/run", {
+      method: "POST",
+      body: JSON.stringify({ repositoryId: "missing-context" }),
+    }),
+    { params: Promise.resolve({ id: "repo-summary" }) }
+  );
   assert.equal(response.status, 404);
   assert.match(JSON.stringify(await body(response)), /Repository context not found/);
 });
 
 test("repository routes reject unregistered roots", async () => {
-  const response = await getRepoIndex(new Request("http://localhost/api/repo/index?repositoryRoot=C%3A%5Cdefinitely-unregistered"));
+  const response = await getRepoIndex(
+    new Request("http://localhost/api/repo/index?repositoryRoot=C%3A%5Cdefinitely-unregistered")
+  );
   assert.equal(response.status, 404);
 });
 
 test("github operations route rejects an unknown repository context", async () => {
-  const response = await getGitHubOperations(new Request("http://localhost/api/integrations/github?repositoryId=missing-context"));
+  const response = await getGitHubOperations(
+    new Request("http://localhost/api/integrations/github?repositoryId=missing-context")
+  );
   assert.equal(response.status, 404);
   assert.match(JSON.stringify(await body(response)), /Repository context not found/);
 });
 
 test("vercel operations route rejects an unknown repository context", async () => {
-  const response = await getVercelOperations(new Request("http://localhost/api/integrations/vercel?repositoryId=missing-context"));
+  const response = await getVercelOperations(
+    new Request("http://localhost/api/integrations/vercel?repositoryId=missing-context")
+  );
   assert.equal(response.status, 404);
   assert.match(JSON.stringify(await body(response)), /Repository context not found/);
 });

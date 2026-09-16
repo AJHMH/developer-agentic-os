@@ -23,6 +23,7 @@ Developer Agentic OS v2 uses Neon PostgreSQL for multi-tenant data persistence. 
 - [ ] `DATABASE_URL` environment variable set
 
 **Verify connection**:
+
 ```bash
 psql $DATABASE_URL -c "SELECT 1"
 ```
@@ -81,6 +82,7 @@ psql $DATABASE_URL -c "
 ```
 
 Expected output (24 tables):
+
 - `artifacts`, `deployment_events`, `emails`, `focus_board_items`
 - `github_issues`, `github_pull_requests`
 - `graph_links`, `graph_nodes`
@@ -107,6 +109,7 @@ npx tsx scripts/migrate-to-neon.ts
 ```
 
 **Output** (example):
+
 ```
 🚀 Starting migration: JSON → Neon
 =====================================
@@ -179,6 +182,7 @@ NEON_TENANT_ID=abc123de-f456-7890-ghij-klmnopqrstuv
 Update the application's data access layer to use the Neon adapter instead of JSON files.
 
 **Before** (JSON-based):
+
 ```typescript
 // src/server/local-store/artifact-store.ts (old)
 import { readJsonFile, writeJsonFile } from "./json-file";
@@ -195,6 +199,7 @@ export async function saveArtifact(artifact) {
 ```
 
 **After** (Neon-based):
+
 ```typescript
 // src/server/adapters/neon-artifact-store.ts (new)
 import { NeonAdapter } from "./neon-adapter";
@@ -248,6 +253,7 @@ export function getDbAdapter(): NeonAdapter {
 Replace data access in Next.js API routes:
 
 **Before**:
+
 ```typescript
 // src/app/api/artifacts/route.ts (old)
 import { listArtifacts, saveArtifact } from "@/server/local-store/artifact-store";
@@ -265,6 +271,7 @@ export async function POST(req: Request) {
 ```
 
 **After**:
+
 ```typescript
 // src/app/api/artifacts/route.ts (updated)
 import { getDbAdapter } from "@/server/db";
@@ -298,23 +305,23 @@ import { getDbAdapter } from "@/server/db";
 
 async function testIsolation() {
   const adapter = getDbAdapter();
-  
+
   // List artifacts for this tenant
   const artifacts = await adapter.listArtifacts();
   console.log(`Found ${artifacts.length} artifacts for tenant`);
-  
+
   // Create a new work item
   const item = await adapter.createWorkItem({
     title: "Test Work Item",
     description: "Testing multi-tenant isolation",
   });
   console.log(`Created work item: ${item.id}`);
-  
+
   // Verify tenant_id is set
   if (item.tenant_id !== process.env.NEON_TENANT_ID) {
     throw new Error("Tenant ID mismatch!");
   }
-  
+
   console.log("✓ Multi-tenant isolation verified");
 }
 
@@ -335,19 +342,17 @@ import { getDbAdapter } from "@/server/db";
 export async function GET() {
   const adapter = getDbAdapter();
   const isHealthy = await adapter.health();
-  
+
   if (!isHealthy) {
-    return Response.json(
-      { status: "unhealthy", database: "postgres" },
-      { status: 503 }
-    );
+    return Response.json({ status: "unhealthy", database: "postgres" }, { status: 503 });
   }
-  
+
   return Response.json({ status: "ok", database: "postgres" });
 }
 ```
 
 Test it:
+
 ```bash
 curl http://localhost:3000/api/health
 ```
@@ -389,6 +394,7 @@ rm src/server/local-store/work-item-store.ts
 ### 6.3 Update Documentation
 
 Update relevant docs to reflect the migration:
+
 - [ ] README: Update setup instructions to mention Neon
 - [ ] CONTEXT.md: Update "Local Store" definition to reflect Neon
 - [ ] Contributing guide: Document how to use the Neon adapter
@@ -414,6 +420,7 @@ When ready to deploy to production:
 **Cause**: DATABASE_URL is pointing to local PostgreSQL instead of Neon
 
 **Fix**:
+
 ```bash
 echo $DATABASE_URL
 # Should be: postgresql://user:password@project.neon.tech/dbname
@@ -426,6 +433,7 @@ echo $DATABASE_URL
 **Cause**: Migration SQL wasn't run
 
 **Fix**:
+
 ```bash
 psql $DATABASE_URL < migrations/001-init.sql
 ```
@@ -437,6 +445,7 @@ psql $DATABASE_URL < migrations/001-init.sql
 **Cause**: Using wrong tenant ID in application
 
 **Fix**:
+
 ```bash
 # Verify tenant ID matches migration output
 echo $NEON_TENANT_ID
@@ -467,59 +476,59 @@ const adapter = new NeonAdapter({
 ### Artifacts
 
 ```typescript
-await adapter.listArtifacts()           // → Artifact[]
-await adapter.getArtifact(id)           // → Artifact | null
-await adapter.createArtifact(data)      // → Artifact
-await adapter.updateArtifact(id, data)  // → Artifact | null
-await adapter.deleteArtifact(id)        // → boolean
+await adapter.listArtifacts(); // → Artifact[]
+await adapter.getArtifact(id); // → Artifact | null
+await adapter.createArtifact(data); // → Artifact
+await adapter.updateArtifact(id, data); // → Artifact | null
+await adapter.deleteArtifact(id); // → boolean
 ```
 
 ### Work Items
 
 ```typescript
-await adapter.listWorkItems()           // → WorkItem[]
-await adapter.getWorkItem(id)           // → WorkItem | null
-await adapter.createWorkItem(data)      // → WorkItem
-await adapter.updateWorkItem(id, data)  // → WorkItem | null
-await adapter.deleteWorkItem(id)        // → boolean
+await adapter.listWorkItems(); // → WorkItem[]
+await adapter.getWorkItem(id); // → WorkItem | null
+await adapter.createWorkItem(data); // → WorkItem
+await adapter.updateWorkItem(id, data); // → WorkItem | null
+await adapter.deleteWorkItem(id); // → boolean
 ```
 
 ### Skills
 
 ```typescript
-await adapter.listSkills()              // → Skill[]
-await adapter.getSkill(command)         // → Skill | null
-await adapter.createSkill(data)         // → Skill
+await adapter.listSkills(); // → Skill[]
+await adapter.getSkill(command); // → Skill | null
+await adapter.createSkill(data); // → Skill
 ```
 
 ### Routines
 
 ```typescript
-await adapter.listRoutines()            // → Routine[]
-await adapter.getRoutine(name)          // → Routine | null
-await adapter.createRoutine(data)       // → Routine
+await adapter.listRoutines(); // → Routine[]
+await adapter.getRoutine(name); // → Routine | null
+await adapter.createRoutine(data); // → Routine
 ```
 
 ### Repos
 
 ```typescript
-await adapter.listRepos()               // → Repo[]
-await adapter.getRepo(owner, repo)      // → Repo | null
-await adapter.createRepo(data)          // → Repo
+await adapter.listRepos(); // → Repo[]
+await adapter.getRepo(owner, repo); // → Repo | null
+await adapter.createRepo(data); // → Repo
 ```
 
 ### Signals
 
 ```typescript
-await adapter.listSignals()             // → Signal[]
-await adapter.createSignal(data)        // → Signal
+await adapter.listSignals(); // → Signal[]
+await adapter.createSignal(data); // → Signal
 ```
 
 ### Utility
 
 ```typescript
-await adapter.health()                  // → boolean
-await adapter.close()                   // Close connection pool
+await adapter.health(); // → boolean
+await adapter.close(); // Close connection pool
 ```
 
 ---
@@ -529,6 +538,7 @@ await adapter.close()                   // Close connection pool
 ### Indexes
 
 All queries use indexed columns for performance:
+
 - `tenant_id`: Primary filter on every table
 - `created_at`: Sorting and time-range queries
 - Composite indexes: `(tenant_id, status)`, `(tenant_id, command)`, etc.

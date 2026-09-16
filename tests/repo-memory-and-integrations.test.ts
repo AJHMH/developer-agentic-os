@@ -46,7 +46,9 @@ test("repo memory snapshot is refreshable and persisted", async () => {
     assert.ok(snapshot.files.some((file) => file.path === "README.md"));
     assert.ok(snapshot.git.available);
 
-    const stored = JSON.parse(await readFile(join(root, ".developer-agentic-os", "repo-memory", "snapshot.json"), "utf8"));
+    const stored = JSON.parse(
+      await readFile(join(root, ".developer-agentic-os", "repo-memory", "snapshot.json"), "utf8")
+    );
     assert.equal(stored.repoName, snapshot.repoName);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -94,10 +96,20 @@ test("integration registry reports the operations provider catalog and credentia
     assert.equal(localGit?.status, "connected");
     assert.equal(github?.status, "unconfigured");
     assert.equal(vercel?.status, "unconfigured");
-    assert.equal(withoutToken.find((integration) => integration.id === "sentry")?.status, "unconfigured");
-    assert.equal(withoutToken.find((integration) => integration.id === "email")?.status, "available");
+    assert.equal(
+      withoutToken.find((integration) => integration.id === "sentry")?.status,
+      "unconfigured"
+    );
+    assert.equal(
+      withoutToken.find((integration) => integration.id === "email")?.status,
+      "available"
+    );
 
-    const withToken = await getIntegrationStatuses(root, { GITHUB_TOKEN: "redacted-test-token", VERCEL_TOKEN: "redacted-vercel-token", VERCEL_PROJECT_ID: "prj_test" });
+    const withToken = await getIntegrationStatuses(root, {
+      GITHUB_TOKEN: "redacted-test-token",
+      VERCEL_TOKEN: "redacted-vercel-token",
+      VERCEL_PROJECT_ID: "prj_test",
+    });
     assert.equal(withToken.find((integration) => integration.id === "github")?.status, "connected");
     assert.equal(withToken.find((integration) => integration.id === "vercel")?.status, "connected");
   } finally {

@@ -2,14 +2,14 @@ import type { GraphLink, GraphNode } from "@/types/second-brain";
 
 /**
  * GraphBuilder: Deep module that encapsulates graph construction semantics.
- * 
+ *
  * Responsibilities:
  * - Create nodes with consistent ID generation and metadata handling
  * - Create links with type validation
  * - Handle context references
  * - Deduplicate links automatically
  * - Provide semantic helpers for common patterns (area -> file, skill -> artifact, etc.)
- * 
+ *
  * Benefits:
  * - All graph semantics in one place
  * - Node/link creation is consistent and type-safe
@@ -50,7 +50,7 @@ export class GraphBuilder {
   /**
    * Add a repo node.
    */
-  addRepo(id: string, name: string, path: string, metadata?: Record<string, any>): void {
+  addRepo(id: string, name: string, path: string, metadata?: GraphNode["metadata"]): void {
     this.addNode({ id, type: "repo", label: name, path, metadata });
   }
 
@@ -72,7 +72,7 @@ export class GraphBuilder {
   /**
    * Add a file node with containment link from parent (area or repo).
    */
-  addFile(id: string, path: string, parentId: string, metadata?: Record<string, any>): void {
+  addFile(id: string, path: string, parentId: string, metadata?: GraphNode["metadata"]): void {
     const label = path.split("/").at(-1) ?? path;
     this.addNode({ id, type: "file", label, path, metadata });
     this.addLink(parentId, id, "contains");
@@ -81,14 +81,14 @@ export class GraphBuilder {
   /**
    * Add a skill node.
    */
-  addSkill(id: string, label: string, metadata?: Record<string, any>): void {
+  addSkill(id: string, label: string, metadata?: GraphNode["metadata"]): void {
     this.addNode({ id, type: "skill", label, metadata });
   }
 
   /**
    * Add a routine node with optional trigger link to skill.
    */
-  addRoutine(id: string, label: string, skillId?: string, metadata?: Record<string, any>): void {
+  addRoutine(id: string, label: string, skillId?: string, metadata?: GraphNode["metadata"]): void {
     this.addNode({ id, type: "routine", label, metadata });
     if (skillId) {
       this.addLink(id, skillId, "triggers");
@@ -98,14 +98,14 @@ export class GraphBuilder {
   /**
    * Add an artifact node with provenance links.
    */
-  addArtifact(id: string, name: string, metadata?: Record<string, any>): void {
+  addArtifact(id: string, name: string, metadata?: GraphNode["metadata"]): void {
     this.addNode({ id, type: "artifact", label: name, metadata });
   }
 
   /**
    * Add an incoming signal node scoped to a context.
    */
-  addSignal(id: string, title: string, contextId: string, metadata?: Record<string, any>): void {
+  addSignal(id: string, title: string, contextId: string, metadata?: GraphNode["metadata"]): void {
     this.addNode({ id, type: "incoming_signal", label: title, metadata });
     this.addLink(id, contextId, "scoped_to");
   }
@@ -113,7 +113,12 @@ export class GraphBuilder {
   /**
    * Add a work item node scoped to a context.
    */
-  addWorkItem(id: string, title: string, contextId: string, metadata?: Record<string, any>): void {
+  addWorkItem(
+    id: string,
+    title: string,
+    contextId: string,
+    metadata?: GraphNode["metadata"]
+  ): void {
     this.addNode({ id, type: "work_item", label: title, metadata });
     this.addLink(id, contextId, "scoped_to");
   }
@@ -121,7 +126,7 @@ export class GraphBuilder {
   /**
    * Add a handoff node scoped to a context.
    */
-  addHandoff(id: string, title: string, contextId: string, metadata?: Record<string, any>): void {
+  addHandoff(id: string, title: string, contextId: string, metadata?: GraphNode["metadata"]): void {
     this.addNode({ id, type: "handoff", label: title, metadata });
     this.addLink(id, contextId, "scoped_to");
   }
@@ -129,7 +134,11 @@ export class GraphBuilder {
   /**
    * Add context reference links (file/area references from an artifact or work item).
    */
-  addContextReferences(sourceId: string, references: Array<{ kind: string; ref: string }>, nodeExists: (id: string) => boolean): void {
+  addContextReferences(
+    sourceId: string,
+    references: Array<{ kind: string; ref: string }>,
+    nodeExists: (id: string) => boolean
+  ): void {
     for (const ref of references) {
       const targetId = `${ref.kind}:${ref.ref}`;
       if (nodeExists(targetId)) {
@@ -141,7 +150,11 @@ export class GraphBuilder {
   /**
    * Add workflow provenance links (what produced an artifact).
    */
-  addProvenanceLinks(targetId: string, workflowRefs: Array<{ kind: string; ref: string }>, nodeExists: (id: string) => boolean): void {
+  addProvenanceLinks(
+    targetId: string,
+    workflowRefs: Array<{ kind: string; ref: string }>,
+    nodeExists: (id: string) => boolean
+  ): void {
     for (const ref of workflowRefs) {
       const sourceId = `${ref.kind}:${ref.ref}`;
       if (nodeExists(sourceId)) {

@@ -7,7 +7,8 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await workspaceStore.removeRepository((await params).id);
     return NextResponse.json({ removed: true });
   } catch (error) {
-    if (error instanceof WorkspaceError) return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof WorkspaceError)
+      return NextResponse.json({ error: error.message }, { status: 404 });
     throw error;
   }
 }

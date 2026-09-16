@@ -2,7 +2,8 @@ export type WorkItemStatus = "open" | "in_progress" | "blocked" | "completed";
 export type WorkItemPriority = "low" | "normal" | "high" | "urgent";
 
 export type WorkItemContextReference = {
-  kind: "file" | "area" | "artifact" | "skill" | "routine" | "incoming_signal" | "integration_event";
+  kind:
+    "file" | "area" | "artifact" | "skill" | "routine" | "incoming_signal" | "integration_event";
   ref: string;
   label?: string;
 };
@@ -39,7 +40,9 @@ export type CreateWorkItemInput = {
   contextRefs?: WorkItemContextReference[];
 };
 
-export type UpdateWorkItemInput = Partial<Pick<WorkItem, "title" | "notes" | "status" | "priority" | "dueAt" | "dueNote" | "contextRefs">>;
+export type UpdateWorkItemInput = Partial<
+  Pick<WorkItem, "title" | "notes" | "status" | "priority" | "dueAt" | "dueNote" | "contextRefs">
+>;
 
 export type ListWorkItemsOptions = {
   repositoryId?: string;

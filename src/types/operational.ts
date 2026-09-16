@@ -45,7 +45,17 @@ export type AutomationPolicy = {
   updatedAt: string;
 };
 
-export type AutomationRunStatus = "queued" | "running" | "succeeded" | "failed" | "awaiting_approval" | "retrying" | "paused" | "cancelled" | "missed" | "interrupted";
+export type AutomationRunStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "awaiting_approval"
+  | "retrying"
+  | "paused"
+  | "cancelled"
+  | "missed"
+  | "interrupted";
 export type AutomationRun = {
   id: string;
   repositoryId: string;
@@ -65,7 +75,26 @@ export type AutomationRun = {
   nextAttemptAt?: string;
 };
 
-export type AutomationApproval = { actor: string; approvedAt: string; inputFingerprint: string; action: string };
-export type OperationalAuditRecord = { id: string; repositoryId: string; runId: string; action: string; approval: AutomationApproval; request: Record<string, unknown>; response: Record<string, unknown>; recordedAt: string };
-export type CreateOperationalEventInput = Omit<OperationalEvent, "id" | "receivedAt" | "deduplicationKey" | "correlationKey"> & { deduplicationKey?: string; correlationKey?: string };
-export type SaveAutomationPolicyInput = Omit<AutomationPolicy, "id" | "createdAt" | "updatedAt"> & { id?: string };
+export type AutomationApproval = {
+  actor: string;
+  approvedAt: string;
+  inputFingerprint: string;
+  action: string;
+};
+export type OperationalAuditRecord = {
+  id: string;
+  repositoryId: string;
+  runId: string;
+  action: string;
+  approval: AutomationApproval;
+  request: Record<string, unknown>;
+  response: Record<string, unknown>;
+  recordedAt: string;
+};
+export type CreateOperationalEventInput = Omit<
+  OperationalEvent,
+  "id" | "receivedAt" | "deduplicationKey" | "correlationKey"
+> & { deduplicationKey?: string; correlationKey?: string };
+export type SaveAutomationPolicyInput = Omit<AutomationPolicy, "id" | "createdAt" | "updatedAt"> & {
+  id?: string;
+};

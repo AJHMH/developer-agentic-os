@@ -29,8 +29,14 @@ export class LocalGitAdapter {
     return {
       available: true,
       currentBranch: branch.stdout.trim() || "HEAD",
-      recentCommits: commits.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean),
-      changedFiles: changedFiles.stdout.split(/\r?\n/).map((line) => line.slice(3).trim()).filter(Boolean),
+      recentCommits: commits.stdout
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean),
+      changedFiles: changedFiles.stdout
+        .split(/\r?\n/)
+        .map((line) => line.slice(3).trim())
+        .filter(Boolean),
       message: "Local git is connected.",
     };
   }
@@ -38,7 +44,10 @@ export class LocalGitAdapter {
   async changedFiles(baseBranch = "main"): Promise<string[]> {
     const diff = await this.runGit(["diff", "--name-only", baseBranch, "HEAD"]);
     if (!diff.ok) return (await this.getStatus()).changedFiles;
-    return diff.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    return diff.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
   }
 
   private async runGit(args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {

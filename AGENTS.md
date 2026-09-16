@@ -14,7 +14,10 @@ Use the default labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-
 
 This is a single-context repository centered on `CONTEXT.md`, with ADRs under `docs/adr/`. See `docs/agents/domain.md`.
 
+The active hosted architecture is multi-tenant: each Clerk organization maps to one Neon `tenant_id`, GitHub org membership is checked separately from app access, and repository data is scoped to the authenticated org. ADR 0001 and ADR 0002 capture the implemented design.
+
 <!-- graft:start -->
+
 ## Graft — repo context graph
 
 This repo is indexed in `graft/`: small linked markdown nodes that explain each

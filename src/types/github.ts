@@ -1,6 +1,7 @@
 import type { IntegrationStatus } from "./integration";
 
-export type GitHubFailureKind = "authentication" | "rate_limit" | "not_found" | "unavailable" | "invalid_response";
+export type GitHubFailureKind =
+  "authentication" | "rate_limit" | "not_found" | "unavailable" | "invalid_response";
 
 export type GitHubFailure = {
   kind: GitHubFailureKind;

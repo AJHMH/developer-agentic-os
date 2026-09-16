@@ -481,17 +481,20 @@ CREATE INDEX idx_tenant_vercel_project ON vercel_projects(tenant_id, vercel_proj
 ## Migration Strategy
 
 ### Phase 1: Schema Creation
+
 1. Run all CREATE TABLE statements
 2. Create indexes
 3. Verify foreign keys
 
 ### Phase 2: Data Migration (from JSON to Neon)
+
 1. Read existing `.developer-agentic-os/` JSON files
 2. Transform to Neon schema
 3. Create a single test tenant
 4. Migrate all local data into it
 
 ### Phase 3: Application Integration
+
 1. Replace `json-file.ts` store adapter with Neon adapter
 2. Ensure every query includes `tenant_id` filtering
 3. Test with multi-tenant fixtures

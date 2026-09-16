@@ -10,7 +10,10 @@ import { getLocalStorePaths, initializeLocalStore } from "../local-store/paths";
 const emptyWorkspace: Workspace = { repositories: [], activeRepositoryId: null };
 
 export class WorkspaceError extends Error {
-  constructor(readonly code: "INVALID_PATH" | "NOT_FOUND", message: string) {
+  constructor(
+    readonly code: "INVALID_PATH" | "NOT_FOUND",
+    message: string
+  ) {
     super(message);
     this.name = "WorkspaceError";
   }
@@ -26,7 +29,9 @@ export class WorkspaceStore {
 
   async getActiveContext(): Promise<RepositoryContext> {
     const workspace = await this.readWorkspace();
-    const active = workspace.repositories.find((repository) => repository.id === workspace.activeRepositoryId);
+    const active = workspace.repositories.find(
+      (repository) => repository.id === workspace.activeRepositoryId
+    );
     return active ?? defaultContext(this.root);
   }
 
@@ -59,7 +64,10 @@ export class WorkspaceStore {
     const repositories = workspace.repositories.filter((repository) => repository.id !== id);
     await this.writeWorkspace({
       repositories,
-      activeRepositoryId: workspace.activeRepositoryId === id ? repositories[0]?.id ?? null : workspace.activeRepositoryId,
+      activeRepositoryId:
+        workspace.activeRepositoryId === id
+          ? (repositories[0]?.id ?? null)
+          : workspace.activeRepositoryId,
     });
   }
 
@@ -86,7 +94,8 @@ export class WorkspaceStore {
 export const workspaceStore = new WorkspaceStore();
 
 async function repositoryFromPath(inputPath: string): Promise<RepositoryContext> {
-  if (!inputPath?.trim()) throw new WorkspaceError("INVALID_PATH", "A repository path is required.");
+  if (!inputPath?.trim())
+    throw new WorkspaceError("INVALID_PATH", "A repository path is required.");
 
   let resolvedPath: string;
   try {

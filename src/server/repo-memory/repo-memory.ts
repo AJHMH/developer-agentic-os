@@ -27,12 +27,18 @@ export async function refreshRepoMemorySnapshot(root = process.cwd()): Promise<R
 
 export async function getRepoMemorySnapshot(root = process.cwd()): Promise<RepoMemorySnapshot> {
   const paths = await initializeLocalStore(root);
-  return readJsonFile<RepoMemorySnapshot>(resolve(paths.repoMemory, "snapshot.json"), await refreshRepoMemorySnapshot(root));
+  return readJsonFile<RepoMemorySnapshot>(
+    resolve(paths.repoMemory, "snapshot.json"),
+    await refreshRepoMemorySnapshot(root)
+  );
 }
 
 async function listAreas(root: string): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
-  return entries.filter((entry) => entry.isDirectory() && !ignoredDirectories.has(entry.name)).map((entry) => entry.name).sort();
+  return entries
+    .filter((entry) => entry.isDirectory() && !ignoredDirectories.has(entry.name))
+    .map((entry) => entry.name)
+    .sort();
 }
 
 async function listRepoFiles(root: string): Promise<RepoMemoryFile[]> {
@@ -51,7 +57,10 @@ async function walk(current: string, output: RepoMemoryFile[], root: string): Pr
       continue;
     }
     if (!entry.isFile()) continue;
-    output.push({ path: relative(root, fullPath).replace(/\\/g, "/"), kind: classifyFile(entry.name, fullPath) });
+    output.push({
+      path: relative(root, fullPath).replace(/\\/g, "/"),
+      kind: classifyFile(entry.name, fullPath),
+    });
   }
 }
 
@@ -59,8 +68,30 @@ function classifyFile(name: string, path: string): RepoMemoryFile["kind"] {
   const lower = `${path}/${name}`.toLowerCase();
   if (lower.includes("test") || lower.includes("/tests/")) return "test";
   if (lower.endsWith(".md") || lower.endsWith(".mdx") || lower.endsWith(".txt")) return "doc";
-  if (lower.endsWith(".json") || lower.endsWith(".yaml") || lower.endsWith(".yml") || lower.endsWith(".toml") || lower.endsWith(".config.ts") || lower.endsWith(".config.mjs")) return "config";
-  if (lower.endsWith(".ts") || lower.endsWith(".tsx") || lower.endsWith(".js") || lower.endsWith(".jsx") || lower.endsWith(".css")) return "code";
-  if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp") || lower.endsWith(".svg")) return "asset";
+  if (
+    lower.endsWith(".json") ||
+    lower.endsWith(".yaml") ||
+    lower.endsWith(".yml") ||
+    lower.endsWith(".toml") ||
+    lower.endsWith(".config.ts") ||
+    lower.endsWith(".config.mjs")
+  )
+    return "config";
+  if (
+    lower.endsWith(".ts") ||
+    lower.endsWith(".tsx") ||
+    lower.endsWith(".js") ||
+    lower.endsWith(".jsx") ||
+    lower.endsWith(".css")
+  )
+    return "code";
+  if (
+    lower.endsWith(".png") ||
+    lower.endsWith(".jpg") ||
+    lower.endsWith(".jpeg") ||
+    lower.endsWith(".webp") ||
+    lower.endsWith(".svg")
+  )
+    return "asset";
   return "other";
 }

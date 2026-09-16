@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { Artifact, ArtifactIndexEntry, CreateArtifactInput, ListArtifactsOptions } from "@/types/artifact";
+import type {
+  Artifact,
+  ArtifactIndexEntry,
+  CreateArtifactInput,
+  ListArtifactsOptions,
+} from "@/types/artifact";
 import { initializeLocalStore } from "../local-store/paths";
 import { readJsonFile, writeJsonFile } from "../local-store/json-file";
 import { repositoryId } from "../workspace/repository-context";
@@ -45,13 +50,19 @@ export class ArtifactStore {
       createdAt,
       repositoryId: this.repositoryContextId,
       repositoryRoot: this.repositoryRoot,
-      provenance: input.provenance ?? { repositoryId: this.repositoryContextId, repositoryRoot: this.repositoryRoot, workflowRefs: [] },
+      provenance: input.provenance ?? {
+        repositoryId: this.repositoryContextId,
+        repositoryRoot: this.repositoryRoot,
+        workflowRefs: [],
+      },
     };
     const entry = this.toIndexEntry(artifact);
     const index = await this.readIndex();
 
     await writeJsonFile(resolve(paths.artifacts, `${id}.json`), artifact);
-    await this.writeIndex({ artifacts: [entry, ...index.artifacts.filter((item) => item.id !== id)] });
+    await this.writeIndex({
+      artifacts: [entry, ...index.artifacts.filter((item) => item.id !== id)],
+    });
 
     return entry;
   }
@@ -75,7 +86,11 @@ export class ArtifactStore {
     if (!index.artifacts.some((artifact) => artifact.id === id)) return null;
 
     const artifactPath = resolve(paths.artifacts, `${id}.json`);
-    if (!artifactPath.startsWith(`${paths.artifacts}\\`) && !artifactPath.startsWith(`${paths.artifacts}/`)) return null;
+    if (
+      !artifactPath.startsWith(`${paths.artifacts}\\`) &&
+      !artifactPath.startsWith(`${paths.artifacts}/`)
+    )
+      return null;
     if (!existsSync(artifactPath)) return null;
 
     return readJsonFile<Artifact | null>(artifactPath, null);
@@ -97,7 +112,10 @@ export class ArtifactStore {
 
   private async readIndex(): Promise<ArtifactIndex> {
     const paths = await initializeLocalStore(this.root);
-    const index = await readJsonFile<ArtifactIndex>(resolve(paths.artifacts, "index.json"), emptyIndex);
+    const index = await readJsonFile<ArtifactIndex>(
+      resolve(paths.artifacts, "index.json"),
+      emptyIndex
+    );
     await this.writeIndex(index);
     return index;
   }

@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import type { CreateWorkItemInput, ListWorkItemsOptions, UpdateWorkItemInput, WorkItem, WorkItemContextReference, WorkItemPriority, WorkItemStatus } from "@/types/work-item";
+import type {
+  CreateWorkItemInput,
+  ListWorkItemsOptions,
+  UpdateWorkItemInput,
+  WorkItem,
+  WorkItemContextReference,
+  WorkItemPriority,
+  WorkItemStatus,
+} from "@/types/work-item";
 import { readJsonFile, writeJsonFile } from "../local-store/json-file";
 import { getLocalStorePaths, initializeLocalStore } from "../local-store/paths";
 
@@ -9,7 +17,10 @@ const statuses: WorkItemStatus[] = ["open", "in_progress", "blocked", "completed
 const priorities: WorkItemPriority[] = ["low", "normal", "high", "urgent"];
 
 export class WorkItemError extends Error {
-  constructor(readonly code: "INVALID_INPUT" | "NOT_FOUND", message: string) {
+  constructor(
+    readonly code: "INVALID_INPUT" | "NOT_FOUND",
+    message: string
+  ) {
     super(message);
     this.name = "WorkItemError";
   }
@@ -21,7 +32,11 @@ export class WorkItemStore {
   async list(options: ListWorkItemsOptions = {}): Promise<WorkItem[]> {
     const items = await this.readItems();
     return items
-      .filter((item) => (!options.repositoryId || item.repositoryId === options.repositoryId) && (!options.status || item.status === options.status))
+      .filter(
+        (item) =>
+          (!options.repositoryId || item.repositoryId === options.repositoryId) &&
+          (!options.status || item.status === options.status)
+      )
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
@@ -51,7 +66,8 @@ export class WorkItemStore {
   async update(id: string, input: UpdateWorkItemInput, repositoryId?: string): Promise<WorkItem> {
     const items = await this.readItems();
     const index = items.findIndex((item) => item.id === id);
-    if (index < 0 || (repositoryId && items[index].repositoryId !== repositoryId)) throw new WorkItemError("NOT_FOUND", "Work item not found.");
+    if (index < 0 || (repositoryId && items[index].repositoryId !== repositoryId))
+      throw new WorkItemError("NOT_FOUND", "Work item not found.");
     validateUpdate(input);
     const current = items[index];
     const now = new Date().toISOString();
@@ -69,8 +85,15 @@ export class WorkItemStore {
       notes: input.notes?.trim() ?? current.notes,
       dueNote: input.dueNote?.trim() || (input.dueNote === "" ? null : current.dueNote),
       updatedAt: now,
-      completedAt: input.status === "completed" ? current.completedAt ?? now : input.status !== undefined ? null : current.completedAt,
-      statusHistory: statusChanged ? [...current.statusHistory, { status: input.status as WorkItemStatus, changedAt: now }] : current.statusHistory,
+      completedAt:
+        input.status === "completed"
+          ? (current.completedAt ?? now)
+          : input.status !== undefined
+            ? null
+            : current.completedAt,
+      statusHistory: statusChanged
+        ? [...current.statusHistory, { status: input.status as WorkItemStatus, changedAt: now }]
+        : current.statusHistory,
     };
     items[index] = updated;
     await this.writeItems(items);
@@ -90,21 +113,46 @@ export class WorkItemStore {
 export const workItemStore = new WorkItemStore();
 
 function validateCreate(input: CreateWorkItemInput): void {
-  if (!input || typeof input.title !== "string" || !input.title.trim()) throw new WorkItemError("INVALID_INPUT", "title is required");
-  if (typeof input.repositoryId !== "string" || !input.repositoryId.trim()) throw new WorkItemError("INVALID_INPUT", "repositoryId is required");
+  if (!input || typeof input.title !== "string" || !input.title.trim())
+    throw new WorkItemError("INVALID_INPUT", "title is required");
+  if (typeof input.repositoryId !== "string" || !input.repositoryId.trim())
+    throw new WorkItemError("INVALID_INPUT", "repositoryId is required");
   validateUpdate(input);
 }
 
 function validateUpdate(input: UpdateWorkItemInput): void {
-  if (input.title !== undefined && typeof input.title !== "string") throw new WorkItemError("INVALID_INPUT", "title must be a string");
-  if (input.notes !== undefined && typeof input.notes !== "string") throw new WorkItemError("INVALID_INPUT", "notes must be a string");
-  if (input.dueNote !== undefined && input.dueNote !== null && typeof input.dueNote !== "string") throw new WorkItemError("INVALID_INPUT", "dueNote must be a string or null");
-  if (input.dueAt !== undefined && input.dueAt !== null && typeof input.dueAt !== "string") throw new WorkItemError("INVALID_INPUT", "dueAt must be a string or null");
-  if (input.status !== undefined && !statuses.includes(input.status)) throw new WorkItemError("INVALID_INPUT", "Invalid work item status");
-  if (input.priority !== undefined && !priorities.includes(input.priority)) throw new WorkItemError("INVALID_INPUT", "Invalid work item priority");
-  if (input.contextRefs !== undefined && (!Array.isArray(input.contextRefs) || input.contextRefs.some(invalidReference))) throw new WorkItemError("INVALID_INPUT", "contextRefs must contain explicit references");
+  if (input.title !== undefined && typeof input.title !== "string")
+    throw new WorkItemError("INVALID_INPUT", "title must be a string");
+  if (input.notes !== undefined && typeof input.notes !== "string")
+    throw new WorkItemError("INVALID_INPUT", "notes must be a string");
+  if (input.dueNote !== undefined && input.dueNote !== null && typeof input.dueNote !== "string")
+    throw new WorkItemError("INVALID_INPUT", "dueNote must be a string or null");
+  if (input.dueAt !== undefined && input.dueAt !== null && typeof input.dueAt !== "string")
+    throw new WorkItemError("INVALID_INPUT", "dueAt must be a string or null");
+  if (input.status !== undefined && !statuses.includes(input.status))
+    throw new WorkItemError("INVALID_INPUT", "Invalid work item status");
+  if (input.priority !== undefined && !priorities.includes(input.priority))
+    throw new WorkItemError("INVALID_INPUT", "Invalid work item priority");
+  if (
+    input.contextRefs !== undefined &&
+    (!Array.isArray(input.contextRefs) || input.contextRefs.some(invalidReference))
+  )
+    throw new WorkItemError("INVALID_INPUT", "contextRefs must contain explicit references");
 }
 
 function invalidReference(reference: WorkItemContextReference): boolean {
-  return !reference || !["file", "area", "artifact", "skill", "routine", "incoming_signal", "integration_event"].includes(reference.kind) || typeof reference.ref !== "string" || !reference.ref.trim();
+  return (
+    !reference ||
+    ![
+      "file",
+      "area",
+      "artifact",
+      "skill",
+      "routine",
+      "incoming_signal",
+      "integration_event",
+    ].includes(reference.kind) ||
+    typeof reference.ref !== "string" ||
+    !reference.ref.trim()
+  );
 }

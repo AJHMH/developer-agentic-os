@@ -75,5 +75,8 @@ export function getAllRoutines(): RoutineDefinition[] {
  * Find a routine by ID.
  */
 export function findRoutine(id: string): RoutineDefinition | undefined {
-  return builtInRoutines.find((item) => item.id === id) ?? placeholderRoutines.find((item) => item.id === id);
+  return (
+    builtInRoutines.find((item) => item.id === id) ??
+    placeholderRoutines.find((item) => item.id === id)
+  );
 }

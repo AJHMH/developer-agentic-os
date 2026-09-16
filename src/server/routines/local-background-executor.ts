@@ -16,7 +16,14 @@ export type RoutineExecutorTrigger = { repositoryId?: string };
 type ExecutorState = RoutineExecutorStatus & { leaseToken: string | null };
 
 const defaultClock: ExecutorClock = { now: () => new Date() };
-const defaultState: ExecutorState = { running: false, leaseExpiresAt: null, lastTickAt: null, lastRunAt: null, lastError: null, leaseToken: null };
+const defaultState: ExecutorState = {
+  running: false,
+  leaseExpiresAt: null,
+  lastTickAt: null,
+  lastRunAt: null,
+  lastError: null,
+  leaseToken: null,
+};
 const processLocks = new Map<string, Promise<void>>();
 
 export type LocalBackgroundExecutorOptions = {
@@ -48,7 +55,9 @@ export function createLocalBackgroundExecutor(options: LocalBackgroundExecutorOp
   async function withProcessLock<T>(work: () => Promise<T>): Promise<T> {
     const previous = processLocks.get(root) ?? Promise.resolve();
     let release!: () => void;
-    const current = new Promise<void>((resolveRelease) => { release = resolveRelease; });
+    const current = new Promise<void>((resolveRelease) => {
+      release = resolveRelease;
+    });
     const queued = previous.then(() => current);
     processLocks.set(root, queued);
     await previous;
@@ -64,9 +73,19 @@ export function createLocalBackgroundExecutor(options: LocalBackgroundExecutorOp
     return withProcessLock(async () => {
       const state = await getState();
       const now = clock.now();
-      if (state.leaseToken && state.leaseExpiresAt && Date.parse(state.leaseExpiresAt) > now.getTime()) return null;
+      if (
+        state.leaseToken &&
+        state.leaseExpiresAt &&
+        Date.parse(state.leaseExpiresAt) > now.getTime()
+      )
+        return null;
       const token = randomUUID();
-      await saveState({ ...state, leaseToken: token, leaseExpiresAt: new Date(now.getTime() + leaseTtlMs).toISOString(), lastError: null });
+      await saveState({
+        ...state,
+        leaseToken: token,
+        leaseExpiresAt: new Date(now.getTime() + leaseTtlMs).toISOString(),
+        lastError: null,
+      });
       return token;
     });
   }
@@ -91,25 +110,44 @@ export function createLocalBackgroundExecutor(options: LocalBackgroundExecutorOp
     let count = 0;
     try {
       const requestedContext = await resolveContext(trigger.repositoryId);
-      const contexts = trigger.repositoryId || !isApplicationExecutor ? [requestedContext] : await workspace.listRepositories();
-      if (!contexts.some((context) => context.id === requestedContext.id)) contexts.unshift(requestedContext);
+      const contexts =
+        trigger.repositoryId || !isApplicationExecutor
+          ? [requestedContext]
+          : await workspace.listRepositories();
+      if (!contexts.some((context) => context.id === requestedContext.id))
+        contexts.unshift(requestedContext);
       for (const context of contexts) {
         count += await createOperationalExecutor(context.path).runDueSchedule(context.id);
         // Create WorkspaceContext once per repository to avoid N² store instantiations
         const workspaceContext = await createWorkspaceContext(context.path);
         const routines = await createRoutineRegistry({ context: workspaceContext }).listRoutines();
         for (const routine of routines) {
-          if (routine.executionMode !== "local_background" || routine.status === "paused" || !(await isDue(routine, workspaceContext))) continue;
-          const target = routine.repositoryId ? await resolveContext(routine.repositoryId) : context;
-          const targetContext = target.id === context.id ? workspaceContext : await createWorkspaceContext(target.path);
-          const registry = createRoutineRegistry({ context: targetContext, now: clock.now.bind(clock) });
+          if (
+            routine.executionMode !== "local_background" ||
+            routine.status === "paused" ||
+            !(await isDue(routine, workspaceContext))
+          )
+            continue;
+          const target = routine.repositoryId
+            ? await resolveContext(routine.repositoryId)
+            : context;
+          const targetContext =
+            target.id === context.id ? workspaceContext : await createWorkspaceContext(target.path);
+          const registry = createRoutineRegistry({
+            context: targetContext,
+            now: clock.now.bind(clock),
+          });
           const result = await registry.runRoutine(routine.id, { source: "local_background" });
           count += 1;
           if (result.status === "failed") error = result.error ?? `Routine ${routine.id} failed.`;
         }
       }
       const state = await getState();
-      await saveState({ ...state, lastTickAt: clock.now().toISOString(), lastRunAt: count ? clock.now().toISOString() : state.lastRunAt });
+      await saveState({
+        ...state,
+        lastTickAt: clock.now().toISOString(),
+        lastRunAt: count ? clock.now().toISOString() : state.lastRunAt,
+      });
       return count;
     } catch (caught) {
       error = caught instanceof Error ? caught.message : "Background executor failed.";
@@ -119,19 +157,29 @@ export function createLocalBackgroundExecutor(options: LocalBackgroundExecutorOp
     }
   }
 
-  async function isDue(routine: RoutineDefinition, workspaceContext: Awaited<ReturnType<typeof createWorkspaceContext>>): Promise<boolean> {
-    const executions = await createRoutineRegistry({ context: workspaceContext }).listExecutions({ routineId: routine.id, limit: 20 });
+  async function isDue(
+    routine: RoutineDefinition,
+    workspaceContext: Awaited<ReturnType<typeof createWorkspaceContext>>
+  ): Promise<boolean> {
+    const executions = await createRoutineRegistry({ context: workspaceContext }).listExecutions({
+      routineId: routine.id,
+      limit: 20,
+    });
     const latest = executions[0];
     if (!latest) return true;
     const now = clock.now();
     const last = new Date(latest.startedAt);
-    if (routine.scheduleLabel === "weekly") return utcWeek(now) !== utcWeek(last) || now.getUTCFullYear() !== last.getUTCFullYear();
+    if (routine.scheduleLabel === "weekly")
+      return utcWeek(now) !== utcWeek(last) || now.getUTCFullYear() !== last.getUTCFullYear();
     return now.toISOString().slice(0, 10) !== last.toISOString().slice(0, 10);
   }
 
   return {
     async start(trigger: RoutineExecutorTrigger = {}): Promise<RoutineExecutorStatus> {
-      if (!timer) timer = setInterval(() => { void runDue(trigger); }, intervalMs);
+      if (!timer)
+        timer = setInterval(() => {
+          void runDue(trigger);
+        }, intervalMs);
       const state = await getState();
       await saveState({ ...state, running: true });
       await runDue(trigger);
@@ -145,21 +193,31 @@ export function createLocalBackgroundExecutor(options: LocalBackgroundExecutorOp
       await saveState({ ...(await getState()), running: false });
       return this.status();
     },
-    async trigger(trigger: RoutineExecutorTrigger = {}): Promise<{ executed: number; status: RoutineExecutorStatus }> {
+    async trigger(
+      trigger: RoutineExecutorTrigger = {}
+    ): Promise<{ executed: number; status: RoutineExecutorStatus }> {
       const executed = await runDue(trigger);
       return { executed, status: await this.status() };
     },
     async status(): Promise<RoutineExecutorStatus> {
       const state = await getState();
-      const expired = state.leaseExpiresAt ? Date.parse(state.leaseExpiresAt) <= clock.now().getTime() : false;
-      return { running: state.running, leaseExpiresAt: expired ? null : state.leaseExpiresAt, lastTickAt: state.lastTickAt, lastRunAt: state.lastRunAt, lastError: state.lastError };
+      const expired = state.leaseExpiresAt
+        ? Date.parse(state.leaseExpiresAt) <= clock.now().getTime()
+        : false;
+      return {
+        running: state.running,
+        leaseExpiresAt: expired ? null : state.leaseExpiresAt,
+        lastTickAt: state.lastTickAt,
+        lastRunAt: state.lastRunAt,
+        lastError: state.lastError,
+      };
     },
   };
 }
 
 function utcWeek(date: Date): number {
   const start = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-  return Math.ceil((((date.getTime() - start.getTime()) / 86_400_000) + start.getUTCDay() + 1) / 7);
+  return Math.ceil(((date.getTime() - start.getTime()) / 86_400_000 + start.getUTCDay() + 1) / 7);
 }
 
 export const localBackgroundExecutor = createLocalBackgroundExecutor();

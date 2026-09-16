@@ -20,7 +20,7 @@ type SkillRegistryOptions = {
  * - Skill definitions (from skill-definitions.ts)
  * - Skill handlers (from skill-handlers.ts)
  * - Skill orchestrator (from skill-orchestrator.ts)
- * 
+ *
  * Benefits:
  * - Definitions can be tested independently
  * - Handlers can be tested independently
@@ -48,7 +48,11 @@ export function createSkillRegistry(options: SkillRegistryOptions = {}) {
       return allSkills;
     },
 
-    async runSkill(id: string, input: Record<string, string> = {}, options: { workflowRefs?: WorkflowReference[] } = {}): Promise<SkillRunResult> {
+    async runSkill(
+      id: string,
+      input: Record<string, string> = {},
+      options: { workflowRefs?: WorkflowReference[] } = {}
+    ): Promise<SkillRunResult> {
       return orchestrator.runSkill(id, input, options);
     },
   };

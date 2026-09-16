@@ -1,7 +1,8 @@
 # Getting Started
 
-This guide gets a fresh checkout of Developer Workflow OS v2 running locally, and walks
-through obtaining the GitHub and Vercel credentials the Integration Operations panel uses.
+This guide gets a fresh checkout of Developer Workflow OS v2 running locally, and it also notes the hosted multi-tenant architecture used when the app is configured for Clerk + Neon + GitHub org-scoped access.
+
+The app can run in local demo mode, but the active hosted product model is multi-tenant: each Clerk organization maps to a Neon `tenant_id`, and GitHub org membership is verified separately from app access before repository data is exposed.
 
 ## What you'll need
 
@@ -13,6 +14,8 @@ through obtaining the GitHub and Vercel credentials the Integration Operations p
 
 The app runs with **no** environment variables configured. Local Git status always works;
 GitHub, Vercel, and Email simply show as "unconfigured" until you add credentials.
+
+For the hosted tenant model, the practical requirements are: Clerk org membership for app access, a Neon tenant-scoped database, and GitHub org membership verification before GitHub-backed repository data is visible. This is the setup described in ADR 0001 and ADR 0002.
 
 ## Step 1: Install and run
 
@@ -50,7 +53,7 @@ for one repository.
      - **Issues**: Read-only
      - **Pull requests**: Read-only
      - **Actions**: Read-only
-     Click **Generate token** and copy the value — it starts with `github_pat_`.
+       Click **Generate token** and copy the value — it starts with `github_pat_`.
    - **Classic token**: click **Tokens (classic) → Generate new token (classic)**. Select
      the **repo** scope (or **public_repo** if the repository is public). Click **Generate
      token** and copy the value — it starts with `ghp_`.
@@ -63,6 +66,7 @@ for one repository.
 
    `GITHUB_REPOSITORY` uses the `owner/repo` form. If you omit it, the app falls back to
    `GITHUB_OWNER` + `GITHUB_REPO`, or to this repository's Git remote origin.
+
 4. Restart `npm run dev` and use the Integration status refresh control — the GitHub
    panel should report "GitHub credentials detected."
 
@@ -95,6 +99,7 @@ The Vercel adapter needs an access token and a project id.
 
      This writes `.vercel/project.json`, which the adapter reads automatically for
      `projectId` and `orgId` (team id).
+
    - **Or read them from the dashboard**: open the project on vercel.com, go to
      **Settings → General**, and copy the **Project ID**. If the project belongs to a
      team, copy the **Team ID** from the team's **Settings** page. Set both in `.env`:
@@ -112,13 +117,13 @@ To disable the Vercel panel entirely instead of leaving it unconfigured, set
 
 ## Supported integrations
 
-| Integration | Status without setup | Env vars |
-| --- | --- | --- |
-| Local Git | Connected automatically | none |
-| GitHub | Unconfigured | `GITHUB_TOKEN`/`GH_TOKEN`, `GITHUB_REPOSITORY` (or `GITHUB_OWNER`+`GITHUB_REPO`), optional `GITHUB_API_URL` |
-| Vercel | Unconfigured | `VERCEL_TOKEN`/`VERCEL_API_TOKEN`, `VERCEL_PROJECT_ID`, optional `VERCEL_TEAM_ID`, `VERCEL_API_URL`, `VERCEL_INTEGRATION_ENABLED` |
-| Email | Local demo mode | optional `EMAIL_PROVIDER`, `EMAIL_PROVIDER_DATA`, `EMAIL_ENABLED` |
-| Sentry, Cloudflare, CodeRabbit, WorkOS, Clerk, Convex, NeonDB, Upstash, Slack | Deferred (staged) | none yet — no adapter reads environment variables for these |
+| Integration                                                                   | Status without setup    | Env vars                                                                                                                          |
+| ----------------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Local Git                                                                     | Connected automatically | none                                                                                                                              |
+| GitHub                                                                        | Unconfigured            | `GITHUB_TOKEN`/`GH_TOKEN`, `GITHUB_REPOSITORY` (or `GITHUB_OWNER`+`GITHUB_REPO`), optional `GITHUB_API_URL`                       |
+| Vercel                                                                        | Unconfigured            | `VERCEL_TOKEN`/`VERCEL_API_TOKEN`, `VERCEL_PROJECT_ID`, optional `VERCEL_TEAM_ID`, `VERCEL_API_URL`, `VERCEL_INTEGRATION_ENABLED` |
+| Email                                                                         | Local demo mode         | optional `EMAIL_PROVIDER`, `EMAIL_PROVIDER_DATA`, `EMAIL_ENABLED`                                                                 |
+| Sentry, Cloudflare, CodeRabbit, WorkOS, Clerk, Convex, NeonDB, Upstash, Slack | Deferred (staged)       | none yet — no adapter reads environment variables for these                                                                       |
 
 See [.env.example](../.env.example) for the full, commented template.
 

@@ -1,6 +1,7 @@
 import type { IntegrationStatus } from "./integration";
 
-export type VercelFailureKind = "authentication" | "rate_limit" | "not_found" | "timeout" | "unavailable" | "invalid_response";
+export type VercelFailureKind =
+  "authentication" | "rate_limit" | "not_found" | "timeout" | "unavailable" | "invalid_response";
 
 export type VercelFailure = { kind: VercelFailureKind; message: string };
 

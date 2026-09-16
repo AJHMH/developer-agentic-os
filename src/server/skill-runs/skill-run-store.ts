@@ -45,7 +45,9 @@ export class SkillRunStore {
     return run;
   }
 
-  async listRuns({ limit = 50, skillId }: { limit?: number; skillId?: string } = {}): Promise<SkillRunRecord[]> {
+  async listRuns({ limit = 50, skillId }: { limit?: number; skillId?: string } = {}): Promise<
+    SkillRunRecord[]
+  > {
     const index = await this.readIndex();
     return index.runs.filter((run) => !skillId || run.skillId === skillId).slice(0, limit);
   }

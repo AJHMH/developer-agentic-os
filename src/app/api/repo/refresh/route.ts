@@ -9,7 +9,8 @@ export async function POST(request: Request = new Request("http://localhost")) {
     const context = await repositoryContextForRequest(request);
     return NextResponse.json(await refreshRepoMemorySnapshot(context.path));
   } catch (error) {
-    if (error instanceof WorkspaceError) return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof WorkspaceError)
+      return NextResponse.json({ error: error.message }, { status: 404 });
     throw error;
   }
 }

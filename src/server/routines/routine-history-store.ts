@@ -22,7 +22,10 @@ export class RoutineHistoryStore {
     this.repositoryContextId = repositoryId(this.repositoryRoot);
   }
 
-  async createExecution(routineId: string, options: { source?: RoutineExecutionRecord["source"]; startedAt?: string } = {}): Promise<RoutineExecutionRecord> {
+  async createExecution(
+    routineId: string,
+    options: { source?: RoutineExecutionRecord["source"]; startedAt?: string } = {}
+  ): Promise<RoutineExecutionRecord> {
     const execution: RoutineExecutionRecord = {
       id: randomUUID(),
       routineId,
@@ -40,7 +43,16 @@ export class RoutineHistoryStore {
     return execution;
   }
 
-  async completeExecution(execution: RoutineExecutionRecord, update: { status: RoutineStatus; artifactIds?: string[]; skillRunId?: string | null; error?: string | null; completedAt?: string }): Promise<RoutineExecutionRecord> {
+  async completeExecution(
+    execution: RoutineExecutionRecord,
+    update: {
+      status: RoutineStatus;
+      artifactIds?: string[];
+      skillRunId?: string | null;
+      error?: string | null;
+      completedAt?: string;
+    }
+  ): Promise<RoutineExecutionRecord> {
     const completed: RoutineExecutionRecord = {
       ...execution,
       status: update.status,
@@ -53,19 +65,30 @@ export class RoutineHistoryStore {
     return completed;
   }
 
-  async listExecutions({ limit = 50, routineId }: { limit?: number; routineId?: string } = {}): Promise<RoutineExecutionRecord[]> {
+  async listExecutions({
+    limit = 50,
+    routineId,
+  }: { limit?: number; routineId?: string } = {}): Promise<RoutineExecutionRecord[]> {
     const history = await this.readHistory();
-    return history.executions.filter((execution) => !routineId || execution.routineId === routineId).slice(0, limit);
+    return history.executions
+      .filter((execution) => !routineId || execution.routineId === routineId)
+      .slice(0, limit);
   }
 
   async pauseRoutine(routineId: string): Promise<void> {
     const history = await this.readHistory();
-    await this.writeHistory({ ...history, pausedRoutineIds: Array.from(new Set([...history.pausedRoutineIds, routineId])) });
+    await this.writeHistory({
+      ...history,
+      pausedRoutineIds: Array.from(new Set([...history.pausedRoutineIds, routineId])),
+    });
   }
 
   async resumeRoutine(routineId: string): Promise<void> {
     const history = await this.readHistory();
-    await this.writeHistory({ ...history, pausedRoutineIds: history.pausedRoutineIds.filter((id) => id !== routineId) });
+    await this.writeHistory({
+      ...history,
+      pausedRoutineIds: history.pausedRoutineIds.filter((id) => id !== routineId),
+    });
   }
 
   async isPaused(routineId: string): Promise<boolean> {

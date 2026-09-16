@@ -1,14 +1,22 @@
 # ADR 0001: Multi-Tenancy Schema Pattern
 
-**Status**: Proposed
+**Status**: Accepted and Implemented
 
 **Date**: 2026-09-09
+**Last Updated**: 2026-09-12
+
+## Status Update
+
+This pattern is now implemented in the hosted product. The Neon migrations create tenant-scoped normalized tables in `migrations/001-init.sql` and later hosted-state migrations, tenant filtering is enforced in the persistence layer, and hosted workspace/domain aggregates no longer use a general JSONB state blob.
+
+The application now treats each Clerk organization as a tenant, each table as tenant-scoped, and all reads/writes as constrained to the authenticated org's `tenant_id`.
 
 ## Context
 
 Developer Agentic OS v2 is transitioning from local-first single-tenant (JSON files in `.developer-agentic-os/`) to a multi-tenant SaaS model on Vercel + Neon.
 
 Key constraints:
+
 - Multiple organizations (tenants) run independently on shared infrastructure
 - Each organization has its own repository context, artifacts, work items, skills, and routines
 - Row-level data isolation is required (not table-per-tenant, not separate databases)
@@ -19,26 +27,28 @@ Key constraints:
 
 We will use **row-level tenant ID isolation** as the multi-tenancy pattern:
 
-1. **Every table has a `tenant_id` column** (not null, indexed, part of unique constraints where needed)
-2. **All queries must include `WHERE tenant_id = ?`** in the ORM/query layer or middleware
+1. **Tenant-owned tables include a `tenant_id` column** (not null, indexed, part of unique constraints where needed)
+2. **All queries against tenant-owned tables must include `WHERE tenant_id = ?`** in the ORM/query layer or middleware
 3. **The Clerk session provides the authenticated tenant context** on each request
 4. **The Next.js API layer enforces tenant filtering** before any data is returned
+5. **A small set of global reference tables, such as `users` and `schema_migrations`, remain intentionally outside the tenant scope**
 
 ### Schema Principles
 
-- `tenant_id` is a UUID foreign key to an `organizations` table
-- Unique constraints on entities include `(tenant_id, entity_key)` tuples, not just `entity_key`
+- `tenant_id` is a UUID foreign key to an `organizations` table on tenant-owned tables
+- Unique constraints on tenant-scoped entities include `(tenant_id, entity_key)` tuples, not just `entity_key`
 - Example: artifacts uniquely identified by `(tenant_id, artifact_id)`, not just `artifact_id`
 - GitHub and Vercel data is cached but includes `tenant_id` to track which org synced it
 - Webhook events include tenant routing metadata to look up the org before processing
+- Global user identity and migration metadata are not replicated per tenant; they are referenced from tenant-owned rows via foreign keys or app-level membership tables
 
 ## Why Row-Level Over Alternatives
 
-| Pattern | Pros | Cons |
-|---------|------|------|
-| **Row-level** | Single schema, dynamic scaling, fast migrations, audit trail | Requires query discipline, risk of filter bypass |
-| **Table-per-tenant** | Trivial isolation, no filter risk | Schema explosion, hard to query across tenants, migration nightmare |
-| **DB-per-tenant** | Strongest isolation | Operational overhead, cost, complexity, migrations per tenant |
+| Pattern              | Pros                                                         | Cons                                                                |
+| -------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| **Row-level**        | Single schema, dynamic scaling, fast migrations, audit trail | Requires query discipline, risk of filter bypass                    |
+| **Table-per-tenant** | Trivial isolation, no filter risk                            | Schema explosion, hard to query across tenants, migration nightmare |
+| **DB-per-tenant**    | Strongest isolation                                          | Operational overhead, cost, complexity, migrations per tenant       |
 
 Row-level is the SaaS standard for good reasons: it scales, it's maintainable, and it leverages database constraints properly.
 
@@ -46,10 +56,12 @@ Row-level is the SaaS standard for good reasons: it scales, it's maintainable, a
 
 ### Enforcement Strategy
 
-1. **Database Layer**: Foreign key constraints ensure `tenant_id` references a valid org
-2. **ORM Layer**: Drizzle or Prisma middleware automatically adds `WHERE tenant_id = current_tenant_id` to all queries
-3. **API Layer**: Next.js route handlers read `tenant_id` from Clerk session, pass it to all data access functions
+1. **Database Layer**: Foreign key constraints ensure `tenant_id` references a valid org for tenant-owned rows
+2. **ORM Layer**: middleware adds `WHERE tenant_id = current_tenant_id` to all tenant-scoped queries; global tables such as `users` are exempt by design
+3. **API Layer**: Next.js route handlers read `tenant_id` from Clerk session, pass it to all data access functions, and reject cross-tenant access attempts
 4. **Testing**: Every test seeds a test tenant; queries are scoped to it
+
+This is still row-level isolation, not table-per-tenant. The system shares a single schema while keeping data access constrained to the authenticated organization's `tenant_id` across tenant-owned tables.
 
 ### Example Table Structure
 
@@ -87,12 +99,12 @@ CREATE TABLE work_items (
 
 ## Risks & Mitigations
 
-| Risk | Mitigation |
-|------|-----------|
-| Developer forgets to filter by `tenant_id` in a query | Use ORM middleware + peer review + SQL linting |
-| Accidental cross-tenant data leak | Automated tests with multi-tenant fixtures; audit logging |
-| Performance: filtering adds latency | Index `tenant_id` on all tables; use composite keys |
-| Schema migration complexity | Migrations are standard; no per-tenant overhead |
+| Risk                                                  | Mitigation                                                |
+| ----------------------------------------------------- | --------------------------------------------------------- |
+| Developer forgets to filter by `tenant_id` in a query | Use ORM middleware + peer review + SQL linting            |
+| Accidental cross-tenant data leak                     | Automated tests with multi-tenant fixtures; audit logging |
+| Performance: filtering adds latency                   | Index `tenant_id` on all tables; use composite keys       |
+| Schema migration complexity                           | Migrations are standard; no per-tenant overhead           |
 
 ## Related Decisions
 
@@ -100,14 +112,13 @@ CREATE TABLE work_items (
 - **ADR 0003**: Per-tenant Vercel deployments → `tenant_id` maps to a Vercel project ID
 - **ADR 0004**: Webhook routing → webhook events routed to correct `tenant_id`
 
-## Open Questions
+## Current Status and Resolved Questions
 
-1. Should GitHub data (issues, PRs) be cached in Neon with `tenant_id`, or fetched on-demand from GitHub API?
-   - *Current lean*: Cache metadata with `tenant_id` for fast queries; GitHub is source of truth for content
-2. Should cross-tenant relationships be allowed (e.g., can an artifact reference a file from another org's repo)?
-   - *Current lean*: No; each org is isolated. Can revisit if cross-org workflows emerge.
-3. How do we audit data access across tenants for security?
-   - *Deferred*: Add audit logging in a later ADR if compliance requires it
+1. GitHub data is cached in Neon with `tenant_id` and GitHub remains the source of truth for repo content.
+   - This is the implemented pattern used for repos, issues, pull requests, and related metadata.
+2. Cross-tenant relationships remain disallowed.
+   - Each org is isolated by `tenant_id`; the system is designed to reject access outside the current tenant.
+3. Audit logging is still a future enhancement if compliance requirements or security review demand it.
 
 ## References
 

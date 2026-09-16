@@ -1,9 +1,9 @@
 /**
  * Neon PostgreSQL Data Adapter
- * 
+ *
  * Replaces local JSON file storage with Neon PostgreSQL for multi-tenant data access.
  * Every query includes tenant_id filtering for row-level isolation.
- * 
+ *
  * Usage:
  *   const adapter = new NeonAdapter(databaseUrl, tenantId);
  *   const artifacts = await adapter.listArtifacts();
@@ -89,7 +89,10 @@ export class NeonAdapter {
     }
   }
 
-  async updateArtifact(id: string, artifact: Partial<Record<string, unknown>>): Promise<Record<string, unknown> | null> {
+  async updateArtifact(
+    id: string,
+    artifact: Partial<Record<string, unknown>>
+  ): Promise<Record<string, unknown> | null> {
     const client = await this.getClient();
     try {
       const updates: string[] = [];
@@ -206,7 +209,10 @@ export class NeonAdapter {
     }
   }
 
-  async updateWorkItem(id: string, workItem: Partial<Record<string, unknown>>): Promise<Record<string, unknown> | null> {
+  async updateWorkItem(
+    id: string,
+    workItem: Partial<Record<string, unknown>>
+  ): Promise<Record<string, unknown> | null> {
     const client = await this.getClient();
     try {
       const updates: string[] = [];

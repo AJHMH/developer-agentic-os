@@ -217,7 +217,7 @@ Use this checklist to track your progress through the Neon migration.
         status: "open",
       });
       expect(item.tenant_id).toBe(fixture.tenantId);
-      
+
       const retrieved = await fixture.adapter.getWorkItem(item.id as string);
       expect(retrieved?.title).toBe("Test Item");
     });
@@ -301,7 +301,9 @@ Use this checklist to track your progress through the Neon migration.
 - [ ] **7.7** Create CHANGELOG entry
   ```markdown
   ## [Unreleased]
+
   ### Changed
+
   - Migrated data persistence from local JSON files to Neon PostgreSQL
   - All multi-tenant data now stored in Neon with row-level tenant_id isolation
   - Replaced json-file.ts adapter with NeonAdapter for all data access
@@ -361,6 +363,7 @@ Use this checklist to track your progress through the Neon migration.
 If you encounter issues, refer to [NEON-MIGRATION-GUIDE.md](NEON-MIGRATION-GUIDE.md#troubleshooting) for common problems and solutions.
 
 **Key Resources**:
+
 - [ADR 0001: Multi-Tenancy Schema Pattern](docs/adr/0001-multi-tenancy-schema-pattern.md)
 - [Neon Schema Design](docs/NEON-SCHEMA.md)
 - [Migration Guide](NEON-MIGRATION-GUIDE.md)
@@ -373,6 +376,7 @@ If you encounter issues, refer to [NEON-MIGRATION-GUIDE.md](NEON-MIGRATION-GUIDE
 **Estimated Time**: 4-8 hours depending on number of API routes
 
 **Key Milestones**:
+
 1. ✅ Schema deployed to Neon
 2. ✅ Existing data migrated
 3. ✅ Neon adapter implemented

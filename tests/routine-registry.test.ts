@@ -30,18 +30,41 @@ test("routine registry lists real and placeholder routines", async () => {
   const routines = await registry.listRoutines();
   assert.deepEqual(
     routines.filter((routine) => routine.kind === "built-in").map((routine) => routine.id),
-    ["nightly_repo_digest", "weekly_sprint_digest", "release_readiness_scan"],
+    ["nightly_repo_digest", "weekly_sprint_digest", "release_readiness_scan"]
   );
-  assert.ok(routines.some((routine) => routine.id === "stale_branch_check" && routine.kind === "placeholder"));
-  assert.ok(routines.every((routine) => ["queued", "next", "running", "succeeded", "failed", "paused", "missed"].includes(routine.status)));
-  assert.ok(routines.filter((routine) => routine.kind === "built-in").every((routine) => routine.executionMode === "local_background"));
-  assert.ok(routines.filter((routine) => routine.kind === "placeholder").every((routine) => routine.executionMode === "manual"));
+  assert.ok(
+    routines.some(
+      (routine) => routine.id === "stale_branch_check" && routine.kind === "placeholder"
+    )
+  );
+  assert.ok(
+    routines.every((routine) =>
+      ["queued", "next", "running", "succeeded", "failed", "paused", "missed"].includes(
+        routine.status
+      )
+    )
+  );
+  assert.ok(
+    routines
+      .filter((routine) => routine.kind === "built-in")
+      .every((routine) => routine.executionMode === "local_background")
+  );
+  assert.ok(
+    routines
+      .filter((routine) => routine.kind === "placeholder")
+      .every((routine) => routine.executionMode === "manual")
+  );
 });
 
 test("manual routine run records history and links produced artifact", async () => {
   const root = await createGitRepo();
   try {
-    const registry = createRoutineRegistry({ root, artifactStore: new ArtifactStore(root), skillRunStore: new SkillRunStore(root), historyStore: new RoutineHistoryStore(root) });
+    const registry = createRoutineRegistry({
+      root,
+      artifactStore: new ArtifactStore(root),
+      skillRunStore: new SkillRunStore(root),
+      historyStore: new RoutineHistoryStore(root),
+    });
     const result = await registry.runRoutine("weekly_sprint_digest");
     assert.equal(result.status, "succeeded");
     assert.ok(result.artifactIds.length > 0);
@@ -61,9 +84,17 @@ test("routine can be paused and resumed", async () => {
   try {
     const registry = createRoutineRegistry({ root });
     await registry.pauseRoutine("nightly_repo_digest");
-    assert.equal((await registry.listRoutines()).find((routine) => routine.id === "nightly_repo_digest")?.status, "paused");
+    assert.equal(
+      (await registry.listRoutines()).find((routine) => routine.id === "nightly_repo_digest")
+        ?.status,
+      "paused"
+    );
     await registry.resumeRoutine("nightly_repo_digest");
-    assert.equal((await registry.listRoutines()).find((routine) => routine.id === "nightly_repo_digest")?.status, "next");
+    assert.equal(
+      (await registry.listRoutines()).find((routine) => routine.id === "nightly_repo_digest")
+        ?.status,
+      "next"
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

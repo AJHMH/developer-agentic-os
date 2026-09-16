@@ -29,15 +29,27 @@ test("skill registry lists built-in and placeholder skill commands", async () =>
   const skills = registry.listSkills();
   assert.deepEqual(
     skills.filter((skill) => skill.kind === "built-in").map((skill) => skill.command),
-    ["/repo-summary", "/branch-summary", "/release-readiness", "/implementation-checklist", "/sprint-digest"],
+    [
+      "/repo-summary",
+      "/branch-summary",
+      "/release-readiness",
+      "/implementation-checklist",
+      "/sprint-digest",
+    ]
   );
-  assert.ok(skills.some((skill) => skill.command === "/newsletter" && skill.kind === "placeholder"));
+  assert.ok(
+    skills.some((skill) => skill.command === "/newsletter" && skill.kind === "placeholder")
+  );
 });
 
 test("built-in skill run records lifecycle and creates artifact", async () => {
   const root = await createGitRepo();
   try {
-    const registry = createSkillRegistry({ root, artifactStore: new ArtifactStore(root), runStore: new SkillRunStore(root) });
+    const registry = createSkillRegistry({
+      root,
+      artifactStore: new ArtifactStore(root),
+      runStore: new SkillRunStore(root),
+    });
     const result = await registry.runSkill("repo-summary");
 
     assert.equal(result.status, "succeeded");
@@ -58,7 +70,11 @@ test("built-in skill run records lifecycle and creates artifact", async () => {
 test("skills with required scope fail cleanly without success artifacts", async () => {
   const root = await createGitRepo();
   try {
-    const registry = createSkillRegistry({ root, artifactStore: new ArtifactStore(root), runStore: new SkillRunStore(root) });
+    const registry = createSkillRegistry({
+      root,
+      artifactStore: new ArtifactStore(root),
+      runStore: new SkillRunStore(root),
+    });
     const result = await registry.runSkill("implementation-checklist");
 
     assert.equal(result.status, "failed");
@@ -73,7 +89,11 @@ test("skills with required scope fail cleanly without success artifacts", async 
 test("branch summary requires explicit base and target branch input", async () => {
   const root = await createGitRepo();
   try {
-    const registry = createSkillRegistry({ root, artifactStore: new ArtifactStore(root), runStore: new SkillRunStore(root) });
+    const registry = createSkillRegistry({
+      root,
+      artifactStore: new ArtifactStore(root),
+      runStore: new SkillRunStore(root),
+    });
     const result = await registry.runSkill("branch-summary", { baseBranch: "main" });
     assert.equal(result.status, "failed");
     assert.match(result.run.error ?? "", /target branch/i);

@@ -1,9 +1,9 @@
 /**
  * Neon Test Fixtures
- * 
+ *
  * Provides sample data for testing multi-tenant isolation and adapter functionality.
  * Use these fixtures in unit tests and integration tests.
- * 
+ *
  * Usage:
  *   import { seedTestData } from "@/test/fixtures/neon-fixtures";
  *   const { tenantId, adapter } = await seedTestData();
@@ -11,6 +11,15 @@
 
 import { NeonAdapter } from "@/server/adapters/neon-adapter";
 import { randomUUID } from "node:crypto";
+
+type NeonFixtureClient = {
+  query(query: string, values?: unknown[]): Promise<unknown>;
+  release(): void;
+};
+
+async function fixtureClient(adapter: NeonAdapter): Promise<NeonFixtureClient> {
+  return (adapter as unknown as { getClient(): Promise<NeonFixtureClient> }).getClient();
+}
 
 export interface TestFixture {
   tenantId: string;
@@ -39,12 +48,13 @@ export async function seedTestData(): Promise<TestFixture> {
   });
 
   // Create test tenant
-  const client = await (adapter as any).getClient();
+  const client = await fixtureClient(adapter);
   try {
-    await client.query(
-      "INSERT INTO organizations (id, name, clerk_org_id) VALUES ($1, $2, $3)",
-      [tenantId, "Test Org", `test-${randomUUID()}`]
-    );
+    await client.query("INSERT INTO organizations (id, name, clerk_org_id) VALUES ($1, $2, $3)", [
+      tenantId,
+      "Test Org",
+      `test-${randomUUID()}`,
+    ]);
   } finally {
     client.release();
   }
@@ -167,10 +177,7 @@ export async function seedTestData(): Promise<TestFixture> {
  * Clean up test data from a tenant.
  * Deletes all tables associated with a tenant.
  */
-export async function cleanupTestData(
-  adapter: NeonAdapter,
-  tenantId: string
-): Promise<void> {
+export async function cleanupTestData(adapter: NeonAdapter, tenantId: string): Promise<void> {
   const client = await (adapter as any).getClient();
   try {
     // Delete in reverse order of foreign key dependencies
@@ -201,22 +208,22 @@ export async function cleanupTestData(
 
 /**
  * Example test using fixtures.
- * 
+ *
  * Usage in jest:
  *   import { seedTestData, cleanupTestData } from "@/test/fixtures/neon-fixtures";
- *   
+ *
  *   describe("NeonAdapter", () => {
  *     let fixture: TestFixture;
- *     
+ *
  *     beforeAll(async () => {
  *       fixture = await seedTestData();
  *     });
- *     
+ *
  *     afterAll(async () => {
  *       await cleanupTestData(fixture.adapter, fixture.tenantId);
  *       await fixture.adapter.close();
  *     });
- *     
+ *
  *     test("should list artifacts for tenant", async () => {
  *       const artifacts = await fixture.adapter.listArtifacts();
  *       expect(artifacts).toHaveLength(fixture.artifacts.length);
@@ -239,8 +246,8 @@ export async function verifyTenantIsolation(
   const artifacts2 = await adapter2.listArtifacts();
 
   // Verify each adapter only sees its own tenant's data
-  const isolation1 = artifacts1.every((a) => (a as any).tenant_id === tenantId1);
-  const isolation2 = artifacts2.every((a) => (a as any).tenant_id === tenantId2);
+  const isolation1 = artifacts1.every((a) => (a as { tenant_id?: string }).tenant_id === tenantId1);
+  const isolation2 = artifacts2.every((a) => (a as { tenant_id?: string }).tenant_id === tenantId2);
 
   return isolation1 && isolation2;
 }
@@ -254,19 +261,30 @@ export async function dumpFixtureData(fixture: TestFixture): Promise<void> {
   console.log(`Tenant ID: ${fixture.tenantId}\n`);
 
   console.log("Artifacts:");
-  fixture.artifacts.forEach((a) => console.log(`  - ${(a as any).title}`));
+  fixture.artifacts.forEach((a) =>
+    console.log(`  - ${String((a as { title?: unknown }).title ?? "")}`)
+  );
 
   console.log("\nWork Items:");
-  fixture.workItems.forEach((w) => console.log(`  - ${(w as any).title} (${(w as any).status})`));
+  fixture.workItems.forEach((w) => {
+    const item = w as { title?: unknown; status?: unknown };
+    console.log(`  - ${String(item.title ?? "")} (${String(item.status ?? "")})`);
+  });
 
   console.log("\nSkills:");
-  fixture.skills.forEach((s) => console.log(`  - ${(s as any).command}`));
+  fixture.skills.forEach((s) =>
+    console.log(`  - ${String((s as { command?: unknown }).command ?? "")}`)
+  );
 
   console.log("\nRoutines:");
-  fixture.routines.forEach((r) => console.log(`  - ${(r as any).name}`));
+  fixture.routines.forEach((r) =>
+    console.log(`  - ${String((r as { name?: unknown }).name ?? "")}`)
+  );
 
   console.log("\nRepos:");
-  fixture.repos.forEach((r) => console.log(`  - ${(r as any).github_owner}/${(r as any).github_repo}`));
+  fixture.repos.forEach((r) =>
+    console.log(`  - ${(r as any).github_owner}/${(r as any).github_repo}`)
+  );
 
   console.log("======================\n");
 }

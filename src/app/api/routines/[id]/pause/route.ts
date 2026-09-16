@@ -12,6 +12,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const workspace = await createWorkspaceContext(context.path);
     return NextResponse.json(await createRoutineRegistry({ context: workspace }).pauseRoutine(id));
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown routine error" }, { status: 404 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unknown routine error" },
+      { status: 404 }
+    );
   }
 }

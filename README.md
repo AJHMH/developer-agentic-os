@@ -1,6 +1,8 @@
 # Developer Agentic OS v2
 
-Developer Agentic OS v2 is a local-first command centre for repository work, skills, routines, artifacts, and workspace memory. It is a Next.js App Router application using TypeScript and filesystem-backed JSON state.
+Developer Agentic OS v2 is a repository work OS with both local development mode and hosted multi-tenant SaaS mode. In hosted mode it runs on Vercel + Neon, each Clerk organization maps to one tenant, and every database record is scoped by `tenant_id` with GitHub org membership checked separately before repository data is exposed.
+
+The local-first filesystem workflow remains useful for development and quick setup, but the current product architecture is tenant-scoped and organization-aware.
 
 ## Run Locally
 
@@ -58,9 +60,9 @@ Integration Operations:
 - Provider failures are normalized into actionable states such as unconfigured, authentication, rate limit, timeout, unavailable, and unhealthy.
 - Integration data refreshes on dashboard load and through the manual Integration status refresh control.
 
-Credentials are environment-based for local development. Hosted OAuth and encrypted per-user credential storage remain future production boundaries.
+Credentials are environment-based for local development. Hosted SaaS mode uses Clerk org membership, GitHub OAuth, Neon persistence, and tenant-scoped data access; the local JSON store remains a fallback and local-development convenience rather than the active hosted architecture.
 
-Automatic background routine scheduling and persisted user-added Micro Apps are outside the first build.
+Automatic background routine scheduling and persisted user-added Micro Apps remain outside the first local build, while the hosted tenant model is the active architecture for the multi-org product.
 
 ## Phase Two
 
@@ -81,6 +83,7 @@ Phase-three implementation tickets are tracked under `.scratch/developer-agentic
 Run the application checks from the repository root:
 
 ```powershell
+npm run format:check
 npm run lint
 npm run typecheck
 npm test
@@ -88,11 +91,26 @@ npm run test:e2e
 npm run build
 ```
 
-Expected status for a healthy checkout: every command exits with code `0`; the unit and contract suite reports 60 passing tests, and the Playwright suite reports 32 passing desktop/mobile smoke tests. Playwright uses an isolated local dev server on port `3100` and installs Chromium with:
+To automatically format the codebase with Prettier:
+
+```powershell
+npm run format
+```
+
+Expected status for a healthy checkout: every command exits with code `0`; the unit and contract suite reports passing tests, and the Playwright suite reports smoke tests. Playwright uses an isolated local dev server on port `3100` and installs Chromium with:
 
 ```powershell
 npx playwright install chromium
 ```
+
+## CI/CD and Quality Gates
+
+The repository is protected by GitHub Actions workflows and a Main Branch Ruleset:
+
+- **CI Workflow** ([.github/workflows/ci.yml](.github/workflows/ci.yml)): Runs on every push and pull request to `main`. Executes Prettier format check (`npm run format:check`), ESLint (`npm run lint`), TypeScript typechecking (`npm run typecheck`), unit & integration tests (`npm test`), and Next.js application build (`npm run build`).
+- **CodeQL Security Analysis** ([.github/workflows/codeql.yml](.github/workflows/codeql.yml)): Performs advanced static code analysis and vulnerability scanning for JavaScript/TypeScript on pushes, pull requests, and a weekly schedule.
+- **Dependabot** ([.github/dependabot.yml](.github/dependabot.yml)): Automatically checks for npm dependency vulnerabilities and GitHub Actions version updates on a weekly schedule.
+- **Main Branch Ruleset** ([.github/rulesets/main-ruleset.json](.github/rulesets/main-ruleset.json)): Enforces active branch protection on `main`, requiring pull requests, thread resolution, blocking force pushes and deletions, and requiring all CI checks (`Lint, Format & Typecheck`, `Run Unit & Integration Tests`, `Build Application`, and `CodeQL`) to pass before merging. Synchronize and verify the ruleset against the GitHub repository anytime with `npm run ruleset:sync`.
 
 ## Project References
 

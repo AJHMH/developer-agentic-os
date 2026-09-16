@@ -37,4 +37,6 @@ export type CreateHandoffInput = {
   nextActions?: string[];
 };
 
-export type UpdateHandoffInput = Partial<Pick<Handoff, "title" | "decisions" | "blockers" | "nextActions">>;
+export type UpdateHandoffInput = Partial<
+  Pick<Handoff, "title" | "decisions" | "blockers" | "nextActions">
+>;

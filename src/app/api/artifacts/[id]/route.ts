@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { ArtifactStore } from "@/server/artifacts/artifact-store";
 import { repositoryContextForRequest } from "@/server/workspace/request-context";
 import { createWorkspaceContext } from "@/server/workspace/workspace-context";
 import { WorkspaceError } from "@/server/workspace/workspace-store";
@@ -15,7 +14,8 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
     return NextResponse.json(artifact);
   } catch (error) {
-    if (error instanceof WorkspaceError) return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof WorkspaceError)
+      return NextResponse.json({ error: error.message }, { status: 404 });
     throw error;
   }
 }

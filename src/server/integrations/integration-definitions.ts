@@ -86,7 +86,7 @@ export function createDeferredIntegration(
   id: string,
   name: string,
   kind: IntegrationAdapterStatus["kind"],
-  capabilities: string[],
+  capabilities: string[]
 ): IntegrationAdapterStatus {
   return {
     id,

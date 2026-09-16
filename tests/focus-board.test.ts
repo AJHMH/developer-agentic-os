@@ -22,28 +22,88 @@ test("focus board aggregates one repository without duplicating or leaking recor
     const skillRuns = new SkillRunStore(root);
     const routineHistory = new RoutineHistoryStore(root);
     const now = new Date("2026-09-05T12:00:00.000Z");
-    const overdue = await workItems.create({ title: "Overdue", repositoryId, dueAt: "2026-09-04T12:00:00.000Z", priority: "high" });
+    const overdue = await workItems.create({
+      title: "Overdue",
+      repositoryId,
+      dueAt: "2026-09-04T12:00:00.000Z",
+      priority: "high",
+    });
     const blocked = await workItems.create({ title: "Blocked", repositoryId, status: "blocked" });
-    await workItems.create({ title: "Other repository", repositoryId: otherRepositoryId, dueAt: "2026-09-01T12:00:00.000Z" });
-    const artifact = await artifactStore.createArtifact({ name: "Today digest", type: "digest", content: "current" });
+    await workItems.create({
+      title: "Other repository",
+      repositoryId: otherRepositoryId,
+      dueAt: "2026-09-01T12:00:00.000Z",
+    });
+    const artifact = await artifactStore.createArtifact({
+      name: "Today digest",
+      type: "digest",
+      content: "current",
+    });
     const skill = createSkillRegistry({ root, artifactStore, runStore: skillRuns }).listSkills()[0];
     const failedSkill = await skillRuns.createRun(skill, {});
-    await skillRuns.updateRun({ ...failedSkill, status: "failed", error: "test failure", completedAt: now.toISOString() });
-    const execution = await routineHistory.createExecution("stale_branch_check", { startedAt: now.toISOString() });
-    await routineHistory.completeExecution(execution, { status: "failed", error: "routine failure", completedAt: now.toISOString() });
+    await skillRuns.updateRun({
+      ...failedSkill,
+      status: "failed",
+      error: "test failure",
+      completedAt: now.toISOString(),
+    });
+    const execution = await routineHistory.createExecution("stale_branch_check", {
+      startedAt: now.toISOString(),
+    });
+    await routineHistory.completeExecution(execution, {
+      status: "failed",
+      error: "routine failure",
+      completedAt: now.toISOString(),
+    });
     const operational = new OperationalStore(root);
-    const queued = await operational.createRun({ repositoryId, policyId: "policy", trigger: "provider", input: {}, status: "queued", steps: [], outputs: [], error: null });
-    const running = await operational.createRun({ repositoryId, policyId: "policy", trigger: "provider", input: {}, status: "running", steps: [], outputs: [], error: null });
+    const queued = await operational.createRun({
+      repositoryId,
+      policyId: "policy",
+      trigger: "provider",
+      input: {},
+      status: "queued",
+      steps: [],
+      outputs: [],
+      error: null,
+    });
+    const running = await operational.createRun({
+      repositoryId,
+      policyId: "policy",
+      trigger: "provider",
+      input: {},
+      status: "running",
+      steps: [],
+      outputs: [],
+      error: null,
+    });
 
     const board = await getFocusBoard(repositoryId, root, { now: () => now, workItems });
 
-    assert.deepEqual(board.workItems.map((item) => item.id), [blocked.id, overdue.id]);
-    assert.deepEqual(board.overdueWorkItems.map((item) => item.id), [overdue.id]);
-    assert.deepEqual(board.blockedWorkItems.map((item) => item.id), [blocked.id]);
-    assert.deepEqual(board.recentArtifacts.map((item) => item.id), [artifact.id]);
-    assert.deepEqual(board.failedSkillRuns.map((run) => run.id), [failedSkill.id]);
+    assert.deepEqual(
+      board.workItems.map((item) => item.id),
+      [blocked.id, overdue.id]
+    );
+    assert.deepEqual(
+      board.overdueWorkItems.map((item) => item.id),
+      [overdue.id]
+    );
+    assert.deepEqual(
+      board.blockedWorkItems.map((item) => item.id),
+      [blocked.id]
+    );
+    assert.deepEqual(
+      board.recentArtifacts.map((item) => item.id),
+      [artifact.id]
+    );
+    assert.deepEqual(
+      board.failedSkillRuns.map((run) => run.id),
+      [failedSkill.id]
+    );
     assert.equal(board.failedRoutineExecutions[0]?.routineName, "Stale Branch Check");
-    assert.deepEqual(board.operationalRuns.map((run) => run.id), [running.id, queued.id]);
+    assert.deepEqual(
+      board.operationalRuns.map((run) => run.id),
+      [running.id, queued.id]
+    );
     assert.equal(JSON.stringify(board).includes("Other repository"), false);
   } finally {
     await rm(root, { recursive: true, force: true });

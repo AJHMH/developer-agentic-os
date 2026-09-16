@@ -12,21 +12,38 @@ test("project scaffold exposes required npm scripts", async () => {
 
 test("application shell uses approved product name", async () => {
   const page = await readFile(new URL("../src/app/page.tsx", import.meta.url), "utf8");
-  const shell = await readFile(new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url), "utf8");
+  const shell = await readFile(
+    new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url),
+    "utf8"
+  );
   assert.match(page, /CommandCentreShell/);
   assert.match(shell, /Developer Agentic OS/);
   assert.doesNotMatch(shell, /Robonuggets|YouTube/i);
 });
 
 test("application shell includes approved command centre panels", async () => {
-  const shell = await readFile(new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url), "utf8");
-  for (const panel of ["Micro Apps", "Calendar", "Artifacts", "Second Brain", "Email", "Skills Deck", "Routines"]) {
+  const shell = await readFile(
+    new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url),
+    "utf8"
+  );
+  for (const panel of [
+    "Micro Apps",
+    "Calendar",
+    "Artifacts",
+    "Second Brain",
+    "Email",
+    "Skills Deck",
+    "Routines",
+  ]) {
     assert.match(shell, new RegExp(panel));
   }
 });
 
 test("application shell includes persisted layout resizing controls", async () => {
-  const shell = await readFile(new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url), "utf8");
+  const shell = await readFile(
+    new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url),
+    "utf8"
+  );
   const css = await readFile(new URL("../src/app/globals.css", import.meta.url), "utf8");
   assert.match(shell, /developer-agentic-os-layout-v1/);
   assert.match(shell, /ResizeObserver/);

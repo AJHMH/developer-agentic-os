@@ -25,7 +25,7 @@ export type Workspace = {
 /**
  * WorkspaceContext holds singleton store instances for the lifetime of a request or background job.
  * This enables dependency injection and eliminates N² store instantiations.
- * 
+ *
  * All modules should receive WorkspaceContext via function parameter,
  * not create stores internally.
  */

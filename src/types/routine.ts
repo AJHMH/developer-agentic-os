@@ -1,4 +1,5 @@
-export type RoutineStatus = "queued" | "next" | "running" | "succeeded" | "failed" | "paused" | "missed";
+export type RoutineStatus =
+  "queued" | "next" | "running" | "succeeded" | "failed" | "paused" | "missed";
 export type RoutineKind = "built-in" | "placeholder";
 export type RoutineExecutionMode = "manual" | "local_background";
 export type RoutineExecutionSource = "manual" | "local_background";

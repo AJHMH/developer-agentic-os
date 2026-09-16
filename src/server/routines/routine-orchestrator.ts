@@ -5,13 +5,13 @@ import { contextFromRoot } from "../workspace/repository-context";
 
 /**
  * RoutineOrchestrator: Deep module that coordinates routine execution.
- * 
+ *
  * Responsibilities:
  * - List routines with current status and next due time
  * - Execute routine workflows (invoke skills)
  * - Pause/resume routines
  * - Track execution history
- * 
+ *
  * Dependencies (injected):
  * - routine definitions
  * - history store (for tracking executions)
@@ -25,7 +25,7 @@ export class RoutineOrchestrator {
     private routineDefinitions: Map<string, RoutineDefinition>,
     private historyStore: RoutineHistoryStore,
     private skillOrchestrator: SkillOrchestrator,
-    private now: () => Date,
+    private now: () => Date
   ) {}
 
   /**
@@ -33,27 +33,37 @@ export class RoutineOrchestrator {
    */
   async listRoutines(): Promise<RoutineDefinition[]> {
     const definitions = Array.from(this.routineDefinitions.values());
-    return Promise.all(definitions.map(async (routine, index) => {
-      const executions = await this.historyStore.listExecutions({ routineId: routine.id, limit: 1 });
-      const latest = executions[0];
-      const lastRunAt = latest?.startedAt ?? null;
-      const isPaused = await this.historyStore.isPaused(routine.id);
+    return Promise.all(
+      definitions.map(async (routine, index) => {
+        const executions = await this.historyStore.listExecutions({
+          routineId: routine.id,
+          limit: 1,
+        });
+        const latest = executions[0];
+        const lastRunAt = latest?.startedAt ?? null;
+        const isPaused = await this.historyStore.isPaused(routine.id);
 
-      return {
-        ...routine,
-        status: isPaused ? "paused" : index === 0 ? "next" : routine.status,
-        lastRunAt,
-        nextDueAt: lastRunAt ? calculateNextDueAt(routine.scheduleLabel, new Date(lastRunAt)).toISOString() : this.now().toISOString(),
-        lastExecutionSource: latest?.source ?? null,
-      };
-    }));
+        return {
+          ...routine,
+          status: isPaused ? "paused" : index === 0 ? "next" : routine.status,
+          lastRunAt,
+          nextDueAt: lastRunAt
+            ? calculateNextDueAt(routine.scheduleLabel, new Date(lastRunAt)).toISOString()
+            : this.now().toISOString(),
+          lastExecutionSource: latest?.source ?? null,
+        };
+      })
+    );
   }
 
   /**
    * Execute a routine by ID.
    * Returns a complete RoutineRunResult with artifact references.
    */
-  async runRoutine(id: string, options: { source?: RoutineExecutionSource } = {}): Promise<RoutineRunResult> {
+  async runRoutine(
+    id: string,
+    options: { source?: RoutineExecutionSource } = {}
+  ): Promise<RoutineRunResult> {
     const routine = this.routineDefinitions.get(id);
     if (!routine) throw new Error(`Unknown routine: ${id}`);
 
@@ -61,16 +71,26 @@ export class RoutineOrchestrator {
     await contextFromRoot(this.root);
 
     // Create execution record
-    const execution = await this.historyStore.createExecution(id, { source: options.source ?? "manual", startedAt: this.now().toISOString() });
+    const execution = await this.historyStore.createExecution(id, {
+      source: options.source ?? "manual",
+      startedAt: this.now().toISOString(),
+    });
 
     // Placeholder routines cannot be executed
     if (routine.kind === "placeholder" || !routine.skillId) {
-      const failed = await this.historyStore.completeExecution(execution, { status: "failed", error: "Placeholder routine does not have executable behavior yet." });
+      const failed = await this.historyStore.completeExecution(execution, {
+        status: "failed",
+        error: "Placeholder routine does not have executable behavior yet.",
+      });
       return { status: "failed", execution: failed, artifactIds: [], error: failed.error };
     }
 
     // Execute the linked skill
-    const skillResult = await this.skillOrchestrator.runSkill(routine.skillId, {}, { workflowRefs: [{ kind: "routine", ref: routine.id, label: routine.name }] });
+    const skillResult = await this.skillOrchestrator.runSkill(
+      routine.skillId,
+      {},
+      { workflowRefs: [{ kind: "routine", ref: routine.id, label: routine.name }] }
+    );
     const artifactIds = skillResult.run.artifactId ? [skillResult.run.artifactId] : [];
 
     // Complete execution

@@ -11,7 +11,8 @@ export async function GET(request: Request = new Request("http://localhost")) {
     const workspace = await createWorkspaceContext(context.path);
     return NextResponse.json(await buildSecondBrainGraph(workspace));
   } catch (error) {
-    if (error instanceof WorkspaceError) return NextResponse.json({ error: error.message }, { status: 404 });
+    if (error instanceof WorkspaceError)
+      return NextResponse.json({ error: error.message }, { status: 404 });
     throw error;
   }
 }

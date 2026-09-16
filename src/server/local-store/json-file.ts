@@ -1,24 +1,28 @@
 import { randomUUID } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
 
 export async function readJsonFile<T>(path: string, fallback: T): Promise<T> {
   try {
-    return JSON.parse(await readFile(path, "utf8")) as T;
+    const resolvedPath = resolve(path);
+    return JSON.parse(await readFile(resolvedPath, "utf8")) as T;
   } catch (error) {
-    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return fallback;
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+      return fallback;
     throw error;
   }
 }
 
 export async function writeJsonFile(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const temporaryPath = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  const resolvedPath = resolve(path);
+  const dir = dirname(resolvedPath);
+  await mkdir(dir, { recursive: true });
+  const fileName = basename(resolvedPath);
+  const temporaryPath = resolve(dir, `.${fileName}.${process.pid}.${randomUUID()}.tmp`);
   await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
-      await rename(temporaryPath, path);
+      await rename(temporaryPath, resolvedPath);
       return;
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? error.code : null;
@@ -26,7 +30,7 @@ export async function writeJsonFile(path: string, value: unknown): Promise<void>
         await rm(temporaryPath, { force: true });
         throw error;
       }
-      await new Promise((resolve) => setTimeout(resolve, 10 * (attempt + 1)));
+      await new Promise((res) => setTimeout(res, 10 * (attempt + 1)));
     }
   }
 }

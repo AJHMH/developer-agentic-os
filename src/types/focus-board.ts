@@ -22,6 +22,8 @@ export type FocusBoard = {
   recentArtifacts: ArtifactIndexEntry[];
   failedSkillRuns: SkillRunRecord[];
   failedRoutineExecutions: FocusBoardRoutineFailure[];
-  operationalIncidents: Array<OperationalIncident & { events: import("./operational").OperationalEvent[] }>;
+  operationalIncidents: Array<
+    OperationalIncident & { events: import("./operational").OperationalEvent[] }
+  >;
   operationalRuns: AutomationRun[];
 };

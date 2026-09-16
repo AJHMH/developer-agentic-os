@@ -11,10 +11,18 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const context = await repositoryContextForRequest(request, body);
     const workspace = await createWorkspaceContext(context.path);
-    const result = await createSkillRegistry({ context: workspace }).runSkill(id, body?.input ?? {});
+    const result = await createSkillRegistry({ context: workspace }).runSkill(
+      id,
+      body?.input ?? {}
+    );
     return NextResponse.json(result, { status: result.status === "failed" ? 422 : 200 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown skill error";
-    return NextResponse.json({ error: message }, { status: error instanceof WorkspaceError || message.startsWith("Unknown skill:") ? 404 : 422 });
+    return NextResponse.json(
+      { error: message },
+      {
+        status: error instanceof WorkspaceError || message.startsWith("Unknown skill:") ? 404 : 422,
+      }
+    );
   }
 }

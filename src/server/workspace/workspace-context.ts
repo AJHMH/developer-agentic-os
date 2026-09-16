@@ -10,7 +10,7 @@ import type { WorkspaceContext } from "@/types/workspace";
 /**
  * Creates a WorkspaceContext with singleton store instances.
  * Call this once per request or background job, then pass it to all modules.
- * 
+ *
  * This eliminates N² store instantiations and enables dependency injection for testability.
  */
 export async function createWorkspaceContext(root = process.cwd()): Promise<WorkspaceContext> {

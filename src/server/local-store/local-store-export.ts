@@ -11,7 +11,9 @@ type LocalWorkspace = { repositories?: Array<{ id?: unknown; path?: unknown }> }
 type LocalOperationalState = { incidents?: unknown[]; runs?: unknown[]; audits?: unknown[] };
 type ArtifactIndex = { artifacts?: unknown[] };
 
-export interface LocalStoreExportAdapter { export(): Promise<LocalStoreExport>; }
+export interface LocalStoreExportAdapter {
+  export(): Promise<LocalStoreExport>;
+}
 
 export class DeterministicLocalStoreExportAdapter implements LocalStoreExportAdapter {
   constructor(private readonly root = process.cwd()) {}
@@ -29,7 +31,10 @@ export class DeterministicLocalStoreExportAdapter implements LocalStoreExportAda
       repositories,
       records: {
         workItems: await readJsonFile<Array<Record<string, unknown>>>(paths.workItems, []),
-        incomingSignals: await readJsonFile<Array<Record<string, unknown>>>(paths.incomingSignals, []),
+        incomingSignals: await readJsonFile<Array<Record<string, unknown>>>(
+          paths.incomingSignals,
+          []
+        ),
         incidents: toRecords(operational.incidents),
         automationRuns: toRecords(operational.runs),
         approvals: toRecords(operational.audits),
@@ -41,5 +46,8 @@ export class DeterministicLocalStoreExportAdapter implements LocalStoreExportAda
 }
 
 function toRecords(value: unknown[] | undefined): Array<Record<string, unknown>> {
-  return (value ?? []).filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && !Array.isArray(item));
+  return (value ?? []).filter(
+    (item): item is Record<string, unknown> =>
+      Boolean(item) && typeof item === "object" && !Array.isArray(item)
+  );
 }

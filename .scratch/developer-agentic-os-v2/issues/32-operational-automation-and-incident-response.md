@@ -26,28 +26,28 @@ bounded retries, restart catch-up, audit history, and cross-repository safety.
 ## Acceptance Criteria
 
 - [x] Scheduled and provider events use one normalized, repository-scoped
-  contract with stable deduplication.
+      contract with stable deduplication.
 - [x] Related Incoming Signals group into Operational Incidents without losing
-  source events or provenance.
+      source events or provenance.
 - [x] Local automation has explicit enable, pause, resume, cancellation, and
-  visible lifecycle state.
+      visible lifecycle state.
 - [x] Repository-local policies control triggers, workflows, approval, retries,
-  catch-up, and enablement without storing credentials.
+      catch-up, and enablement without storing credentials.
 - [x] Sentry provides read-only normalized diagnostics with deterministic
-  success and failure fixtures.
+      success and failure fixtures.
 - [x] Typed Skills provide diagnostic workflows through the existing registry.
 - [x] Failed GitHub Actions can be rerun and failed Vercel deployments can be
-  redeployed only after approval.
+      redeployed only after approval.
 - [x] Retries, interruptions, missed schedules, restart catch-up, and global
-  pause are durable and inspectable.
+      pause are durable and inspectable.
 - [x] Consequential actions have immutable provider evidence and complete audit
-  records.
+      records.
 - [x] Work Items, Skill Runs, Artifacts, Inbox Signals, Focus Board entries,
-  and Second Brain links retain explicit provenance.
+      and Second Brain links retain explicit provenance.
 - [x] Two Repository Contexts remain isolated across ingestion, automation,
-  incidents, actions, reset, and inspection.
+      incidents, actions, reset, and inspection.
 - [x] Existing Phase Three and Integration Operations browser flows remain
-  green.
+      green.
 
 ## Testing Seam
 
