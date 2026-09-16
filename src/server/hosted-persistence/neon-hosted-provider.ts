@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import { Pool, type PoolClient } from "@neondatabase/serverless";
+import { neonConfig, Pool, type PoolClient } from "@neondatabase/serverless";
+import WebSocket from "ws";
 
 import type {
   HostedDeploymentState,
@@ -13,6 +14,8 @@ import type {
   HostedWorkspaceState,
   HostedWorkspaceStateProvider,
 } from "@/server/hosted-workspaces/hosted-workspace-store";
+
+neonConfig.webSocketConstructor = WebSocket;
 
 const emptyHostedState = (): HostedState => ({
   repositories: {},

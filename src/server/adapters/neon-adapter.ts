@@ -9,8 +9,11 @@
  *   const artifacts = await adapter.listArtifacts();
  */
 
-import { Pool } from "@neondatabase/serverless";
+import { neonConfig, Pool } from "@neondatabase/serverless";
 import { randomUUID } from "node:crypto";
+import WebSocket from "ws";
+
+neonConfig.webSocketConstructor = WebSocket;
 
 export interface NeonAdapterConfig {
   databaseUrl: string;
