@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Triage — Data Ingestion Pipeline</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .dark { background: #1e1e1e; color: #e0e0e0; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 8px 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #f0f0f0; }
+        .dark button { background: #333; color: #e0e0e0; border-color: #555; }
+        .dark button:hover { background: #444; }
+        svg { display: block; margin: 0 auto; background: white; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .dark svg { background: #2d2d2d; }
+        .title { text-align: center; margin-bottom: 20px; font-size: 24px; font-weight: 600; }
+        .legend { margin-top: 20px; padding: 15px; background: white; border-radius: 4px; font-size: 13px; }
+        .dark .legend { background: #2d2d2d; }
+        .legend-item { margin: 8px 0; }
+        .legend-color { display: inline-block; width: 20px; height: 20px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
+        <button onclick="downloadSVG()">⬇️ Download SVG</button>
+        <button onclick="downloadPNG()">🖼️ Download PNG</button>
+    </div>
+
+    <div class="title">Signal Triage — Data Ingestion Pipeline</div>
+
+    <svg viewBox="0 0 800 300" width="100%" height="auto" style="max-width: 100%; max-height: 600px;">
+        <!-- Data pipeline components -->
+        <g id="pipeline">
+            <!-- GitHub -->
+            <rect x="50" y="100" width="90" height="50" rx="4" fill="#fff3e0" stroke="#f57c00" stroke-width="2"/>
+            <text x="95" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#e65100">GitHub</text>
+
+            <!-- Vercel -->
+            <rect x="180" y="100" width="90" height="50" rx="4" fill="#fff3e0" stroke="#f57c00" stroke-width="2"/>
+            <text x="225" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#e65100">Vercel</text>
+
+            <!-- Webhook Ingress -->
+            <rect x="310" y="100" width="90" height="50" rx="4" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="2"/>
+            <text x="355" y="125" text-anchor="middle" font-size="11" font-weight="600" fill="#4a148c">Webhook</text>
+            <text x="355" y="140" text-anchor="middle" font-size="11" font-weight="600" fill="#4a148c">Ingress</text>
+
+            <!-- Cache -->
+            <rect x="440" y="100" width="90" height="50" rx="4" fill="#e8f5e9" stroke="#388e3c" stroke-width="2"/>
+            <text x="485" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#1b5e20">Cache</text>
+
+            <!-- Command Centre -->
+            <rect x="570" y="100" width="90" height="50" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="2"/>
+            <text x="615" y="125" text-anchor="middle" font-size="11" font-weight="600" fill="#0d47a1">Command</text>
+            <text x="615" y="140" text-anchor="middle" font-size="11" font-weight="600" fill="#0d47a1">Centre</text>
+        </g>
+
+        <!-- Arrows -->
+        <defs>
+            <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                <polygon points="0 0, 10 3, 0 6" fill="#666"/>
+            </marker>
+            <marker id="arrowhead-reverse" markerWidth="10" markerHeight="10" refX="1" refY="3" orient="auto-start-reverse">
+                <polygon points="0 0, 10 3, 0 6" fill="#ccc"/>
+            </marker>
+        </defs>
+
+        <!-- Data flow: External APIs → Ingress -->
+        <path d="M 140 125 L 310 125" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+        <path d="M 270 125 L 310 125" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+        <!-- Main pipeline: Ingress → Cache → UI -->
+        <path d="M 400 125 L 440 125" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+        <path d="M 530 125 L 570 125" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+        <!-- Feedback: UI → Cache (skill output) -->
+        <path d="M 615 150 Q 550 180 485 150" stroke="#ccc" stroke-width="2" stroke-dasharray="5,5" fill="none" marker-end="url(#arrowhead-reverse)"/>
+
+        <!-- Labels -->
+        <text x="220" y="115" font-size="12" fill="#666">webhooks</text>
+        <text x="370" y="115" font-size="12" fill="#666">normalize</text>
+        <text x="500" y="115" font-size="12" fill="#666">render</text>
+        <text x="540" y="175" font-size="11" fill="#999" font-style="italic">skill output</text>
+    </svg>
+
+    <div class="legend">
+        <div style="font-weight: 600; margin-bottom: 10px;">Data Flow Pipeline</div>
+        <div class="legend-item"><span class="legend-color" style="background: #fff3e0;"></span> External API Sources</div>
+        <div class="legend-item"><span class="legend-color" style="background: #f3e5f5;"></span> Processing</div>
+        <div class="legend-item"><span class="legend-color" style="background: #e8f5e9;"></span> Storage</div>
+        <div class="legend-item"><span class="legend-color" style="background: #e3f2fd;"></span> User Interface</div>
+        <div class="legend-item" style="margin-top: 12px;"><strong>Flow:</strong> GitHub & Vercel webhooks → normalize → cache → render in UI. Skill outputs feed back to cache.</div>
+    </div>
+
+    <script>
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark');
+        }
+        function downloadSVG() {
+            const svg = document.querySelector('svg');
+            const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'dataflow.svg';
+            a.click();
+        }
+        function downloadPNG() {
+            alert('PNG export requires canvas support. Please right-click the diagram and save as image.');
+        }
+    </script>
+</body>
+</html>
