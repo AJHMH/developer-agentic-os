@@ -1,127 +1,281 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Developer Workflow — Core Loop</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f5f5;
-            padding: 20px;
-        }
-        .dark { background: #1e1e1e; color: #e0e0e0; }
-        .controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        button {
-            padding: 8px 16px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            background: white;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        button:hover { background: #f0f0f0; }
-        .dark button { background: #333; color: #e0e0e0; border-color: #555; }
-        .dark button:hover { background: #444; }
-        svg { display: block; margin: 0 auto; background: white; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        .dark svg { background: #2d2d2d; }
-        .title { text-align: center; margin-bottom: 20px; font-size: 24px; font-weight: 600; }
-        .legend { margin-top: 20px; padding: 15px; background: white; border-radius: 4px; font-size: 13px; }
-        .dark .legend { background: #2d2d2d; }
-        .legend-item { margin: 8px 0; }
-        .legend-color { display: inline-block; width: 20px; height: 20px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: #f5f5f5;
+        padding: 20px;
+      }
+      .dark {
+        background: #1e1e1e;
+        color: #e0e0e0;
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      button {
+        padding: 8px 16px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background: white;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      button:hover {
+        background: #f0f0f0;
+      }
+      .dark button {
+        background: #333;
+        color: #e0e0e0;
+        border-color: #555;
+      }
+      .dark button:hover {
+        background: #444;
+      }
+      svg {
+        display: block;
+        margin: 0 auto;
+        background: white;
+        border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .dark svg {
+        background: #2d2d2d;
+      }
+      .title {
+        text-align: center;
+        margin-bottom: 20px;
+        font-size: 24px;
+        font-weight: 600;
+      }
+      .legend {
+        margin-top: 20px;
+        padding: 15px;
+        background: white;
+        border-radius: 4px;
+        font-size: 13px;
+      }
+      .dark .legend {
+        background: #2d2d2d;
+      }
+      .legend-item {
+        margin: 8px 0;
+      }
+      .legend-color {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border-radius: 2px;
+        margin-right: 8px;
+        vertical-align: middle;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="controls">
-        <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
-        <button onclick="downloadSVG()">⬇️ Download SVG</button>
-        <button onclick="downloadPNG()">🖼️ Download PNG</button>
+      <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
+      <button onclick="downloadSVG()">⬇️ Download SVG</button>
+      <button onclick="downloadPNG()">🖼️ Download PNG</button>
     </div>
 
     <div class="title">Developer Workflow — Core Loop</div>
 
-    <svg viewBox="0 0 700 300" width="100%" height="auto" style="max-width: 100%; max-height: 600px;">
-        <!-- Workflow nodes -->
-        <g id="workflow">
-            <!-- View Workspace -->
-            <rect x="50" y="100" width="100" height="50" rx="4" fill="#e3f2fd" stroke="#1976d2" stroke-width="2"/>
-            <text x="100" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#0d47a1">View Workspace</text>
+    <svg
+      viewBox="0 0 700 300"
+      width="100%"
+      height="auto"
+      style="max-width: 100%; max-height: 600px"
+    >
+      <!-- Workflow nodes -->
+      <g id="workflow">
+        <!-- View Workspace -->
+        <rect
+          x="50"
+          y="100"
+          width="100"
+          height="50"
+          rx="4"
+          fill="#e3f2fd"
+          stroke="#1976d2"
+          stroke-width="2"
+        />
+        <text x="100" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#0d47a1">
+          View Workspace
+        </text>
 
-            <!-- Trigger Skill -->
-            <rect x="200" y="100" width="100" height="50" rx="4" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="2"/>
-            <text x="250" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#4a148c">Trigger Skill</text>
+        <!-- Trigger Skill -->
+        <rect
+          x="200"
+          y="100"
+          width="100"
+          height="50"
+          rx="4"
+          fill="#f3e5f5"
+          stroke="#7b1fa2"
+          stroke-width="2"
+        />
+        <text x="250" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#4a148c">
+          Trigger Skill
+        </text>
 
-            <!-- Execute -->
-            <rect x="350" y="100" width="100" height="50" rx="4" fill="#f3e5f5" stroke="#7b1fa2" stroke-width="2"/>
-            <text x="400" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#4a148c">Execute</text>
+        <!-- Execute -->
+        <rect
+          x="350"
+          y="100"
+          width="100"
+          height="50"
+          rx="4"
+          fill="#f3e5f5"
+          stroke="#7b1fa2"
+          stroke-width="2"
+        />
+        <text x="400" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#4a148c">
+          Execute
+        </text>
 
-            <!-- Save Artifact -->
-            <rect x="500" y="100" width="100" height="50" rx="4" fill="#e8f5e9" stroke="#388e3c" stroke-width="2"/>
-            <text x="550" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#1b5e20">Save Artifact</text>
+        <!-- Save Artifact -->
+        <rect
+          x="500"
+          y="100"
+          width="100"
+          height="50"
+          rx="4"
+          fill="#e8f5e9"
+          stroke="#388e3c"
+          stroke-width="2"
+        />
+        <text x="550" y="130" text-anchor="middle" font-size="13" font-weight="600" fill="#1b5e20">
+          Save Artifact
+        </text>
 
-            <!-- Review -->
-            <rect x="275" y="200" width="100" height="50" rx="4" fill="#fff3e0" stroke="#f57c00" stroke-width="2"/>
-            <text x="325" y="230" text-anchor="middle" font-size="13" font-weight="600" fill="#e65100">Review</text>
-        </g>
+        <!-- Review -->
+        <rect
+          x="275"
+          y="200"
+          width="100"
+          height="50"
+          rx="4"
+          fill="#fff3e0"
+          stroke="#f57c00"
+          stroke-width="2"
+        />
+        <text x="325" y="230" text-anchor="middle" font-size="13" font-weight="600" fill="#e65100">
+          Review
+        </text>
+      </g>
 
-        <!-- Arrows -->
-        <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                <polygon points="0 0, 10 3, 0 6" fill="#666"/>
-            </marker>
-            <marker id="arrowhead-dashed" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                <polygon points="0 0, 10 3, 0 6" fill="#999"/>
-            </marker>
-        </defs>
+      <!-- Arrows -->
+      <defs>
+        <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+          <polygon points="0 0, 10 3, 0 6" fill="#666" />
+        </marker>
+        <marker
+          id="arrowhead-dashed"
+          markerWidth="10"
+          markerHeight="10"
+          refX="9"
+          refY="3"
+          orient="auto"
+        >
+          <polygon points="0 0, 10 3, 0 6" fill="#999" />
+        </marker>
+      </defs>
 
-        <!-- Solid arrows: main flow -->
-        <path d="M 150 125 L 200 125" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-        <path d="M 300 125 L 350 125" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-        <path d="M 450 125 L 500 125" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-        <path d="M 550 150 Q 425 175 325 200" stroke="#666" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+      <!-- Solid arrows: main flow -->
+      <path
+        d="M 150 125 L 200 125"
+        stroke="#666"
+        stroke-width="2"
+        fill="none"
+        marker-end="url(#arrowhead)"
+      />
+      <path
+        d="M 300 125 L 350 125"
+        stroke="#666"
+        stroke-width="2"
+        fill="none"
+        marker-end="url(#arrowhead)"
+      />
+      <path
+        d="M 450 125 L 500 125"
+        stroke="#666"
+        stroke-width="2"
+        fill="none"
+        marker-end="url(#arrowhead)"
+      />
+      <path
+        d="M 550 150 Q 425 175 325 200"
+        stroke="#666"
+        stroke-width="2"
+        fill="none"
+        marker-end="url(#arrowhead)"
+      />
 
-        <!-- Dashed arrow: feedback loop -->
-        <path d="M 300 200 Q 150 150 100 150" stroke="#999" stroke-width="2" stroke-dasharray="5,5" fill="none" marker-end="url(#arrowhead-dashed)"/>
+      <!-- Dashed arrow: feedback loop -->
+      <path
+        d="M 300 200 Q 150 150 100 150"
+        stroke="#999"
+        stroke-width="2"
+        stroke-dasharray="5,5"
+        fill="none"
+        marker-end="url(#arrowhead-dashed)"
+      />
 
-        <!-- Labels -->
-        <text x="175" y="115" font-size="12" fill="#666">API calls</text>
-        <text x="325" y="115" font-size="12" fill="#666">process</text>
-        <text x="475" y="115" font-size="12" fill="#666">persist</text>
-        <text x="450" y="160" font-size="12" fill="#666">submit</text>
-        <text x="175" y="175" font-size="12" fill="#999">iterate</text>
+      <!-- Labels -->
+      <text x="175" y="115" font-size="12" fill="#666">API calls</text>
+      <text x="325" y="115" font-size="12" fill="#666">process</text>
+      <text x="475" y="115" font-size="12" fill="#666">persist</text>
+      <text x="450" y="160" font-size="12" fill="#666">submit</text>
+      <text x="175" y="175" font-size="12" fill="#999">iterate</text>
     </svg>
 
     <div class="legend">
-        <div style="font-weight: 600; margin-bottom: 10px;">Workflow Stages</div>
-        <div class="legend-item"><span class="legend-color" style="background: #e3f2fd;"></span> View & Review</div>
-        <div class="legend-item"><span class="legend-color" style="background: #f3e5f5;"></span> Skill Processing</div>
-        <div class="legend-item"><span class="legend-color" style="background: #e8f5e9;"></span> Persistence</div>
-        <div class="legend-item" style="margin-top: 12px;"><strong>Core Loop:</strong> Developers view workspace → trigger skills → execute → save artifacts → review → iterate</div>
+      <div style="font-weight: 600; margin-bottom: 10px">Workflow Stages</div>
+      <div class="legend-item">
+        <span class="legend-color" style="background: #e3f2fd"></span> View & Review
+      </div>
+      <div class="legend-item">
+        <span class="legend-color" style="background: #f3e5f5"></span> Skill Processing
+      </div>
+      <div class="legend-item">
+        <span class="legend-color" style="background: #e8f5e9"></span> Persistence
+      </div>
+      <div class="legend-item" style="margin-top: 12px">
+        <strong>Core Loop:</strong> Developers view workspace → trigger skills → execute → save
+        artifacts → review → iterate
+      </div>
     </div>
 
     <script>
-        function toggleDarkMode() {
-            document.body.classList.toggle('dark');
-        }
-        function downloadSVG() {
-            const svg = document.querySelector('svg');
-            const blob = new Blob([svg.outerHTML], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'workflow.svg';
-            a.click();
-        }
-        function downloadPNG() {
-            alert('PNG export requires canvas support. Please right-click the diagram and save as image.');
-        }
+      function toggleDarkMode() {
+        document.body.classList.toggle("dark");
+      }
+      function downloadSVG() {
+        const svg = document.querySelector("svg");
+        const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "workflow.svg";
+        a.click();
+      }
+      function downloadPNG() {
+        alert(
+          "PNG export requires canvas support. Please right-click the diagram and save as image."
+        );
+      }
     </script>
-</body>
+  </body>
 </html>

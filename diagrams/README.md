@@ -10,6 +10,7 @@ Four comprehensive interactive HTML diagrams visualizing the Developer Workflow 
 4. **dataflow.html** — External data ingestion pipeline (GitHub, Vercel → Signal Triage → UI)
 
 All diagrams are:
+
 - ✓ **Interactive**: Pan, zoom, dark/light theme toggle
 - ✓ **Standalone HTML**: No dependencies, open in any browser
 - ✓ **Exportable**: Download as SVG or PNG
@@ -25,6 +26,7 @@ All diagrams are:
 **Purpose**: Core system topology with tenant isolation patterns
 
 **Components**:
+
 - **Next.js Frontend** (Command Centre) — User interface, tenant context management
 - **Next.js API** (tenant-scoped) — All requests filtered by `tenant_id`
 - **Neon Postgres** (row-level isolation) — Data scoped to tenant via WHERE clauses
@@ -32,6 +34,7 @@ All diagrams are:
 - **Clerk** (Auth & org) — User authentication, organization mapping to `tenant_id`
 
 **Key Relationships**:
+
 - Frontend → API (API calls with session token)
 - API → Database (WHERE tenant_id=?)
 - API → GitHub (Webhooks for repo events)
@@ -48,6 +51,7 @@ All diagrams are:
 **Participants**: Browser, API, Clerk, Neon DB, GitHub
 
 **Message Flow**:
+
 1. Browser: "Load workspace"
 2. API → Clerk: "Verify session"
 3. Clerk → API: "tenant_id"
@@ -68,6 +72,7 @@ All diagrams are:
 **Purpose**: Developer interaction loop through Command Centre
 
 **Workflow Stages**:
+
 1. **View Workspace** — Load artifacts, repo list, pending signals
 2. **Trigger Skill** — Select and configure a skill from registry
 3. **Execute** — Run skill against workspace (tenant-scoped session)
@@ -87,10 +92,12 @@ All diagrams are:
 **Purpose**: External data ingestion pipeline and signal routing
 
 **Data Sources**:
+
 - **GitHub** — Repository events, Actions status, OIDC tokens
 - **Vercel** — Deployment webhooks, production status
 
 **Processing**:
+
 - **Webhook Ingress** — Receives normalized webhook payloads
 - **Cache** — Stores enriched events with tenant scoping
 - **Command Centre UI** — Renders cached signals to developer

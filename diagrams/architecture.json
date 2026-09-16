@@ -49,9 +49,9 @@
     }
   ],
   "connections": [
-    {"from": "frontend", "to": "api", "labelDy": -20},
-    {"from": "api", "to": "database", "labelDy": 20},
-    {"from": "api", "to": "github", "labelDy": 20},
-    {"from": "api", "to": "clerk", "labelDx": 20}
+    { "from": "frontend", "to": "api", "labelDy": -20 },
+    { "from": "api", "to": "database", "labelDy": 20 },
+    { "from": "api", "to": "github", "labelDy": 20 },
+    { "from": "api", "to": "clerk", "labelDx": 20 }
   ]
 }

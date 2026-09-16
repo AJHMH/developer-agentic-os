@@ -13,6 +13,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 **Purpose**: Shows the hosted system components and their relationships.
 
 **Key Components**:
+
 - **Clerk** (Security): Authentication, organization identity, org membership management
 - **Next.js Frontend** (Frontend): Hosted Command Centre, micro apps, UI rendering
 - **Next.js API Routes** (Backend): Tenant-scoped API layer, webhook handlers
@@ -22,6 +23,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 - **Vercel Hosting** (Cloud): Edge Functions, Functions, app hosting
 
 **Key Flows**:
+
 - Frontend → Clerk: Session verification
 - Frontend → API: API calls with tenant scope
 - API → Clerk: Retrieve tenant context and org role
@@ -33,6 +35,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 - Vercel Hosting → Frontend: Serves the application
 
 **Tenant Isolation**: The architecture enforces row-level multi-tenancy through:
+
 - Clerk session provides `tenant_id`
 - All Neon queries include `WHERE tenant_id = ?`
 - Unique constraints use `(tenant_id, entity_key)` tuples
@@ -60,11 +63,13 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 10. **Done** (end)
 
 **Branch Points**:
+
 - From View Workspace State: Either trigger a skill or sync external context
 - Review → View Workspace: Graph updates loop back to the main view
 - Routine Exec → Sync: Routines can trigger external context syncing
 
 **Key Concepts**:
+
 - **Artifact**: Durable output persisted to workspace state
 - **Routine**: Scheduled or manual multi-step workflow with skill calls
 - **Graph**: The Second Brain visualization of connected work, tools, and signals
@@ -78,6 +83,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 **Purpose**: Shows a typical request lifecycle when loading the workspace.
 
 **Participants**:
+
 - User Browser
 - Next.js App
 - Clerk (auth service)
@@ -96,6 +102,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 8. Next.js → User Browser: `Render workspace + graph`
 
 **Tenant Safety**:
+
 - Every database query includes the tenant filter
 - Clerk provides the authoritative tenant context
 - GitHub data access is cached per tenant
@@ -109,6 +116,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 **Purpose**: Traces how external data (GitHub repos, Actions, Vercel deployments) flows through the system to the workspace.
 
 **Data Sources** (External):
+
 - **GitHub Repos**: Source repos, branches, commits
 - **GitHub Actions**: Workflows, runs, deployment status
 - **Vercel API**: Projects, deployments, domains
@@ -138,6 +146,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
    - Workspace State → Command Centre: Refresh graph
 
 **Tenant Context**:
+
 - All external data is enriched with `tenant_id` at ingress
 - Database persistence maintains tenant scoping
 - UI display is filtered to the authenticated org's data
@@ -147,6 +156,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 ## Implementation Status
 
 ### Implemented (ADR 0001 & 0002)
+
 - ✅ Row-level multi-tenancy via `tenant_id` column
 - ✅ Clerk organization → tenant mapping
 - ✅ API layer tenant filtering
@@ -156,11 +166,13 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 - ✅ Hosted Command Centre UI
 
 ### In Development
+
 - 🔄 Per-tenant GitHub org setting
 - 🔄 GitHub repos list in UI
 - 🔄 Deployment status display
 
 ### Schema Notes
+
 - **Note**: `developer_agentic_os_workspace_state` is currently a single JSONB blob per tenant (not the normalized `organizations/artifacts/work_items` tables shown in migrations)
 - The normalized schema exists in `migrations/001-init.sql` but is not actively used by the live hosted path
 - `neon-adapter.ts` implementing the normalized schema is referenced only in docs and tests
