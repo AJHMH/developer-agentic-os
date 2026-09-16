@@ -15,6 +15,14 @@ export type GitHubActionsDeploymentDependencies = {
   storeForTenant?: typeof hostedDomainStoreForTenant;
 };
 
+type DeploymentResolutionClaims = {
+  owner: string;
+  repository: string;
+  workflow: string;
+  ref: string;
+  audience: string;
+};
+
 function adminRequired(identity: { orgRole?: string }): NextResponse | null {
   return identity.orgRole === "org:admin"
     ? null
@@ -57,6 +65,7 @@ export async function POST(request: Request) {
   const action = typeof body.action === "string" ? body.action : "";
   if (!action || (!workspaceId && action !== "resolve"))
     return NextResponse.json({ error: "workspaceId and action are required." }, { status: 400 });
+  if (action === "resolve") return resolveGitHubActionsDeployment(request, {}, body);
   const identity = await hostedIdentity(request);
   if (identity instanceof NextResponse) return identity;
   try {
@@ -110,109 +119,78 @@ export async function POST(request: Request) {
         { status: 201 }
       );
     }
-    if (action === "resolve") {
-      const authorization = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
-      const claims: {
-        owner: string;
-        repository: string;
-        workflow: string;
-        ref: string;
-        audience: string;
-      } | null =
-        (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") &&
-        process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
-          ? {
-              owner: String(body.owner ?? ""),
-              repository: String(body.repository ?? ""),
-              workflow: String(body.workflow ?? ""),
-              ref: String(body.ref ?? ""),
-              audience: String(body.audience ?? ""),
-            }
-          : authorization
-            ? await verifyGitHubActionsOidcToken(authorization[1], "developer-agentic-os")
-                .then((verified) => ({
-                  owner: verified.repositoryOwner,
-                  repository: verified.repository.split("/").at(-1) ?? "",
-                  workflow: verified.workflow,
-                  ref: verified.ref,
-                  audience: verified.audience,
-                }))
-                .catch(() => {
-                  throw new DeploymentResolutionError(
-                    "FORBIDDEN",
-                    "Deployment identity is not allowed."
-                  );
-                })
-            : null;
-      if (!claims)
-        return NextResponse.json(
-          { error: "A GitHub Actions OIDC token is required." },
-          { status: 401 }
-        );
-      const configuredOrg = requiredGitHubOrgForTenant(identity.tenantId);
-      if (!configuredOrg || configuredOrg.toLowerCase() !== claims.owner.toLowerCase())
-        throw new DeploymentResolutionError(
-          "FORBIDDEN",
-          "Deployment repository is not allowed for this Tenant."
-        );
-      const target = await resolveDeploymentTarget(identity.domainStore.deploymentRegistry(), {
-        tenantId: identity.tenantId,
-        owner: claims.owner,
-        repository: claims.repository,
-        workflow: claims.workflow,
-        ref: claims.ref,
-        audience: claims.audience,
-      });
-      await identity.domainStore.recordDeploymentResolution(
-        identity.userId,
-        workspaceId,
-        "allowed",
-        `${claims.owner}/${claims.repository}`,
-        target
-      );
-      return NextResponse.json(target);
-    }
     return NextResponse.json({ error: "Unknown deployment action." }, { status: 400 });
   } catch (error) {
-    if (error instanceof DeploymentResolutionError) {
-      await identity.domainStore.recordDeploymentResolution(identity.userId, workspaceId, "denied");
-      return NextResponse.json(
-        { error: error.message },
-        { status: error.code === "UNCONFIGURED" ? 409 : error.code === "NOT_FOUND" ? 404 : 403 }
-      );
-    }
     return hostedError(error);
+  }
+}
+
+async function resolveGitHubActionsClaims(
+  request: Request,
+  verifyToken: typeof verifyGitHubActionsOidcToken,
+  requestBody?: Record<string, unknown>
+): Promise<DeploymentResolutionClaims | null> {
+  if (
+    requestBody &&
+    (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") &&
+    process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
+  ) {
+    return {
+      owner: String(requestBody.owner ?? ""),
+      repository: String(requestBody.repository ?? ""),
+      workflow: String(requestBody.workflow ?? ""),
+      ref: String(requestBody.ref ?? ""),
+      audience: String(requestBody.audience ?? ""),
+    };
+  }
+  const authorization = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
+  if (!authorization) return null;
+  try {
+    const verified = await verifyToken(authorization[1], "developer-agentic-os");
+    return {
+      owner: verified.repositoryOwner,
+      repository: verified.repository.split("/").at(-1) ?? "",
+      workflow: verified.workflow,
+      ref: verified.ref,
+      audience: verified.audience,
+    };
+  } catch {
+    throw new DeploymentResolutionError("FORBIDDEN", "Deployment identity is not allowed.");
   }
 }
 
 export async function resolveGitHubActionsDeployment(
   request: Request,
-  dependencies: GitHubActionsDeploymentDependencies = {}
+  dependencies: GitHubActionsDeploymentDependencies = {},
+  requestBody?: Record<string, unknown>
 ): Promise<NextResponse> {
   const verifyToken = dependencies.verifyToken ?? verifyGitHubActionsOidcToken;
   const findTenant = dependencies.findTenant ?? findHostedTenantForGitHubRepository;
   const storeForTenant = dependencies.storeForTenant ?? hostedDomainStoreForTenant;
-  const authorization = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
-  if (!authorization)
+  const fixtureTenantId =
+    requestBody &&
+    (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") &&
+    process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
+      ? request.headers.get("x-hosted-tenant-id")
+      : null;
+  const claims = await resolveGitHubActionsClaims(request, verifyToken, requestBody);
+  if (!claims)
     return NextResponse.json(
       { error: "A GitHub Actions OIDC token is required." },
       { status: 401 }
     );
   let tenantId: string | null = null;
-  let owner = "";
-  let repository = "";
   try {
-    const verified = await verifyToken(authorization[1], "developer-agentic-os");
-    owner = verified.repositoryOwner;
-    repository = verified.repository.split("/").at(-1) ?? "";
-    tenantId = await findTenant(owner, repository);
+    tenantId = fixtureTenantId && fixtureTenantId.trim()
+      ? fixtureTenantId
+      : await findTenant(claims.owner, claims.repository);
     if (!tenantId)
       return NextResponse.json(
         { error: "Repository registration was not found." },
         { status: 404 }
       );
     const configuredOrg = requiredGitHubOrgForTenant(tenantId);
-    if (!configuredOrg || configuredOrg.toLowerCase() !== owner.toLowerCase())
+    if (!configuredOrg || configuredOrg.toLowerCase() !== claims.owner.toLowerCase())
       throw new DeploymentResolutionError(
         "FORBIDDEN",
         "Deployment repository is not allowed for this Tenant."
@@ -220,26 +198,26 @@ export async function resolveGitHubActionsDeployment(
     const domainStore = storeForTenant(tenantId);
     const target = await resolveDeploymentTarget(domainStore.deploymentRegistry(), {
       tenantId,
-      owner,
-      repository,
-      workflow: verified.workflow,
-      ref: verified.ref,
-      audience: verified.audience,
+      owner: claims.owner,
+      repository: claims.repository,
+      workflow: claims.workflow,
+      ref: claims.ref,
+      audience: claims.audience,
     });
     await domainStore.recordDeploymentResolution(
-      `github-actions:${owner}/${repository}`,
+      `github-actions:${claims.owner}/${claims.repository}`,
       "deployment",
       "allowed",
-      `${owner}/${repository}`
+      `${claims.owner}/${claims.repository}`
     );
     return NextResponse.json(target);
   } catch (error) {
     if (tenantId) {
       await storeForTenant(tenantId).recordDeploymentResolution(
-        `github-actions:${owner}/${repository}`,
+        `github-actions:${claims.owner}/${claims.repository}`,
         "deployment",
         "denied",
-        `${owner}/${repository}`
+        `${claims.owner}/${claims.repository}`
       );
     }
     if (error instanceof DeploymentResolutionError)

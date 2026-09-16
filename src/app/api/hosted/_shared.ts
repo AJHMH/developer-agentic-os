@@ -38,6 +38,5 @@ export function hostedError(error: unknown) {
       { status: code === "NOT_FOUND" ? 404 : 400 }
     );
   }
-  const message = error instanceof Error ? error.message : "An unexpected error occurred.";
-  return NextResponse.json({ error: message }, { status: 500 });
+  return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
 }

@@ -138,6 +138,68 @@ test("hosted deployment route protects mapping mutations and fails closed after 
   assert.deepEqual(await json(unconfigured), { error: "deployment_unconfigured" });
 });
 
+test("hosted deployment resolve action works without hosted user identity headers", async () => {
+  const tenantId = `tenant-public-resolve-${Date.now()}`;
+  const userId = `resolve-admin-${Date.now()}`;
+  process.env.GITHUB_ORG_MAP = JSON.stringify({ [tenantId]: "acme" });
+  const workspaceResponse = await createWorkspace(
+    request(userId, tenantId, "org:admin", {
+      method: "POST",
+      body: JSON.stringify({ name: "Public resolve workspace" }),
+    })
+  );
+  const workspaceId = ((await json(workspaceResponse)).workspace as { id: string }).id;
+
+  const mapping = await POST(
+    request(userId, tenantId, "org:admin", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "set-project",
+        workspaceId,
+        projectId: "prj_public",
+        webhookSecret: "public-secret",
+      }),
+    })
+  );
+  assert.equal(mapping.status, 200);
+
+  const registration = await POST(
+    request(userId, tenantId, "org:admin", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "register-repository",
+        workspaceId,
+        owner: "acme",
+        repository: "checkout",
+        workflow: "deploy.yml",
+        ref: "refs/heads/main",
+      }),
+    })
+  );
+  assert.equal(registration.status, 201);
+
+  const publicResolve = await POST(
+    new Request("http://localhost/api/hosted/deployments", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-hosted-tenant-id": tenantId,
+      },
+      body: JSON.stringify({
+        action: "resolve",
+        owner: "acme",
+        repository: "checkout",
+        workflow: "deploy.yml",
+        ref: "refs/heads/main",
+        audience: "developer-agentic-os",
+      }),
+    })
+  );
+  assert.equal(publicResolve.status, 200);
+  const resolvedBody = await json(publicResolve);
+  assert.equal(resolvedBody.projectId, "prj_public");
+});
+
 test("hosted deployment route exposes tenant-scoped mapping and registrations", async () => {
   const tenantId = `tenant-list-${Date.now()}`;
   const userId = `list-admin-${Date.now()}`;
