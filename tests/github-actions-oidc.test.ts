@@ -194,3 +194,52 @@ test("deployment handler resolves a real token with fixture mode disabled", asyn
     else process.env.GITHUB_ORG_MAP = originalOrgMap;
   }
 });
+
+test("deployment handler distinguishes verification outages from authorization failures", async () => {
+  const response = await resolveGitHubActionsDeployment(
+    new Request("http://localhost/api/hosted/deployments/resolve", {
+      headers: { authorization: ["Bearer", "broken-token"].join(" ") },
+    }),
+    {
+      verifyToken: async () => {
+        throw new Error("GitHub Actions OIDC keys could not be loaded.");
+      },
+    }
+  );
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), {
+    error: "Deployment identity verification is temporarily unavailable.",
+  });
+});
+
+test("deployment handler returns deployment errors even when denied audit logging fails", async () => {
+  const originalOrgMap = process.env.GITHUB_ORG_MAP;
+  process.env.GITHUB_ORG_MAP = JSON.stringify({ "tenant-acme": "other-org" });
+  try {
+    const response = await resolveGitHubActionsDeployment(
+      new Request("http://localhost/api/hosted/deployments/resolve", {
+        headers: { authorization: "Bearer " + token() },
+      }),
+      {
+        verifyToken: (value, audience) =>
+          verifyGitHubActionsOidcToken(value, audience, fetchJwks()),
+        findTenant: async () => "tenant-acme",
+        storeForTenant: () =>
+          ({
+            recordDeploymentResolution: async () => {
+              throw new Error("audit write failed");
+            },
+          }) as never,
+      }
+    );
+
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), {
+      error: "Deployment repository is not allowed for this Tenant.",
+    });
+  } finally {
+    if (originalOrgMap === undefined) delete process.env.GITHUB_ORG_MAP;
+    else process.env.GITHUB_ORG_MAP = originalOrgMap;
+  }
+});

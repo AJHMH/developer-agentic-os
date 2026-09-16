@@ -23,6 +23,19 @@ type DeploymentResolutionClaims = {
   audience: string;
 };
 
+function isVerificationFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    /^OIDC .+ claim is required\.$/.test(error.message) ||
+    /^GitHub Actions OIDC (token is invalid|token algorithm is not allowed|issuer is not allowed|audience is not allowed|token has expired|signing key was not found|signature is invalid|workflow claim is invalid)\.$/.test(
+      error.message
+    ) ||
+    /^GitHub Actions (repository claims do not match|workflow repository claim does not match)\.$/.test(
+      error.message
+    )
+  );
+}
+
 function adminRequired(identity: { orgRole?: string }): NextResponse | null {
   return identity.orgRole === "org:admin"
     ? null
@@ -154,8 +167,12 @@ async function resolveGitHubActionsClaims(
       ref: verified.ref,
       audience: verified.audience,
     };
-  } catch {
-    throw new DeploymentResolutionError("FORBIDDEN", "Deployment identity is not allowed.");
+  } catch (error) {
+    if (isVerificationFailure(error))
+      throw new DeploymentResolutionError("FORBIDDEN", "Deployment identity is not allowed.");
+    throw new Error("Deployment identity verification is temporarily unavailable.", {
+      cause: error,
+    });
   }
 }
 
@@ -173,14 +190,15 @@ export async function resolveGitHubActionsDeployment(
     process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
       ? request.headers.get("x-hosted-tenant-id")
       : null;
-  const claims = await resolveGitHubActionsClaims(request, verifyToken, requestBody);
-  if (!claims)
-    return NextResponse.json(
-      { error: "A GitHub Actions OIDC token is required." },
-      { status: 401 }
-    );
+  let claims: DeploymentResolutionClaims | null = null;
   let tenantId: string | null = null;
   try {
+    claims = await resolveGitHubActionsClaims(request, verifyToken, requestBody);
+    if (!claims)
+      return NextResponse.json(
+        { error: "A GitHub Actions OIDC token is required." },
+        { status: 401 }
+      );
     tenantId = fixtureTenantId && fixtureTenantId.trim()
       ? fixtureTenantId
       : await findTenant(claims.owner, claims.repository);
@@ -212,20 +230,25 @@ export async function resolveGitHubActionsDeployment(
     );
     return NextResponse.json(target);
   } catch (error) {
-    if (tenantId) {
-      await storeForTenant(tenantId).recordDeploymentResolution(
-        `github-actions:${claims.owner}/${claims.repository}`,
-        "deployment",
-        "denied",
-        `${claims.owner}/${claims.repository}`
-      );
+    if (tenantId && claims) {
+      try {
+        await storeForTenant(tenantId).recordDeploymentResolution(
+          `github-actions:${claims.owner}/${claims.repository}`,
+          "deployment",
+          "denied",
+          `${claims.owner}/${claims.repository}`
+        );
+      } catch {}
     }
     if (error instanceof DeploymentResolutionError)
       return NextResponse.json(
         { error: error.message },
         { status: error.code === "UNCONFIGURED" ? 409 : error.code === "NOT_FOUND" ? 404 : 403 }
       );
-    return NextResponse.json({ error: "Deployment identity is not allowed." }, { status: 401 });
+    return NextResponse.json(
+      { error: "Deployment identity verification is temporarily unavailable." },
+      { status: 503 }
+    );
   }
 }
 
