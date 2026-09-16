@@ -94,20 +94,10 @@ export function createLocalBackgroundExecutor(options: LocalBackgroundExecutorOp
       const contexts = trigger.repositoryId || !isApplicationExecutor ? [requestedContext] : await workspace.listRepositories();
       if (!contexts.some((context) => context.id === requestedContext.id)) contexts.unshift(requestedContext);
       for (const context of contexts) {
-<<<<<<< HEAD
-<<<<<<< HEAD
         count += await createOperationalExecutor(context.path).runDueSchedule(context.id);
-        const routines = await createRoutineRegistry({ root: context.path }).listRoutines();
-=======
         // Create WorkspaceContext once per repository to avoid N² store instantiations
         const workspaceContext = await createWorkspaceContext(context.path);
         const routines = await createRoutineRegistry({ context: workspaceContext }).listRoutines();
->>>>>>> 09891135c56f447877955a758fbec292b0a127c8
-=======
-        // Create WorkspaceContext once per repository to avoid N² store instantiations
-        const workspaceContext = await createWorkspaceContext(context.path);
-        const routines = await createRoutineRegistry({ context: workspaceContext }).listRoutines();
->>>>>>> f45bcbcedaee97207de03af6f26fcbbce1dcc900
         for (const routine of routines) {
           if (routine.executionMode !== "local_background" || routine.status === "paused" || !(await isDue(routine, workspaceContext))) continue;
           const target = routine.repositoryId ? await resolveContext(routine.repositoryId) : context;

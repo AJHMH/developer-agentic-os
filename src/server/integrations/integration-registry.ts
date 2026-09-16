@@ -1,15 +1,8 @@
 import type { IntegrationAdapterStatus } from "@/types/integration";
 import { LocalEmailAdapter } from "../email/email-adapter";
 import { LocalGitAdapter } from "../git/local-git-adapter";
-<<<<<<< HEAD
-<<<<<<< HEAD
 import { SentryAdapter } from "./sentry-adapter";
-=======
 import { createDeferredIntegration } from "./integration-definitions";
->>>>>>> 09891135c56f447877955a758fbec292b0a127c8
-=======
-import { createDeferredIntegration } from "./integration-definitions";
->>>>>>> f45bcbcedaee97207de03af6f26fcbbce1dcc900
 
 /**
  * Get integration statuses for the current environment.
@@ -71,20 +64,7 @@ export async function getIntegrationStatuses(root = process.cwd(), env: Record<s
       setup: "Set VERCEL_TOKEN or VERCEL_API_TOKEN and VERCEL_PROJECT_ID to enable Vercel operations.",
       message: hasVercelToken && hasVercelProject ? "Vercel credentials detected." : "Vercel credentials or project configuration are missing.",
     },
-<<<<<<< HEAD
-<<<<<<< HEAD
     { id: "sentry", name: "Sentry", kind: "observability", required: false, status: sentryObservation?.state === "healthy" ? "healthy" : sentryObservation?.state === "unhealthy" || sentryObservation?.state === "authentication" || sentryObservation?.state === "timeout" || sentryObservation?.state === "rate_limit" || sentryObservation?.state === "unavailable" ? "unhealthy" : "unconfigured", capabilities: ["events and outages", "breached metrics", "warnings", "traces", "errors"], setup: "Set SENTRY_AUTH_TOKEN, SENTRY_ORG, and SENTRY_PROJECT or configure .sentryclirc.", message: sentryObservation?.title ?? "Sentry status is unavailable." },
-    deferred("cloudflare", "Cloudflare", "cloud", ["domains", "workers"]),
-    deferred("coderabbit", "CodeRabbit", "observability", ["code review insights"]),
-    deferred("workos", "WorkOS", "identity", ["identity health"]),
-    deferred("clerk", "Clerk", "identity", ["authentication health"]),
-    deferred("convex", "Convex", "database", ["health"]),
-    deferred("neondb", "NeonDB", "database", ["health"]),
-    deferred("upstash", "Upstash", "database", ["health"]),
-=======
-=======
->>>>>>> f45bcbcedaee97207de03af6f26fcbbce1dcc900
-    createDeferredIntegration("sentry", "Sentry", "observability", ["events and outages", "breached metrics", "warnings", "traces", "errors"]),
     createDeferredIntegration("cloudflare", "Cloudflare", "cloud", ["domains", "workers"]),
     createDeferredIntegration("coderabbit", "CodeRabbit", "observability", ["code review insights"]),
     createDeferredIntegration("workos", "WorkOS", "identity", ["identity health"]),
@@ -92,10 +72,6 @@ export async function getIntegrationStatuses(root = process.cwd(), env: Record<s
     createDeferredIntegration("convex", "Convex", "database", ["health"]),
     createDeferredIntegration("neondb", "NeonDB", "database", ["health"]),
     createDeferredIntegration("upstash", "Upstash", "database", ["health"]),
-<<<<<<< HEAD
->>>>>>> 09891135c56f447877955a758fbec292b0a127c8
-=======
->>>>>>> f45bcbcedaee97207de03af6f26fcbbce1dcc900
     email,
     createDeferredIntegration("slack", "Slack", "chat", ["routine notifications"]),
   ];

@@ -22,30 +22,16 @@ type FocusBoardOptions = {
 export async function getFocusBoard(repositoryId: string, repositoryRoot: string, options: FocusBoardOptions = {}): Promise<FocusBoard> {
   const now = options.now ?? (() => new Date());
   const limit = options.limit ?? 12;
-<<<<<<< HEAD
-<<<<<<< HEAD
-  const [workItems, recentArtifacts, failedSkillRuns, failedRoutineExecutions, routines, operationalIncidents, operationalRuns] = await Promise.all([
-    (options.workItems ?? new WorkItemStore(repositoryRoot)).list({ repositoryId }),
-    new ArtifactStore(repositoryRoot).listArtifacts({ limit }),
-    new SkillRunStore(repositoryRoot).listRuns({ limit }),
-    new RoutineHistoryStore(repositoryRoot).listExecutions({ limit }),
-    createRoutineRegistry({ root: repositoryRoot }).listRoutines(),
-    new OperationalStore(repositoryRoot).listIncidents({ repositoryId }),
-    new OperationalStore(repositoryRoot).listRuns({ repositoryId }),
-=======
-=======
->>>>>>> f45bcbcedaee97207de03af6f26fcbbce1dcc900
   const context = options.context;
-  const [workItems, recentArtifacts, failedSkillRuns, failedRoutineExecutions, routines] = await Promise.all([
+  const operationalStore = new OperationalStore(repositoryRoot);
+  const [workItems, recentArtifacts, failedSkillRuns, failedRoutineExecutions, routines, operationalIncidents, operationalRuns] = await Promise.all([
     (options.workItems ?? context?.workItemStore ?? new WorkItemStore(repositoryRoot)).list({ repositoryId }),
     (context?.artifactStore ?? new ArtifactStore(repositoryRoot)).listArtifacts({ limit }),
     (context?.skillRunStore ?? new SkillRunStore(repositoryRoot)).listRuns({ limit }),
     (context?.routineHistoryStore ?? new RoutineHistoryStore(repositoryRoot)).listExecutions({ limit }),
     createRoutineRegistry(context ? { context } : { root: repositoryRoot }).listRoutines(),
-<<<<<<< HEAD
->>>>>>> 09891135c56f447877955a758fbec292b0a127c8
-=======
->>>>>>> f45bcbcedaee97207de03af6f26fcbbce1dcc900
+    operationalStore.listIncidents({ repositoryId }),
+    operationalStore.listRuns({ repositoryId }),
   ]);
   const nowValue = now().getTime();
   const withAttention = workItems

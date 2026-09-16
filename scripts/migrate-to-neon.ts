@@ -14,7 +14,7 @@
  *   - CLERK_ORG_ID: Test org ID (creates organizations table entry)
  */
 
-import { Pool, PoolClient } from "pg";
+import { Pool } from "@neondatabase/serverless";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -38,9 +38,11 @@ interface MigrationState {
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 
-async function getClient(): Promise<PoolClient> {
+async function getClient() {
   return pool.connect();
 }
+
+type PoolClient = Awaited<ReturnType<typeof getClient>>;
 
 async function readJsonFile(path: string): Promise<unknown> {
   try {

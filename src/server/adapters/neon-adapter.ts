@@ -9,7 +9,7 @@
  *   const artifacts = await adapter.listArtifacts();
  */
 
-import { Pool, PoolClient, QueryResult } from "pg";
+import { Pool } from "@neondatabase/serverless";
 import { randomUUID } from "node:crypto";
 
 export interface NeonAdapterConfig {
@@ -26,7 +26,7 @@ export class NeonAdapter {
     this.tenantId = config.tenantId;
   }
 
-  private async getClient(): Promise<PoolClient> {
+  private async getClient() {
     return this.pool.connect();
   }
 
