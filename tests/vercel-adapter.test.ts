@@ -33,8 +33,14 @@ test("vercel adapter maps deployments and log links", async () => {
   assert.equal(result.projectId, "prj_example");
   assert.equal(result.deployments[0]?.state, "ready");
   assert.equal(result.deployments[0]?.target, "production");
-  assert.match(result.deployments[0]?.buildLogUrl ?? "", /vercel\.com\/deployments\/dpl_1/);
-  assert.match(result.deployments[0]?.runtimeLogUrl ?? "", /vercel\.com\/.*\/logs/);
+  assert.match(
+    result.deployments[0]?.buildLogUrl ?? "",
+    /^https:\/\/vercel\.com\/deployments\/dpl_1$/
+  );
+  assert.match(
+    result.deployments[0]?.runtimeLogUrl ?? "",
+    /^https:\/\/vercel\.com\/prj_example\/logs$/
+  );
   assert.equal(calls.length, 1);
 });
 

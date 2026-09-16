@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import { platform } from "node:process";
 
 import type { RepositoryContext, Workspace } from "@/types/workspace";
@@ -108,12 +108,29 @@ async function repositoryFromPath(inputPath: string): Promise<RepositoryContext>
     throw new WorkspaceError("INVALID_PATH", "Repository path must be a directory.");
   }
 
-  return { id: repositoryId(resolvedPath), name: basename(resolvedPath), path: resolvedPath };
+  return {
+    id: repositoryId(resolvedPath),
+    name: repositoryNameFromPath(resolvedPath),
+    path: resolvedPath,
+  };
 }
 
 function defaultContext(root: string): RepositoryContext {
   const resolvedPath = resolve(root);
-  return { id: repositoryId(resolvedPath), name: basename(resolvedPath), path: resolvedPath };
+  return {
+    id: repositoryId(resolvedPath),
+    name: repositoryNameFromPath(resolvedPath),
+    path: resolvedPath,
+  };
+}
+
+function repositoryNameFromPath(path: string): string {
+  return (
+    path
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .at(-1) ?? path
+  );
 }
 
 function repositoryId(path: string): string {
