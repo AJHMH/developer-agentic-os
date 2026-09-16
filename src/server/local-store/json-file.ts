@@ -23,7 +23,7 @@ export async function writeJsonFile(path: string, value: unknown): Promise<void>
   const fileName = basename(resolvedPath);
   const temporaryPath = resolve(dir, `.${fileName}.${process.pid}.${randomUUID()}.tmp`);
   const contents = serializeJsonFile(value);
-  // lgtm[js/http-to-file-access] Callers persist local store state, and values are validated as JSON before writing.
+  // lgtm [js/http-to-file-access] Callers persist local store state, and values are validated as JSON before writing.
   await writeFile(temporaryPath, contents, "utf8");
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {

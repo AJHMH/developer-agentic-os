@@ -1,0 +1,7 @@
+name: Developer Workflow OS CodeQL config
+
+paths-ignore:
+  - diagrams/**/*.html
+  - lessons/**/*.html
+  - reference/**/*.html
+  - sequence.html
