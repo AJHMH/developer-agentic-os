@@ -10,7 +10,9 @@ export async function POST(request: Request) {
       const parsed: unknown = await request.clone().json();
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
         requestBody = parsed as Record<string, unknown>;
-    } catch {}
+    } catch {
+      // Ignore malformed fixture payloads and fall back to OIDC resolution.
+    }
   }
   return resolveGitHubActionsDeployment(request, {}, requestBody);
 }

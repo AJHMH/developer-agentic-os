@@ -211,9 +211,10 @@ export async function resolveGitHubActionsDeployment(
         { error: "A GitHub Actions OIDC token is required." },
         { status: 401 }
       );
-    tenantId = fixtureTenantId && fixtureTenantId.trim()
-      ? fixtureTenantId
-      : await findTenant(claims.owner, claims.repository);
+    tenantId =
+      fixtureTenantId && fixtureTenantId.trim()
+        ? fixtureTenantId
+        : await findTenant(claims.owner, claims.repository);
     if (!tenantId)
       return NextResponse.json(
         { error: "Repository registration was not found." },
@@ -250,7 +251,9 @@ export async function resolveGitHubActionsDeployment(
           "denied",
           `${claims.owner}/${claims.repository}`
         );
-      } catch {}
+      } catch {
+        // Ignore best-effort denial audit failures.
+      }
     }
     if (error instanceof DeploymentResolutionError)
       return NextResponse.json(
