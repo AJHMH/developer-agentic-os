@@ -14,10 +14,14 @@
  *   - CLERK_ORG_ID: Test org ID (creates organizations table entry)
  */
 
-import { Pool, type PoolClient } from "@neondatabase/serverless";
+import { neonConfig, Pool } from "@neondatabase/serverless";
 import { readFile } from "node:fs/promises";
+import type { PoolClient } from "@neondatabase/serverless";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import WebSocket from "ws";
+
+neonConfig.webSocketConstructor = WebSocket;
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const CLERK_ORG_ID = process.env.CLERK_ORG_ID || "test-org-001";
