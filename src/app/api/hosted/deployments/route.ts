@@ -76,7 +76,17 @@ export async function POST(request: Request) {
   }
   const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : "";
   const action = typeof body.action === "string" ? body.action : "";
-  if (!action || (!workspaceId && action !== "resolve"))
+  const supportedActions = new Set([
+    "set-project",
+    "set-webhook-secret",
+    "register-repository",
+    "resolve",
+  ]);
+  if (!action)
+    return NextResponse.json({ error: "workspaceId and action are required." }, { status: 400 });
+  if (!supportedActions.has(action))
+    return NextResponse.json({ error: "Unknown deployment action." }, { status: 400 });
+  if (!workspaceId && action !== "resolve")
     return NextResponse.json({ error: "workspaceId and action are required." }, { status: 400 });
   if (action === "resolve") return resolveGitHubActionsDeployment(request, {}, body);
   const identity = await hostedIdentity(request);

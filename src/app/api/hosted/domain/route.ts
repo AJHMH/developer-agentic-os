@@ -402,7 +402,7 @@ function validateBody(body: HostedDomainBody): string | null {
     ).includes(action as never)
   )
     return "Unknown hosted domain action.";
-  const required = [
+  const connectorIdRequiredActions = [
     "grant-repository",
     "revoke-repository",
     "grant-capability",
@@ -420,20 +420,19 @@ function validateBody(body: HostedDomainBody): string | null {
     "save-credential",
     "revoke-credential",
     "import-migration",
-  ];
+  ].filter(
+    (candidate) =>
+      ![
+        "save-credential",
+        "revoke-credential",
+        "import-migration",
+        "hosted-safe-work",
+        "queue-local-work",
+      ].includes(candidate)
+  );
   if (action === "register-repository" && !requiredString(body, "localPath"))
     return "localPath is required.";
-  if (
-    required.includes(action) &&
-    !requiredString(body, "connectorId") &&
-    ![
-      "save-credential",
-      "revoke-credential",
-      "import-migration",
-      "hosted-safe-work",
-      "queue-local-work",
-    ].includes(action)
-  )
+  if (connectorIdRequiredActions.includes(action) && !requiredString(body, "connectorId"))
     return "connectorId is required.";
   if (
     [

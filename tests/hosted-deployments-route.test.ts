@@ -330,3 +330,16 @@ test("hosted deployment route rejects repository registration without a tenant o
     else process.env.GITHUB_ORG_MAP = originalOrgMap;
   }
 });
+
+test("hosted deployment route reports unknown actions before workspace validation", async () => {
+  const response = await POST(
+    new Request("http://localhost/api/hosted/deployments", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "unsupported-action" }),
+    })
+  );
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await json(response), { error: "Unknown deployment action." });
+});
