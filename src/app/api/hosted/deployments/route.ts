@@ -113,6 +113,8 @@ export async function POST(request: Request) {
       if (denied) return denied;
       const owner = typeof body.owner === "string" ? body.owner : "";
       const repository = typeof body.repository === "string" ? body.repository : "";
+      if (!owner.trim() || !repository.trim())
+        return NextResponse.json({ error: "owner and repository are required." }, { status: 400 });
       const configuredOrg = requiredGitHubOrgForTenant(identity.tenantId);
       if (!configuredOrg || owner.toLowerCase() !== configuredOrg.toLowerCase())
         return NextResponse.json(

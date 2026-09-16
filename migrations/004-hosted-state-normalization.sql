@@ -157,7 +157,7 @@ BEGIN
     END IF;
 
     INSERT INTO hosted_repositories (id, tenant_id, workspace_id, local_path, path_identity, created_at)
-    SELECT (repository->>'id')::uuid, organizations.id, repositories.key,
+    SELECT (repository->>'id')::uuid, organizations.id, repositories.key::uuid,
       repository->>'localPath', repository->>'pathIdentity',
       (repository->>'createdAt')::timestamp
     FROM developer_agentic_os_hosted_state AS legacy
@@ -169,7 +169,7 @@ BEGIN
 
     INSERT INTO hosted_records (id, tenant_id, workspace_id, kind, value)
     SELECT COALESCE(NULLIF(record->>'id', '')::uuid, gen_random_uuid()), organizations.id,
-      records.key, kinds.key, record
+      records.key::uuid, kinds.key, record
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations
       ON organizations.id::text = legacy.tenant_id OR organizations.clerk_org_id = legacy.tenant_id
@@ -179,7 +179,7 @@ BEGIN
     ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_relationships (tenant_id, workspace_id, source_id, target_id, kind)
-    SELECT organizations.id, relationships.key, relationship->>'from',
+    SELECT organizations.id, relationships.key::uuid, relationship->>'from',
       relationship->>'to', relationship->>'kind'
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations
@@ -189,7 +189,7 @@ BEGIN
     ON CONFLICT (tenant_id, workspace_id, source_id, target_id, kind) DO NOTHING;
 
     INSERT INTO hosted_snapshots (id, tenant_id, workspace_id, value)
-    SELECT (snapshot->>'id')::uuid, organizations.id, snapshots.key, snapshot
+    SELECT (snapshot->>'id')::uuid, organizations.id, snapshots.key::uuid, snapshot
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations
       ON organizations.id::text = legacy.tenant_id OR organizations.clerk_org_id = legacy.tenant_id
@@ -198,7 +198,7 @@ BEGIN
     ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_connectors (id, tenant_id, workspace_id, value)
-    SELECT (connector->>'id')::uuid, organizations.id, connector->>'workspaceId', connector
+    SELECT (connector->>'id')::uuid, organizations.id, (connector->>'workspaceId')::uuid, connector
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations
       ON organizations.id::text = legacy.tenant_id OR organizations.clerk_org_id = legacy.tenant_id
@@ -206,7 +206,7 @@ BEGIN
     ON CONFLICT (id) DO NOTHING;
 
     INSERT INTO hosted_credentials (id, tenant_id, workspace_id, value)
-    SELECT (credential->>'id')::uuid, organizations.id, credential->>'workspaceId', credential
+    SELECT (credential->>'id')::uuid, organizations.id, (credential->>'workspaceId')::uuid, credential
     FROM developer_agentic_os_hosted_state AS legacy
     JOIN organizations ON organizations.id::text = legacy.tenant_id OR organizations.clerk_org_id = legacy.tenant_id
     CROSS JOIN LATERAL jsonb_array_elements(legacy.state->'credentials') AS credential

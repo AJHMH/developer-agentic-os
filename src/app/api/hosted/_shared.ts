@@ -38,5 +38,6 @@ export function hostedError(error: unknown) {
       { status: code === "NOT_FOUND" ? 404 : 400 }
     );
   }
+  console.error(error);
   return NextResponse.json({ error: "An unexpected error occurred." }, { status: 500 });
 }

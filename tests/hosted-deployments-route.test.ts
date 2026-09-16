@@ -79,6 +79,21 @@ test("hosted deployment route protects mapping mutations and fails closed after 
   );
   assert.equal(wrongOwner.status, 403);
 
+  const missingRepository = await POST(
+    request(userId, tenantId, "org:admin", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "register-repository",
+        workspaceId,
+        owner: "acme",
+        repository: "",
+        workflow: "deploy.yml",
+        ref: "refs/heads/main",
+      }),
+    })
+  );
+  assert.equal(missingRepository.status, 400);
+
   const registration = await POST(
     request(userId, tenantId, "org:admin", {
       method: "POST",

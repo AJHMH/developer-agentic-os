@@ -91,7 +91,16 @@ async function applyCanonicalMigrations(client: PoolClient): Promise<void> {
 }
 
 async function assertCanonicalSchema(client: PoolClient): Promise<void> {
-  const requiredTables = ["organizations", "repos", "artifacts", "work_items", "vercel_projects"];
+  const requiredTables = [
+    "organizations",
+    "repos",
+    "artifacts",
+    "work_items",
+    "skills",
+    "routines",
+    "handoffs",
+    "migration_status",
+  ];
   const result = await client.query<{ table_name: string }>(
     `SELECT table_name FROM information_schema.tables
      WHERE table_schema = 'public' AND table_name = ANY($1::text[])`,
