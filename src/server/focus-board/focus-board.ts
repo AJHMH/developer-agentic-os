@@ -27,6 +27,7 @@ export async function getFocusBoard(
   const now = options.now ?? (() => new Date());
   const limit = options.limit ?? 12;
   const context = options.context;
+  const operationalStore = new OperationalStore(repositoryRoot);
   const [
     workItems,
     recentArtifacts,
@@ -45,8 +46,8 @@ export async function getFocusBoard(
       limit,
     }),
     createRoutineRegistry(context ? { context } : { root: repositoryRoot }).listRoutines(),
-    new OperationalStore(repositoryRoot).listIncidents({ repositoryId }),
-    new OperationalStore(repositoryRoot).listRuns({ repositoryId }),
+    operationalStore.listIncidents({ repositoryId }),
+    operationalStore.listRuns({ repositoryId }),
   ]);
   const nowValue = now().getTime();
   const withAttention = workItems
