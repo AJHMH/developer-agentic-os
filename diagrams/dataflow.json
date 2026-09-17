@@ -26,7 +26,7 @@
     }
   ],
   "connections": [
-    { "from": "github", "to": "webhook", "labelDy": -15 },
+    { "from": "github", "to": "cache", "labelDy": -15 },
     { "from": "vercel", "to": "webhook", "labelDy": -15 },
     { "from": "webhook", "to": "cache", "labelDy": -15 },
     { "from": "cache", "to": "ui", "labelDy": -15 }

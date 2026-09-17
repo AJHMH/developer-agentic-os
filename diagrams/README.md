@@ -6,14 +6,14 @@ Four comprehensive interactive HTML diagrams visualizing the Developer Workflow 
 
 1. **architecture.html** — System architecture with 5 core components and their tenant-scoped interactions
 2. **sequence.html** — Workspace load API sequence demonstrating tenant context flow
-3. **workflow.html** — Developer workflow loop through Command Centre (7 stages)
-4. **dataflow.html** — External data ingestion pipeline (GitHub, Vercel → Signal Triage → UI)
+3. **workflow.html** — Developer workflow loop through Command Centre (5 stages + feedback loop)
+4. **dataflow.html** — External data ingestion pipeline (GitHub polling, Vercel webhooks → cache → UI)
 
 All diagrams are:
 
-- ✓ **Interactive**: Pan, zoom, dark/light theme toggle
+- ✓ **Interactive**: Dark/light theme toggle on all diagrams (pan/zoom in `architecture.html` and `sequence.html`)
 - ✓ **Standalone HTML**: No dependencies, open in any browser
-- ✓ **Exportable**: Download as SVG or PNG
+- ✓ **Exportable**: Download as SVG (PNG requires manual browser export or additional tools)
 - ✓ **Responsive**: Scale to any viewport
 - ✓ **Embedded SVG**: Inline graphics for fast loading
 
@@ -48,7 +48,7 @@ All diagrams are:
 
 **Purpose**: Step-by-step workspace load demonstrating tenant scoping
 
-**Participants**: Browser, API, Clerk, Neon DB, GitHub
+**Participants**: Browser, API, Clerk, Neon DB
 
 **Message Flow**:
 
@@ -56,10 +56,8 @@ All diagrams are:
 2. API → Clerk: "Verify session"
 3. Clerk → API: "tenant_id"
 4. API → Database: "SELECT WHERE tenant_id=?"
-5. Database → API: "Artifacts"
-6. API → GitHub: "GET /repos"
-7. GitHub → API: "Repo list"
-8. API → Browser: "Render UI"
+5. Database → API: "Workspace records"
+6. API → Browser: "Render UI"
 
 **Security Pattern**: Every database query includes `WHERE tenant_id=?` filtering; tenant context comes from Clerk org membership
 
@@ -73,13 +71,12 @@ All diagrams are:
 
 **Workflow Stages**:
 
-1. **View Workspace** — Load artifacts, repo list, pending signals
+1. **View Workspace** — Load artifacts and pending signals
 2. **Trigger Skill** — Select and configure a skill from registry
 3. **Execute** — Run skill against workspace (tenant-scoped session)
 4. **Save Artifact** — Store output to workspace cache
 5. **Review** — Inspect results, iterate if needed
 6. **Feedback Loop** — Review → View (dashed arrow) allows iteration
-7. **Done** — Complete workflow
 
 **Iteration Pattern**: Review stage can loop back to View Workspace for refinement
 
@@ -93,12 +90,12 @@ All diagrams are:
 
 **Data Sources**:
 
-- **GitHub** — Repository events, Actions status, OIDC tokens
+- **GitHub** — Repository and Actions data fetched via API polling
 - **Vercel** — Deployment webhooks, production status
 
 **Processing**:
 
-- **Webhook Ingress** — Receives normalized webhook payloads
+- **Webhook Ingress** — Receives normalized Vercel webhook payloads
 - **Cache** — Stores enriched events with tenant scoping
 - **Command Centre UI** — Renders cached signals to developer
 
@@ -110,7 +107,7 @@ All diagrams are:
 
 ## Technical Stack
 
-- **Generation**: archify v1 diagram toolkit (tt-a1i/archify)
+- **Generation**: Static JSON specifications + standalone HTML viewers
 - **Format**: Standalone HTML with embedded SVG
 - **Interactivity**: Vanilla JavaScript (no framework dependencies)
 - **Styling**: CSS with dark/light theme toggle
@@ -126,7 +123,7 @@ All diagrams are:
 2. Use controls:
    - **🌙 Dark Mode** — Toggle dark/light theme
    - **⬇️ Download SVG** — Export as vector graphics
-   - **🖼️ Download PNG** — Save as image (requires browser support)
+   - **PNG export** — Use browser or external tooling to export PNG from the rendered SVG
 
 ### Navigation
 

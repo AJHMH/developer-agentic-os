@@ -87,7 +87,6 @@
     <div class="controls">
       <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
       <button onclick="downloadSVG()">⬇️ Download SVG</button>
-      <button onclick="downloadPNG()">🖼️ Download PNG</button>
     </div>
 
     <div class="title">Signal Triage — Data Ingestion Pipeline</div>
@@ -201,7 +200,7 @@
 
       <!-- Data flow: External APIs → Ingress -->
       <path
-        d="M 140 125 L 310 125"
+        d="M 140 100 Q 290 40 440 100"
         stroke="#666"
         stroke-width="2"
         fill="none"
@@ -242,7 +241,8 @@
       />
 
       <!-- Labels -->
-      <text x="220" y="115" font-size="12" fill="#666">webhooks</text>
+      <text x="290" y="55" font-size="12" fill="#666">poll</text>
+      <text x="290" y="115" font-size="12" fill="#666">webhooks</text>
       <text x="370" y="115" font-size="12" fill="#666">normalize</text>
       <text x="500" y="115" font-size="12" fill="#666">render</text>
       <text x="540" y="175" font-size="11" fill="#999" font-style="italic">skill output</text>
@@ -263,8 +263,8 @@
         <span class="legend-color" style="background: #e3f2fd"></span> User Interface
       </div>
       <div class="legend-item" style="margin-top: 12px">
-        <strong>Flow:</strong> GitHub & Vercel webhooks → normalize → cache → render in UI. Skill
-        outputs feed back to cache.
+        <strong>Flow:</strong> GitHub polling and Vercel webhooks → normalize → cache → render in
+        UI. Skill outputs feed back to cache.
       </div>
     </div>
 
@@ -280,11 +280,6 @@
         a.href = url;
         a.download = "dataflow.svg";
         a.click();
-      }
-      function downloadPNG() {
-        alert(
-          "PNG export requires canvas support. Please right-click the diagram and save as image."
-        );
       }
     </script>
   </body>

@@ -87,7 +87,6 @@
     <div class="controls">
       <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
       <button onclick="downloadSVG()">⬇️ Download SVG</button>
-      <button onclick="downloadPNG()">🖼️ Download PNG</button>
     </div>
 
     <div class="title">Developer Workflow — Core Loop</div>
@@ -270,11 +269,6 @@
         a.href = url;
         a.download = "workflow.svg";
         a.click();
-      }
-      function downloadPNG() {
-        alert(
-          "PNG export requires canvas support. Please right-click the diagram and save as image."
-        );
       }
     </script>
   </body>
