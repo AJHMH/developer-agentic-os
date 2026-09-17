@@ -51,15 +51,29 @@ function toJsonFileValue(value: unknown, seen = new Set<object>()): JsonFileValu
       throw new TypeError("JSON files cannot contain non-finite numbers.");
     return value;
   }
-  if (Array.isArray(value)) return value.map((item) => toJsonFileValue(item, seen));
+  if (Array.isArray(value)) {
+    if (seen.has(value)) throw new TypeError("Local store values cannot contain circular data.");
+    seen.add(value);
+    try {
+      return value.map((item) => toJsonFileValue(item, seen));
+    } finally {
+      seen.delete(value);
+    }
+  }
   if (typeof value !== "object" || !isPlainObject(value)) {
     throw new TypeError("Local store values must be JSON-serializable data.");
   }
   if (seen.has(value)) throw new TypeError("Local store values cannot contain circular data.");
   seen.add(value);
-  const jsonObject: { [key: string]: JsonFileValue } = {};
+  const jsonObject = Object.create(null) as { [key: string]: JsonFileValue };
   for (const [key, item] of Object.entries(value)) {
-    if (item !== undefined) jsonObject[key] = toJsonFileValue(item, seen);
+    if (item !== undefined)
+      Object.defineProperty(jsonObject, key, {
+        value: toJsonFileValue(item, seen),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
   }
   seen.delete(value);
   return jsonObject;

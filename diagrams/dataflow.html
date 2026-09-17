@@ -87,6 +87,7 @@
     <div class="controls">
       <button onclick="toggleDarkMode()">🌙 Dark Mode</button>
       <button onclick="downloadSVG()">⬇️ Download SVG</button>
+      <button onclick="downloadPNG()">🖼️ Download PNG</button>
     </div>
 
     <div class="title">Signal Triage — Data Ingestion Pipeline</div>
@@ -280,6 +281,34 @@
         a.href = url;
         a.download = "dataflow.svg";
         a.click();
+      }
+      function downloadPNG() {
+        const svg = document.querySelector("svg");
+        const serializedSvg = new XMLSerializer().serializeToString(svg);
+        const viewBox = svg.viewBox.baseVal;
+        const canvas = document.createElement("canvas");
+        canvas.width = viewBox.width;
+        canvas.height = viewBox.height;
+        const context = canvas.getContext("2d");
+        const image = new Image();
+        const url = URL.createObjectURL(
+          new Blob([serializedSvg], { type: "image/svg+xml;charset=utf-8" })
+        );
+        image.onload = () => {
+          context.fillStyle = "#ffffff";
+          context.fillRect(0, 0, canvas.width, canvas.height);
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob((blob) => {
+            if (!blob) return;
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "dataflow.png";
+            link.click();
+            URL.revokeObjectURL(link.href);
+          }, "image/png");
+        };
+        image.src = url;
       }
     </script>
   </body>

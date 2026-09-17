@@ -73,7 +73,11 @@ else
               Hosted path: <code>hostedIdentity</code>, workspace access, then hosted persistence.
             </li>
             <li>Local path: local store initialization and <code>writeJsonFile</code>.</li>
-            <li>Hosted conceptual path with <code>HOSTED_JSON_FIXTURE_MODE=true</code>.</li>
+            <li>
+              Hosted conceptual path with <code>HOSTED_AUTH_FIXTURE_MODE=true</code> to bypass
+              authentication. Development and test-only hosted JSON persistence uses
+              <code>HOSTED_JSON_FIXTURE_MODE=true</code> separately.
+            </li>
           </ol>
         </details>
       </section>

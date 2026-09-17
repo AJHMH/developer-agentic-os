@@ -19,3 +19,21 @@ test("json file writer persists JSON data and rejects non-JSON values", async ()
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("json file writer preserves circular-array errors and __proto__ keys", async () => {
+  const root = await mkdtemp(join(tmpdir(), "developer-agentic-os-json-file-edge-"));
+  try {
+    const path = join(root, "state.json");
+    const circular: unknown[] = [];
+    circular.push(circular);
+
+    await assert.rejects(() => writeJsonFile(path, circular), /circular data/);
+    await writeJsonFile(path, JSON.parse('{"__proto__":{"safe":true}}'));
+    assert.deepEqual(
+      JSON.parse(await readFile(path, "utf8")),
+      JSON.parse('{"__proto__":{"safe":true}}')
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
