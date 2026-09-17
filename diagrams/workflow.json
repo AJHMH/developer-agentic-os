@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Developer Workflow — Core Loop",
+    "quality_profile": "standard",
+    "viewBox": [700, 300]
+  },
+  "components": [
+    {
+      "id": "view",
+      "type": "frontend",
+      "label": "View Workspace",
+      "pos": [50, 100],
+      "size": [100, 50]
+    },
+    {
+      "id": "skill",
+      "type": "backend",
+      "label": "Trigger Skill",
+      "pos": [200, 100],
+      "size": [100, 50]
+    },
+    { "id": "exec", "type": "backend", "label": "Execute", "pos": [350, 100], "size": [100, 50] },
+    {
+      "id": "save",
+      "type": "database",
+      "label": "Save Artifact",
+      "pos": [500, 100],
+      "size": [100, 50]
+    },
+    { "id": "review", "type": "frontend", "label": "Review", "pos": [275, 200], "size": [100, 50] }
+  ],
+  "connections": [
+    { "from": "view", "to": "skill", "labelDy": -15 },
+    { "from": "skill", "to": "exec", "labelDy": -15 },
+    { "from": "exec", "to": "save", "labelDy": -15 },
+    { "from": "save", "to": "review", "labelDy": 15 },
+    { "from": "review", "to": "view", "variant": "dashed", "labelDy": 15 }
+  ]
+}

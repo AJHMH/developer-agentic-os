@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reference: Hosted and Local Modes</title>
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Quick reference</p>
+      <h1>Hosted and local modes</h1>
+      <p class="lede">
+        The application has two deliberately different shells and two persistence stories. Identify
+        the mode first; only then follow the request.
+      </p>
+
+      <section class="panel">
+        <h2>Mode selector</h2>
+        <pre>
+src/app/page.tsx
+
+process.env.VERCEL === "1"
+  -> HostedCommandCentre
+else
+  -> CommandCentreShell</pre>
+        <p>
+          The hosted path is the deployed, authenticated experience. The local path is the
+          unauthenticated repository-oriented experience intended to work with zero hosted
+          configuration.
+        </p>
+      </section>
+
+      <section>
+        <h2>Request paths</h2>
+        <div class="flow">
+          <div>
+            <strong>Hosted</strong><code>hostedIdentity</code> authenticates the request and
+            resolves the Clerk organization as the tenant boundary.
+          </div>
+          <div>
+            <strong>Workspace</strong>The request is checked against the tenant workspace before
+            domain operations run.
+          </div>
+          <div>
+            <strong>Persistence</strong>Reads and writes pass through hosted persistence, normally
+            Neon-backed JSON state.
+          </div>
+        </div>
+        <div class="flow">
+          <div>
+            <strong>Local</strong><code>repositoryContextForRequest</code> resolves the repository
+            and context from request input.
+          </div>
+          <div>
+            <strong>Workspace</strong>The repository root and local store are initialized from the
+            filesystem.
+          </div>
+          <div><strong>Persistence</strong>State is read and written as local JSON files.</div>
+        </div>
+      </section>
+
+      <section class="panel callout">
+        <h2>The rule to remember</h2>
+        <p>
+          <strong>Mode is not just a visual theme.</strong> It changes the shell, authentication
+          boundary, workspace lookup, and persistence provider. When debugging, start by asking: “Am
+          I on the hosted path or the local path?”
+        </p>
+      </section>
+
+      <section>
+        <h2>Important exception</h2>
+        <p>
+          In development and test, <code>HOSTED_JSON_FIXTURE_MODE=true</code> can substitute
+          fixture-backed hosted behavior. That is still the hosted conceptual path; only the
+          persistence implementation is replaced for repeatable local testing.
+        </p>
+      </section>
+
+      <footer>
+        Repository anchors: <code>src/app/page.tsx</code>,
+        <code>src/app/api/hosted/_shared.ts</code>,
+        <code>src/server/workspace/request-context.ts</code>,
+        <code>src/server/hosted-persistence/neon-hosted-provider.ts</code>,
+        <code>src/server/local-store/json-file.ts</code>.
+      </footer>
+    </main>
+  </body>
+</html>

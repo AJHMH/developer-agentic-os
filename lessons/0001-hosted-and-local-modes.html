@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lesson 1: Hosted and Local Modes</title>
+    <link rel="stylesheet" href="../assets/styles.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Lesson 01 · Application architecture</p>
+      <h1>One application, two runtime stories</h1>
+      <p class="lede">
+        Your first win is being able to classify a request before you trace it. This lesson takes
+        about five minutes.
+      </p>
+
+      <section>
+        <h2>1. Start at the mode boundary</h2>
+        <p>
+          Open <code>src/app/page.tsx</code>. The page chooses between two command-centre
+          components:
+        </p>
+        <pre>
+process.env.VERCEL === "1"
+  -> HostedCommandCentre
+else
+  -> CommandCentreShell</pre>
+        <p>
+          That decision predicts the rest of the request. Hosted mode is the deployed product path,
+          with Clerk authentication and tenant-scoped hosted state. Local mode is the
+          repository-local path, with a filesystem-backed store and no requirement for hosted
+          credentials.
+        </p>
+      </section>
+
+      <section>
+        <h2>2. Trace the first meaningful boundary</h2>
+        <div class="flow">
+          <div>
+            <strong>Hosted request</strong>Start at <code>src/app/api/hosted/_shared.ts</code>.
+            <code>hostedIdentity</code> authenticates and resolves the tenant workspace.
+          </div>
+          <div>
+            <strong>Local request</strong>Start at
+            <code>src/server/workspace/request-context.ts</code>.
+            <code>repositoryContextForRequest</code> resolves repository and context input.
+          </div>
+          <div>
+            <strong>Storage boundary</strong>Hosted writes delegate through the hosted provider;
+            local writes use <code>writeJsonFile</code>.
+          </div>
+        </div>
+        <p class="panel callout">
+          Do not merge these paths mentally. A bug in local JSON persistence does not automatically
+          say anything about Neon persistence, and a hosted authorization problem may have no local
+          equivalent.
+        </p>
+      </section>
+
+      <section class="panel quiz">
+        <h2>3. Retrieve, do not reread</h2>
+        <p>Pause before looking at the answer. Which path would you inspect first?</p>
+        <ol>
+          <li>The deployed command centre shows a tenant access error.</li>
+          <li>A local task disappears after the process restarts.</li>
+          <li>A test needs deterministic hosted behavior without a live database.</li>
+        </ol>
+        <details>
+          <summary>Check your answer</summary>
+          <ol>
+            <li>
+              Hosted path: <code>hostedIdentity</code>, workspace access, then hosted persistence.
+            </li>
+            <li>Local path: local store initialization and <code>writeJsonFile</code>.</li>
+            <li>
+              Hosted conceptual path with <code>HOSTED_AUTH_FIXTURE_MODE=true</code> to bypass
+              authentication. Development and test-only hosted JSON persistence uses
+              <code>HOSTED_JSON_FIXTURE_MODE=true</code> separately.
+            </li>
+          </ol>
+        </details>
+      </section>
+
+      <section>
+        <h2>4. Primary reading</h2>
+        <p>
+          Read the short official
+          <a href="https://nextjs.org/docs/app/guides/environment-variables"
+            >Next.js environment variables guide</a
+          >, then compare its general principles with this repository's mode switch in
+          <code>src/app/page.tsx</code>.
+        </p>
+        <p>
+          Keep the
+          <a href="../reference/hosted-local-modes.html">hosted/local reference sheet</a> open while
+          tracing code. Ask me a follow-up question whenever a file or boundary feels ambiguous; the
+          next lesson should respond to the first point of friction.
+        </p>
+      </section>
+
+      <footer>
+        Mission: <a href="../MISSION.md">understand the hosted and local application paths</a>. Next
+        step: trace one concrete API route end to end.
+      </footer>
+    </main>
+  </body>
+</html>

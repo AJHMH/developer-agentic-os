@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Developer Workflow OS v2 — Hosted Architecture",
+    "quality_profile": "standard",
+    "viewBox": [1000, 400]
+  },
+  "components": [
+    {
+      "id": "frontend",
+      "type": "frontend",
+      "label": "Next.js Frontend",
+      "sublabel": "Command Centre",
+      "pos": [50, 100],
+      "size": [120, 60]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Next.js API",
+      "sublabel": "Tenant-scoped",
+      "pos": [300, 100],
+      "size": [120, 60]
+    },
+    {
+      "id": "database",
+      "type": "database",
+      "label": "Neon Postgres",
+      "sublabel": "Row-level isolation",
+      "pos": [50, 280],
+      "size": [120, 60]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub",
+      "sublabel": "Repos, Actions",
+      "pos": [300, 280],
+      "size": [120, 60]
+    },
+    {
+      "id": "clerk",
+      "type": "security",
+      "label": "Clerk",
+      "sublabel": "Auth & org",
+      "pos": [550, 190],
+      "size": [120, 60]
+    }
+  ],
+  "connections": [
+    { "from": "frontend", "to": "api", "labelDy": -20 },
+    { "from": "api", "to": "database", "labelDy": 20 },
+    { "from": "api", "to": "github", "labelDy": 20 },
+    { "from": "api", "to": "clerk", "labelDx": 20 }
+  ]
+}

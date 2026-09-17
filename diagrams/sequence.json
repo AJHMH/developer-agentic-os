@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Workspace Load Sequence — Tenant-Scoped",
+    "quality_profile": "standard"
+  },
+  "participants": [
+    { "id": "user", "type": "external", "label": "Browser" },
+    { "id": "api", "type": "backend", "label": "API" },
+    { "id": "clerk", "type": "security", "label": "Clerk" },
+    { "id": "db", "type": "database", "label": "Neon DB" }
+  ],
+  "messages": [
+    { "from": "user", "to": "api", "y": 160, "label": "Load workspace" },
+    { "from": "api", "to": "clerk", "y": 190, "label": "Verify session" },
+    { "from": "clerk", "to": "api", "y": 220, "label": "tenant_id" },
+    { "from": "api", "to": "db", "y": 250, "label": "Query" },
+    { "from": "db", "to": "api", "y": 280, "label": "Workspace records" },
+    { "from": "api", "to": "user", "y": 310, "label": "Render UI" }
+  ]
+}
