@@ -564,7 +564,6 @@ The Neon adapter uses a connection pool (via `pg.Pool`) to efficiently manage co
 
 ---
 
-
 ## Hosted Legacy-Table Recovery
 
 Canonical hosted upgrades rely on `migrations/003-hosted-deployment-normalization.sql` and
@@ -596,4 +595,3 @@ Canonical hosted upgrades rely on `migrations/003-hosted-deployment-normalizatio
 3. Re-run the canonical migrations; completed tenants are safe to retry.
 4. Confirm the failed tenant now reports `status = 'completed'`. Only then will
    the migration remove the corresponding `developer_agentic_os_*` source table.
-
