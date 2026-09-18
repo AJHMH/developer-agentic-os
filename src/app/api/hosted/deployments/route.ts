@@ -280,10 +280,7 @@ export async function resolveGitHubActionsDeployment(
       );
     const infrastructure = hostedInfrastructureError(error);
     if (infrastructure) return infrastructure;
-    return NextResponse.json(
-      { error: "Hosted persistence is temporarily unavailable. Retry once the hosted database is reachable." },
-      { status: 503 }
-    );
+    return hostedError(error);
   }
 }
 
