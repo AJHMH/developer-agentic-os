@@ -42,8 +42,60 @@ CREATE TABLE IF NOT EXISTS vercel_failure_signals (
 ALTER TABLE vercel_webhook_audit
   ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES organizations(id) ON DELETE CASCADE;
 
+DO $$
+DECLARE
+  webhook_constraint_name TEXT;
+  projection_constraint_name TEXT;
+BEGIN
+  SELECT conname INTO webhook_constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'vercel_webhook_events'::regclass
+    AND contype = 'u'
+    AND pg_get_constraintdef(oid) LIKE 'UNIQUE (vercel_project_id, vercel_deployment_id, event_type)%';
+  IF webhook_constraint_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE vercel_webhook_events DROP CONSTRAINT %I', webhook_constraint_name);
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'vercel_webhook_events'::regclass
+      AND contype = 'u'
+      AND pg_get_constraintdef(oid) LIKE 'UNIQUE (tenant_id, vercel_project_id, vercel_deployment_id, event_type)%'
+  ) THEN
+    ALTER TABLE vercel_webhook_events
+      ADD CONSTRAINT vercel_webhook_events_tenant_event_key
+      UNIQUE (tenant_id, vercel_project_id, vercel_deployment_id, event_type);
+  END IF;
+
+  SELECT conname INTO projection_constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'vercel_deployment_projections'::regclass
+    AND contype = 'p'
+    AND pg_get_constraintdef(oid) = 'PRIMARY KEY (vercel_project_id, vercel_deployment_id)';
+  IF projection_constraint_name IS NOT NULL THEN
+    EXECUTE format(
+      'ALTER TABLE vercel_deployment_projections DROP CONSTRAINT %I',
+      projection_constraint_name
+    );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'vercel_deployment_projections'::regclass
+      AND contype = 'p'
+      AND pg_get_constraintdef(oid) =
+        'PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id)'
+  ) THEN
+    ALTER TABLE vercel_deployment_projections
+      ADD PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id);
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team
   ON vercel_projects(vercel_project_id, COALESCE(vercel_team_id, ''));
+DROP INDEX IF EXISTS idx_vercel_webhook_delivery_id;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id
+  ON vercel_webhook_events(tenant_id, delivery_id) WHERE delivery_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_audit_dedup
   ON vercel_webhook_audit(COALESCE(tenant_id::text, ''), action, COALESCE(vercel_project_id, ''), occurred_at);
 
@@ -305,7 +357,7 @@ BEGIN
                legacy.raw_expires_at, legacy.occurred_at, legacy.received_at
         FROM developer_agentic_os_vercel_webhook_events AS legacy
         WHERE legacy.tenant_id = legacy_tenant_id
-        ON CONFLICT (vercel_project_id, vercel_deployment_id, event_type) DO NOTHING;
+        ON CONFLICT (tenant_id, vercel_project_id, vercel_deployment_id, event_type) DO NOTHING;
 
         UPDATE migration_status
         SET status = 'completed', completed_at = NOW(), failure_details = NULL
@@ -371,7 +423,13 @@ BEGIN
                legacy.status, legacy.url, legacy.commit_sha, legacy.occurred_at
         FROM developer_agentic_os_vercel_deployment_projection AS legacy
         WHERE legacy.tenant_id = legacy_tenant_id
-        ON CONFLICT (vercel_project_id, vercel_deployment_id) DO NOTHING;
+        ON CONFLICT (tenant_id, vercel_project_id, vercel_deployment_id) DO UPDATE SET
+          event_type = EXCLUDED.event_type,
+          status = EXCLUDED.status,
+          url = EXCLUDED.url,
+          commit_sha = EXCLUDED.commit_sha,
+          occurred_at = EXCLUDED.occurred_at
+        WHERE EXCLUDED.occurred_at >= vercel_deployment_projections.occurred_at;
 
         UPDATE migration_status
         SET status = 'completed', completed_at = NOW(), failure_details = NULL

@@ -7,8 +7,13 @@ const deploymentMigrationPath = resolve(
   process.cwd(),
   "migrations/003-hosted-deployment-normalization.sql"
 );
+const initMigrationPath = resolve(process.cwd(), "migrations/001-init.sql");
 const stateMigrationPath = resolve(process.cwd(), "migrations/004-hosted-state-normalization.sql");
 const guidePath = resolve(process.cwd(), "NEON-MIGRATION-GUIDE.md");
+const webhookRepositoryPath = resolve(
+  process.cwd(),
+  "src/server/hosted-deployments/neon-vercel-webhook-repository.ts"
+);
 
 async function read(path: string): Promise<string> {
   return readFile(path, "utf8");
@@ -55,6 +60,42 @@ test("deployment migration adds retry-safe dedupe guards for history and audit i
   assert.match(
     sql,
     /INSERT INTO vercel_webhook_audit \(tenant_id, action, vercel_project_id, occurred_at\)[\s\S]*ON CONFLICT DO NOTHING;/
+  );
+});
+
+test("canonical webhook tables and runtime writes use tenant-scoped conflict keys", async () => {
+  const initSql = await read(initMigrationPath);
+  const deploymentSql = await read(deploymentMigrationPath);
+  const repository = await read(webhookRepositoryPath);
+
+  assert.match(
+    initSql,
+    /UNIQUE \(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id,\s*event_type\)/
+  );
+  assert.match(
+    initSql,
+    /ON vercel_webhook_events\(tenant_id,\s*delivery_id\) WHERE delivery_id IS NOT NULL/
+  );
+  assert.match(initSql, /PRIMARY KEY \(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\)/);
+  assert.match(
+    deploymentSql,
+    /ADD CONSTRAINT vercel_webhook_events_tenant_event_key[\s\S]*UNIQUE \(tenant_id, vercel_project_id, vercel_deployment_id, event_type\)/
+  );
+  assert.match(
+    deploymentSql,
+    /ADD PRIMARY KEY \(tenant_id, vercel_project_id, vercel_deployment_id\)/
+  );
+  assert.match(
+    deploymentSql,
+    /ON CONFLICT \(tenant_id, vercel_project_id, vercel_deployment_id, event_type\) DO NOTHING;/
+  );
+  assert.match(
+    deploymentSql,
+    /ON CONFLICT \(tenant_id, vercel_project_id, vercel_deployment_id\) DO UPDATE SET/
+  );
+  assert.match(
+    repository,
+    /ON CONFLICT \(tenant_id, vercel_project_id, vercel_deployment_id\) DO UPDATE SET/
   );
 });
 
