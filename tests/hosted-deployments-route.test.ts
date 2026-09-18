@@ -463,6 +463,10 @@ test("hosted deployment mappings and resolution stay isolated between tenants", 
     assert.deepEqual(await json(crossTenantResolve), {
       error: "Deployment repository is not allowed for this Tenant.",
     });
+    assert.deepEqual(
+      await hostedDomainStoreForTenant(tenantB).listAllRecords(sharedUserId, workspaceBId),
+      {}
+    );
   } finally {
     if (originalOrgMap === undefined) delete process.env.GITHUB_ORG_MAP;
     else process.env.GITHUB_ORG_MAP = originalOrgMap;
