@@ -4,6 +4,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { neonConfig, Pool, type PoolClient } from "@neondatabase/serverless";
 import WebSocket from "ws";
 
+import {
+  assertHostedProductionPersistenceConfigured,
+  canonicalHostedDeploymentTables,
+  canonicalHostedStateTables,
+  provisionCanonicalHostedSchema,
+} from "./canonical-hosted-schema";
 import type {
   HostedDeploymentState,
   HostedState,
@@ -401,17 +407,16 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     await this.pool.end();
   }
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool
-      .query(
-        `SELECT 1 FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name IN
-         ('organizations', 'hosted_workspaces', 'hosted_records', 'hosted_audit')
-         GROUP BY table_schema HAVING COUNT(*) = 4`
-      )
-      .then((result) => {
-        if (result.rowCount !== 1)
-          throw new Error("Canonical hosted state schema is not installed.");
-      }));
+    const ready = this.ready;
+    if (ready) return ready;
+    const provisioning = provisionCanonicalHostedSchema(this.pool, canonicalHostedStateTables).catch(
+      (error) => {
+        this.ready = undefined;
+        throw error;
+      }
+    );
+    this.ready = provisioning;
+    return provisioning;
   }
   private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
     const result = await client.query<{ id: string }>(
@@ -431,16 +436,17 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     return insertResult.rows[0].id;
   }
   private ensureDeploymentSchema(): Promise<void> {
-    return (this.deploymentReady ??= this.pool
-      .query(
-        `SELECT 1 FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name IN
-         ('organizations', 'repos', 'vercel_projects', 'vercel_project_history')
-         GROUP BY table_schema HAVING COUNT(*) = 4`
-      )
-      .then((result) => {
-        if (result.rowCount !== 1) throw new Error("Canonical deployment schema is not installed.");
-      }));
+    const ready = this.deploymentReady;
+    if (ready) return ready;
+    const provisioning = provisionCanonicalHostedSchema(
+      this.pool,
+      canonicalHostedDeploymentTables
+    ).catch((error) => {
+      this.deploymentReady = undefined;
+      throw error;
+    });
+    this.deploymentReady = provisioning;
+    return provisioning;
   }
 }
 
@@ -594,17 +600,16 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     await this.pool.end();
   }
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool
-      .query(
-        `SELECT 1 FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name IN
-         ('organizations', 'hosted_workspace_users', 'hosted_workspaces', 'hosted_workspace_audit')
-         GROUP BY table_schema HAVING COUNT(*) = 4`
-      )
-      .then((result) => {
-        if (result.rowCount !== 1)
-          throw new Error("Canonical hosted state schema is not installed.");
-      }));
+    const ready = this.ready;
+    if (ready) return ready;
+    const provisioning = provisionCanonicalHostedSchema(this.pool, canonicalHostedStateTables).catch(
+      (error) => {
+        this.ready = undefined;
+        throw error;
+      }
+    );
+    this.ready = provisioning;
+    return provisioning;
   }
 
   private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
@@ -674,3 +679,5 @@ export function isHostedJsonFixtureMode(): boolean {
     process.env.HOSTED_JSON_FIXTURE_MODE === "true"
   );
 }
+
+export { assertHostedProductionPersistenceConfigured };

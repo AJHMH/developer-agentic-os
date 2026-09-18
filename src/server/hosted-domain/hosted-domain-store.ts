@@ -6,6 +6,7 @@ import { readJsonFile, writeJsonFile } from "../local-store/json-file";
 import { withStateLock } from "../local-store/state-lock";
 import {
   HostedWorkspaceStore,
+  hostedWorkspaceStore,
   hostedWorkspaceStoreForTenant,
 } from "../hosted-workspaces/hosted-workspace-store";
 import {
@@ -23,6 +24,7 @@ import type {
   RegisteredDeploymentRepository,
 } from "../hosted-deployments/deployment-resolution";
 import {
+  assertHostedProductionPersistenceConfigured,
   EncryptedProtectedSecretStore,
   isHostedJsonFixtureMode,
   isHostedNeonConfigured,
@@ -1507,6 +1509,7 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
     tenantDomainStores.set(tenantId, store);
     return store;
   }
+  if (!isHostedJsonFixtureMode()) assertHostedProductionPersistenceConfigured();
   const tenantRoot = join(
     process.cwd(),
     ".developer-agentic-os",
@@ -1526,7 +1529,7 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
   return store;
 }
 
-export const hostedDomainStore = hostedDomainStoreForTenant("legacy");
+export const hostedDomainStore = new HostedDomainStore(process.cwd(), hostedWorkspaceStore);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
