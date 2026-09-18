@@ -307,10 +307,11 @@ test("canonical hosted provisioning executes migration 005 against a database an
          AND table_name IN ('organizations', 'vercel_webhook_events', 'hosted_workspaces')`
     );
     assert.equal(Number(tableCheck.rows[0]?.count ?? 0), 3);
-    await client.query(
-      "INSERT INTO organizations (id, name, clerk_org_id) VALUES ($1, $2, $3)",
-      ["00000000-0000-0000-0000-000000000123", "Tenant round-trip", "org-round-trip"]
-    );
+    await client.query("INSERT INTO organizations (id, name, clerk_org_id) VALUES ($1, $2, $3)", [
+      "00000000-0000-0000-0000-000000000123",
+      "Tenant round-trip",
+      "org-round-trip",
+    ]);
     const org = await client.query<{ name: string }>(
       "SELECT name FROM organizations WHERE clerk_org_id = $1",
       ["org-round-trip"]

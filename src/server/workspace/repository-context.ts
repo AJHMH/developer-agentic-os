@@ -32,8 +32,14 @@ export async function resolveRepositoryContext(
   if (id) {
     try {
       const context = await workspaceStore.getContext(id);
-      if (root && resolve(root) !== resolve(context.path))
-        throw new WorkspaceError("INVALID_PATH", "Repository context root does not match its id.");
+      if (root) {
+        const requested = await contextFromRoot(root);
+        if (requested.id !== context.id)
+          throw new WorkspaceError(
+            "INVALID_PATH",
+            "Repository context root does not match its id."
+          );
+      }
       return context;
     } catch (error) {
       if (!(error instanceof WorkspaceError) || error.code !== "NOT_FOUND") throw error;
@@ -47,11 +53,8 @@ export async function resolveRepositoryContext(
     const repositories = await workspaceStore.listRepositories();
     const fallback = await workspaceStore.getActiveContext();
     const allKnown = [fallback, ...repositories];
-    const resolvedInput = resolve(root);
-    const registered = allKnown.find(
-      (repository) =>
-        resolve(repository.path) === resolvedInput || repository.id === repositoryId(resolvedInput)
-    );
+    const requested = await contextFromRoot(root);
+    const registered = allKnown.find((repository) => repository.id === requested.id);
     if (registered) return registered;
     throw new WorkspaceError(
       "NOT_FOUND",

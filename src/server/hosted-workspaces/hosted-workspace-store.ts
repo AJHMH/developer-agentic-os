@@ -225,5 +225,3 @@ export function hostedWorkspaceStoreForTenant(tenantId: string): HostedWorkspace
   tenantWorkspaceStores.set(tenantId, store);
   return store;
 }
-
-export const hostedWorkspaceStore = hostedWorkspaceStoreForTenant("legacy");

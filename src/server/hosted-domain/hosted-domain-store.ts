@@ -6,7 +6,6 @@ import { readJsonFile, writeJsonFile } from "../local-store/json-file";
 import { withStateLock } from "../local-store/state-lock";
 import {
   HostedWorkspaceStore,
-  hostedWorkspaceStore,
   hostedWorkspaceStoreForTenant,
 } from "../hosted-workspaces/hosted-workspace-store";
 import {
@@ -1528,8 +1527,6 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
   tenantDomainStores.set(tenantId, store);
   return store;
 }
-
-export const hostedDomainStore = hostedDomainStoreForTenant("legacy");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
