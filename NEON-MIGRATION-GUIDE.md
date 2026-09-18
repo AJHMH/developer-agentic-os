@@ -561,3 +561,39 @@ The Neon adapter uses a connection pool (via `pg.Pool`) to efficiently manage co
 - [NEON-SCHEMA.md](../docs/NEON-SCHEMA.md) — Complete schema reference
 - [Neon Documentation](https://neon.tech/docs/)
 - [node-postgres Documentation](https://node-postgres.com/)
+
+---
+
+
+## Hosted Legacy-Table Recovery
+
+Canonical hosted upgrades rely on `migrations/003-hosted-deployment-normalization.sql` and
+`migrations/004-hosted-state-normalization.sql` to migrate legacy
+`developer_agentic_os_*` rows tenant-by-tenant.
+
+- Each tenant writes a `migration_status` row with its `source_model`,
+  `target_model`, migration `version`, terminal `status`, `completed_at`, and
+  `failure_details`.
+- Retries are safe: deployment history and webhook audit rows have dedupe guards,
+  and hosted records without legacy IDs derive deterministic `uuid_generate_v5`
+  identifiers.
+- Recovery is the default rollback path: if any tenant fails, the migration keeps
+  the legacy source table in place instead of dropping it, so the operator can
+  repair the bad tenant data or organization mapping and rerun the migration.
+
+### Recovering a failed tenant upgrade
+
+1. Inspect per-tenant status:
+
+   ```sql
+   SELECT tenant_id, source_model, target_model, version, status, completed_at, failure_details
+   FROM migration_status
+   WHERE version IN ('003-hosted-deployment-normalization', '004-hosted-state-normalization')
+   ORDER BY completed_at NULLS FIRST, tenant_id, source_model;
+   ```
+
+2. Repair the failing tenant's legacy data or missing organization mapping.
+3. Re-run the canonical migrations; completed tenants are safe to retry.
+4. Confirm the failed tenant now reports `status = 'completed'`. Only then will
+   the migration remove the corresponding `developer_agentic_os_*` source table.
+
