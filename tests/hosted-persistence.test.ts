@@ -254,7 +254,7 @@ test("production database configuration is explicit and credential encryption fa
   }
 });
 
-test("hosted tenant lookup fails closed until the organization is provisioned", async () => {
+test("shared hosted tenant resolver rejects missing organization mappings", async () => {
   const missingTenantClient = {
     async query() {
       return { rows: [], rowCount: 0 };
@@ -264,6 +264,9 @@ test("hosted tenant lookup fails closed until the organization is provisioned", 
     () => resolveHostedTenantDatabaseId(missingTenantClient, "org_missing"),
     /org_missing.*not provisioned/i
   );
+});
+
+test("shared hosted tenant resolver returns the configured tenant id", async () => {
   const configuredTenantClient = {
     async query() {
       return { rows: [{ id: "tenant-123" }], rowCount: 1 };
@@ -273,6 +276,9 @@ test("hosted tenant lookup fails closed until the organization is provisioned", 
     await resolveHostedTenantDatabaseId(configuredTenantClient, "org_configured"),
     "tenant-123"
   );
+});
+
+test("shared hosted tenant resolver rejects duplicate organization mappings", async () => {
   const duplicateTenantClient = {
     async query() {
       return { rows: [{ id: "tenant-123" }, { id: "tenant-456" }], rowCount: 2 };
