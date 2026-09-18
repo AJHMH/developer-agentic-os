@@ -33,15 +33,7 @@ export async function hostedIdentity(request: Request) {
 
 export function hostedInfrastructureError(error: unknown): NextResponse | null {
   const messages = errorMessages(error);
-  if (
-    messages.some((message) =>
-      [
-        "Canonical hosted state schema is not installed.",
-        "Canonical deployment schema is not installed.",
-        "Canonical webhook schema is not installed.",
-      ].includes(message)
-    )
-  )
+  if (messages.some((message) => /^Canonical .+ schema is not installed\.$/.test(message)))
     return NextResponse.json(migrationIncompleteResponse, { status: 409 });
   if (messages.some((message) => /^Hosted persistence requires\b/i.test(message)))
     return NextResponse.json(persistenceUnconfiguredResponse, { status: 503 });
