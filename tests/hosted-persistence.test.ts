@@ -267,6 +267,10 @@ test("fresh hosted provisioning uses one authoritative contract migration", asyn
   );
   assert.match(
     sql,
+    /DROP INDEX IF EXISTS idx_vercel_webhook_delivery_id;\s+CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id\s+ON vercel_webhook_events\(tenant_id,\s*delivery_id\) WHERE delivery_id IS NOT NULL;/i
+  );
+  assert.match(
+    sql,
     /CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id\s+ON vercel_webhook_events\(tenant_id,\s*delivery_id\) WHERE delivery_id IS NOT NULL;/i
   );
   assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\)/i);

@@ -94,6 +94,8 @@ CREATE TABLE IF NOT EXISTS vercel_webhook_events (
   UNIQUE (tenant_id, vercel_project_id, vercel_deployment_id, event_type)
 );
 
+DROP INDEX IF EXISTS idx_vercel_webhook_delivery_id;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id
   ON vercel_webhook_events(tenant_id, delivery_id) WHERE delivery_id IS NOT NULL;
 
