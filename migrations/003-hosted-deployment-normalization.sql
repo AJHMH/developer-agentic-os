@@ -91,8 +91,9 @@ BEGIN
   END IF;
 END $$;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team
-  ON vercel_projects(vercel_project_id, COALESCE(vercel_team_id, ''));
+DROP INDEX IF EXISTS idx_vercel_projects_global_project_team;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_tenant_project_team
+  ON vercel_projects(tenant_id, vercel_project_id, COALESCE(vercel_team_id, ''));
 DROP INDEX IF EXISTS idx_vercel_webhook_delivery_id;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id
   ON vercel_webhook_events(tenant_id, delivery_id) WHERE delivery_id IS NOT NULL;
