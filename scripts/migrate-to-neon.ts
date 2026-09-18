@@ -57,13 +57,16 @@ const legacyMigrationVersions = new Map<string, string>([
 async function retireLegacyMigrationVersionAliases(client: PoolClient): Promise<void> {
   for (const [legacyVersion, canonicalVersion] of legacyMigrationVersions) {
     await client.query(
-      `INSERT INTO schema_migrations (version)
-       SELECT $2
-       WHERE EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)
-       ON CONFLICT DO NOTHING`,
+      `WITH canonicalized AS (
+         INSERT INTO schema_migrations (version)
+         SELECT $2
+         WHERE EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)
+         ON CONFLICT DO NOTHING
+       )
+       DELETE FROM schema_migrations
+       WHERE version = $1`,
       [legacyVersion, canonicalVersion]
     );
-    await client.query("DELETE FROM schema_migrations WHERE version = $1", [legacyVersion]);
   }
 }
 

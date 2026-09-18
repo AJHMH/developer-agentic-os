@@ -64,9 +64,8 @@ test("migration script normalizes legacy schema version aliases to canonical fil
   assert.match(script, /retireLegacyMigrationVersionAliases/);
   assert.match(
     script,
-    /INSERT INTO schema_migrations \(version\)\s+SELECT \$2\s+WHERE EXISTS \(SELECT 1 FROM schema_migrations WHERE version = \$1\)\s+ON CONFLICT DO NOTHING/i
+    /WITH canonicalized AS \(\s+INSERT INTO schema_migrations \(version\)\s+SELECT \$2\s+WHERE EXISTS \(SELECT 1 FROM schema_migrations WHERE version = \$1\)\s+ON CONFLICT DO NOTHING\s+\)\s+DELETE FROM schema_migrations\s+WHERE version = \$1/i
   );
-  assert.match(script, /DELETE FROM schema_migrations WHERE version = \$1/);
   assert.doesNotMatch(script, /version = ANY\(\$1::text\[\]\)/);
 });
 
