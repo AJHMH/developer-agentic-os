@@ -1,6 +1,10 @@
 import { Pool } from "@neondatabase/serverless";
 
 import {
+  canonicalHostedWebhookTables,
+  provisionCanonicalHostedSchema,
+} from "@/server/hosted-persistence/canonical-hosted-schema";
+import {
   EncryptedProtectedSecretStore,
   hostedDatabaseUrl,
   resolveHostedTenantDatabaseId,
@@ -133,17 +137,17 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   }
 
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool
-      .query(
-        `SELECT 1 FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name IN
-         ('organizations', 'vercel_projects', 'vercel_webhook_events',
-          'vercel_deployment_projections', 'vercel_failure_signals')
-         GROUP BY table_schema HAVING COUNT(*) = 5`
-      )
-      .then((result) => {
-        if (result.rowCount !== 1) throw new Error("Canonical webhook schema is not installed.");
-      }));
+    const ready = this.ready;
+    if (ready) return ready;
+    const provisioning = provisionCanonicalHostedSchema(
+      this.pool,
+      canonicalHostedWebhookTables
+    ).catch((error) => {
+      this.ready = undefined;
+      throw error;
+    });
+    this.ready = provisioning;
+    return provisioning;
   }
 
   private async tenantDatabaseId(clerkOrgId: string): Promise<string> {
