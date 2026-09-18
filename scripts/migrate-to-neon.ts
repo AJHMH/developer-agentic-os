@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 
 /**
- * Migration Script: JSON → Neon PostgreSQL
+ * Canonical Migration Script: local JSON → Neon PostgreSQL
  *
- * Reads existing state from .developer-agentic-os/ JSON files and loads into Neon.
- * Creates a single test tenant to contain all migrated data.
+ * Applies the canonical Neon schema, provisions the target organizations row for
+ * CLERK_ORG_ID, and optionally imports existing state from .developer-agentic-os/.
  *
  * Usage:
  *   npx tsx scripts/migrate-to-neon.ts
  *
  * Environment variables required:
  *   - DATABASE_URL: Neon PostgreSQL connection string
- *   - CLERK_ORG_ID: Test org ID (creates organizations table entry)
+ *   - CLERK_ORG_ID: Target Clerk org ID (creates organizations table entry)
  */
 
 import { neonConfig, Pool } from "@neondatabase/serverless";
@@ -24,10 +24,15 @@ import WebSocket from "ws";
 neonConfig.webSocketConstructor = WebSocket;
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const CLERK_ORG_ID = process.env.CLERK_ORG_ID || "test-org-001";
+const CLERK_ORG_ID = process.env.CLERK_ORG_ID?.trim();
 
 if (!DATABASE_URL) {
   console.error("ERROR: DATABASE_URL environment variable is required");
+  process.exit(1);
+}
+
+if (!CLERK_ORG_ID) {
+  console.error("ERROR: CLERK_ORG_ID environment variable is required");
   process.exit(1);
 }
 
@@ -48,6 +53,37 @@ const canonicalMigrations = [
   "migrations/004-hosted-state-normalization.sql",
 ] as const;
 
+const legacyMigrationVersions = new Map<string, string>([
+  ["001-init", "001-init.sql"],
+  ["003-hosted-deployment-normalization", "003-hosted-deployment-normalization.sql"],
+  ["004-hosted-state-normalization", "004-hosted-state-normalization.sql"],
+]);
+
+async function recordCanonicalMigrationVersion(client: PoolClient, version: string): Promise<void> {
+  await client.query(
+    `INSERT INTO schema_migrations (version)
+     SELECT $1
+     WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)`,
+    [version]
+  );
+}
+
+async function retireLegacyMigrationVersionAliases(client: PoolClient): Promise<void> {
+  for (const [legacyVersion, canonicalVersion] of legacyMigrationVersions) {
+    await client.query(
+      `WITH canonicalized AS (
+         INSERT INTO schema_migrations (version)
+         SELECT $2
+         WHERE EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)
+           AND NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $2)
+       )
+       DELETE FROM schema_migrations
+       WHERE version = $1`,
+      [legacyVersion, canonicalVersion]
+    );
+  }
+}
+
 async function applyCanonicalMigrations(client: PoolClient): Promise<void> {
   await client.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -55,36 +91,22 @@ async function applyCanonicalMigrations(client: PoolClient): Promise<void> {
       applied_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `);
+  await retireLegacyMigrationVersionAliases(client);
 
   for (const migrationPath of canonicalMigrations) {
     const version = migrationPath.split("/").at(-1) ?? migrationPath;
-    const legacyVersion = version.replace(/\.sql$/, "");
-    const knownVersions = Array.from(new Set([version, legacyVersion]));
     const applied = await client.query<{ version: string }>(
-      "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
-      [knownVersions]
+      "SELECT version FROM schema_migrations WHERE version = $1",
+      [version]
     );
-    if (applied.rowCount) {
-      const appliedVersions = new Set(applied.rows.map((row) => row.version));
-      for (const knownVersion of knownVersions) {
-        if (appliedVersions.has(knownVersion)) continue;
-        await client.query(
-          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
-          [knownVersion]
-        );
-      }
-      continue;
-    }
+    if (applied.rowCount) continue;
 
     const sql = await readFile(join(process.cwd(), migrationPath), "utf8");
     await client.query("BEGIN");
     try {
       await client.query(sql);
-      for (const knownVersion of knownVersions)
-        await client.query(
-          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
-          [knownVersion]
-        );
+      await retireLegacyMigrationVersionAliases(client);
+      await recordCanonicalMigrationVersion(client, version);
       await client.query("COMMIT");
       console.log(`✓ Applied ${version}`);
     } catch (error) {
@@ -113,7 +135,7 @@ async function assertCanonicalSchema(client: PoolClient): Promise<void> {
   const present = new Set(result.rows.map((row) => row.table_name));
   const missing = requiredTables.filter((table) => !present.has(table));
   if (missing.length > 0)
-    throw new Error(`Canonical Schema A is incomplete. Missing tables: ${missing.join(", ")}.`);
+    throw new Error(`Canonical schema is incomplete. Missing tables: ${missing.join(", ")}.`);
 }
 
 async function recordMigrationStatus(
@@ -159,7 +181,7 @@ async function readJsonFile(path: string): Promise<unknown> {
 }
 
 async function createOrGetTenant(client: PoolClient): Promise<string> {
-  console.log("Creating or retrieving test tenant...");
+  console.log("Creating or retrieving provisioned tenant...");
 
   // Check if tenant exists
   const existing = await client.query("SELECT id FROM organizations WHERE clerk_org_id = $1", [
@@ -474,13 +496,13 @@ async function main() {
   let tenantId: string | undefined;
 
   try {
-    console.log("🚀 Starting migration: JSON → Neon");
+    console.log("🚀 Starting canonical migration: local JSON → Neon");
     console.log("=====================================\n");
 
-    console.log("Applying canonical Schema A migrations...");
+    console.log("Applying canonical migrations...");
     await applyCanonicalMigrations(client);
     await assertCanonicalSchema(client);
-    console.log("✓ Canonical Schema A is ready\n");
+    console.log("✓ Canonical schema is ready\n");
 
     // Create or get tenant
     tenantId = await createOrGetTenant(client);

@@ -155,9 +155,9 @@ test("deployment handler resolves a real token with fixture mode disabled", asyn
               findProject: async () => ({ projectId: "prj_acme", teamId: "team_acme" }),
             }),
             recordDeploymentResolution: async (
-              _subject: string,
-              _kind: string,
-              outcome: string
+              _userId: string,
+              outcome: string,
+              _subjectId?: string
             ) => {
               resolutions.push(outcome);
             },
@@ -211,6 +211,68 @@ test("deployment handler distinguishes verification outages from authorization f
   assert.deepEqual(await response.json(), {
     error: "Deployment identity verification is temporarily unavailable.",
   });
+});
+
+test("deployment handler returns actionable persistence responses after verification succeeds", async () => {
+  const originalOrgMap = process.env.GITHUB_ORG_MAP;
+  process.env.GITHUB_ORG_MAP = JSON.stringify({ "tenant-acme": "acme" });
+  try {
+    const migrationIncomplete = await resolveGitHubActionsDeployment(
+      new Request("http://localhost/api/hosted/deployments/resolve", {
+        headers: { authorization: "Bearer " + token() },
+      }),
+      {
+        verifyToken: (value, audience) =>
+          verifyGitHubActionsOidcToken(value, audience, fetchJwks()),
+        findTenant: async () => "tenant-acme",
+        storeForTenant: () =>
+          ({
+            deploymentRegistry: () => ({
+              findRepository: async () => {
+                throw new Error("Canonical deployment schema is not installed.");
+              },
+              findProject: async () => ({ projectId: "prj_acme" }),
+            }),
+            recordDeploymentResolution: async () => undefined,
+          }) as never,
+      }
+    );
+    assert.equal(migrationIncomplete.status, 409);
+    assert.deepEqual(await migrationIncomplete.json(), {
+      error: "Hosted Tenant migration is incomplete. Run the hosted Neon migrations and retry.",
+    });
+
+    const unavailable = await resolveGitHubActionsDeployment(
+      new Request("http://localhost/api/hosted/deployments/resolve", {
+        headers: { authorization: "Bearer " + token() },
+      }),
+      {
+        verifyToken: (value, audience) =>
+          verifyGitHubActionsOidcToken(value, audience, fetchJwks()),
+        findTenant: async () => "tenant-acme",
+        storeForTenant: () =>
+          ({
+            deploymentRegistry: () => ({
+              findRepository: async () => {
+                throw Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:5432"), {
+                  code: "ECONNREFUSED",
+                });
+              },
+              findProject: async () => ({ projectId: "prj_acme" }),
+            }),
+            recordDeploymentResolution: async () => undefined,
+          }) as never,
+      }
+    );
+    assert.equal(unavailable.status, 503);
+    assert.deepEqual(await unavailable.json(), {
+      error:
+        "Hosted persistence is temporarily unavailable. Retry once the hosted database is reachable.",
+    });
+  } finally {
+    if (originalOrgMap === undefined) delete process.env.GITHUB_ORG_MAP;
+    else process.env.GITHUB_ORG_MAP = originalOrgMap;
+  }
 });
 
 test("deployment handler returns deployment errors even when denied audit logging fails", async () => {

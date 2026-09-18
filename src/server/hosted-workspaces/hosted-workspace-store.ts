@@ -225,3 +225,11 @@ export function hostedWorkspaceStoreForTenant(tenantId: string): HostedWorkspace
   tenantWorkspaceStores.set(tenantId, store);
   return store;
 }
+
+export const hostedWorkspaceStore = new Proxy({} as HostedWorkspaceStore, {
+  get(_target, property, receiver) {
+    const store = hostedWorkspaceStoreForTenant("legacy");
+    const value = Reflect.get(store as object, property, receiver);
+    return typeof value === "function" ? value.bind(store) : value;
+  },
+});

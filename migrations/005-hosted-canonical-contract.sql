@@ -94,8 +94,10 @@ CREATE TABLE IF NOT EXISTS vercel_webhook_events (
   UNIQUE (tenant_id, vercel_project_id, vercel_deployment_id, event_type)
 );
 
+DROP INDEX IF EXISTS idx_vercel_webhook_delivery_id;
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id
-  ON vercel_webhook_events(delivery_id) WHERE delivery_id IS NOT NULL;
+  ON vercel_webhook_events(tenant_id, delivery_id) WHERE delivery_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS vercel_deployment_projections (
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -109,15 +111,52 @@ CREATE TABLE IF NOT EXISTS vercel_deployment_projections (
   PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id)
 );
 
-ALTER TABLE vercel_deployment_projections
-  DROP CONSTRAINT IF EXISTS vercel_deployment_projections_pkey;
-ALTER TABLE vercel_deployment_projections
-  ADD PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'vercel_deployment_projections'::regclass
+      AND contype = 'p'
+      AND pg_get_constraintdef(oid) =
+        'PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id)'
+  ) THEN
+    IF EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conrelid = 'vercel_deployment_projections'::regclass
+        AND contype = 'p'
+    ) THEN
+      ALTER TABLE vercel_deployment_projections
+        DROP CONSTRAINT vercel_deployment_projections_pkey;
+    END IF;
+    ALTER TABLE vercel_deployment_projections
+      ADD PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id);
+  END IF;
+END $$;
 
-ALTER TABLE vercel_failure_signals
-  DROP CONSTRAINT IF EXISTS vercel_failure_signals_pkey;
-ALTER TABLE vercel_failure_signals
-  ADD PRIMARY KEY (tenant_id, source_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'vercel_failure_signals'::regclass
+      AND contype = 'p'
+      AND pg_get_constraintdef(oid) = 'PRIMARY KEY (tenant_id, source_id)'
+  ) THEN
+    IF EXISTS (
+      SELECT 1
+      FROM pg_constraint
+      WHERE conrelid = 'vercel_failure_signals'::regclass
+        AND contype = 'p'
+    ) THEN
+      ALTER TABLE vercel_failure_signals
+        DROP CONSTRAINT vercel_failure_signals_pkey;
+    END IF;
+    ALTER TABLE vercel_failure_signals
+      ADD PRIMARY KEY (tenant_id, source_id);
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS vercel_webhook_audit (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

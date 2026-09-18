@@ -102,7 +102,7 @@ type HostedCredentialRecord = HostedCredentialMetadata & {
 export type HostedAudit = {
   id: string;
   userId: string;
-  workspaceId: string;
+  workspaceId?: string;
   action: string;
   subjectId?: string;
   repositoryId?: string;
@@ -469,10 +469,10 @@ export class HostedDomainStore {
 
   async recordDeploymentResolution(
     userId: string,
-    workspaceId: string,
     outcome: "allowed" | "denied",
     subjectId?: string,
-    target?: DeploymentProjectMapping
+    target?: DeploymentProjectMapping,
+    workspaceId?: string
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
@@ -486,7 +486,7 @@ export class HostedDomainStore {
         undefined,
         outcome
       );
-      if (outcome === "allowed" && target) {
+      if (workspaceId && outcome === "allowed" && target) {
         const records = state.records[workspaceId] ?? (state.records[workspaceId] = {});
         const deployments = records.automationRuns ?? (records.automationRuns = []);
         deployments.push({
@@ -1427,7 +1427,7 @@ export class HostedDomainStore {
   private async auditEvent(
     state: HostedState,
     userId: string,
-    workspaceId: string,
+    workspaceId: string | undefined,
     action: string,
     subjectId?: string,
     repositoryId?: string,
@@ -1437,7 +1437,7 @@ export class HostedDomainStore {
     state.audit.push({
       id: randomUUID(),
       userId,
-      workspaceId,
+      ...(workspaceId ? { workspaceId } : {}),
       action,
       ...(subjectId ? { subjectId } : {}),
       ...(repositoryId ? { repositoryId } : {}),
@@ -1527,6 +1527,14 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
   tenantDomainStores.set(tenantId, store);
   return store;
 }
+
+export const hostedDomainStore = new Proxy({} as HostedDomainStore, {
+  get(_target, property, receiver) {
+    const store = hostedDomainStoreForTenant("legacy");
+    const value = Reflect.get(store as object, property, receiver);
+    return typeof value === "function" ? value.bind(store) : value;
+  },
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

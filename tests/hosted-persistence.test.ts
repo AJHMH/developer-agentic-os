@@ -12,6 +12,8 @@ import {
 import {
   EncryptedProtectedSecretStore,
   hostedDatabaseUrl,
+  NeonHostedStateProvider,
+  resolveHostedTenantDatabaseId,
 } from "../src/server/hosted-persistence/neon-hosted-provider";
 import type {
   HostedState,
@@ -263,15 +265,23 @@ test("fresh hosted provisioning uses one authoritative contract migration", asyn
     sql,
     /UNIQUE\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id,\s*event_type\)/i
   );
+  assert.match(
+    sql,
+    /DROP INDEX IF EXISTS idx_vercel_webhook_delivery_id;\s+CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id\s+ON vercel_webhook_events\(tenant_id,\s*delivery_id\) WHERE delivery_id IS NOT NULL;/i
+  );
+  assert.match(
+    sql,
+    /CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id\s+ON vercel_webhook_events\(tenant_id,\s*delivery_id\) WHERE delivery_id IS NOT NULL;/i
+  );
   assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\)/i);
   assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*source_id\)/i);
   assert.match(
     sql,
-    /ALTER TABLE vercel_deployment_projections\s+DROP CONSTRAINT IF EXISTS vercel_deployment_projections_pkey;\s+ALTER TABLE vercel_deployment_projections\s+ADD PRIMARY KEY \(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\);/i
+    /IF NOT EXISTS \(\s*SELECT 1\s+FROM pg_constraint\s+WHERE conrelid = 'vercel_deployment_projections'::regclass[\s\S]*pg_get_constraintdef\(oid\)[\s\S]*PRIMARY KEY \(tenant_id, vercel_project_id, vercel_deployment_id\)[\s\S]*ADD PRIMARY KEY \(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\);/i
   );
   assert.match(
     sql,
-    /ALTER TABLE vercel_failure_signals\s+DROP CONSTRAINT IF EXISTS vercel_failure_signals_pkey;\s+ALTER TABLE vercel_failure_signals\s+ADD PRIMARY KEY \(tenant_id,\s*source_id\);/i
+    /IF NOT EXISTS \(\s*SELECT 1\s+FROM pg_constraint\s+WHERE conrelid = 'vercel_failure_signals'::regclass[\s\S]*pg_get_constraintdef\(oid\)[\s\S]*PRIMARY KEY \(tenant_id, source_id\)[\s\S]*ADD PRIMARY KEY \(tenant_id,\s*source_id\);/i
   );
   assert.doesNotMatch(
     sql,
@@ -459,6 +469,66 @@ test("hosted tenant stores reject production fallback when no canonical database
     if (previousStandardUnpooled === undefined) delete environment.DATABASE_URL_UNPOOLED;
     else environment.DATABASE_URL_UNPOOLED = previousStandardUnpooled;
   }
+});
+
+test("shared hosted tenant resolver rejects missing organization mappings", async () => {
+  const missingTenantClient = {
+    async query() {
+      return { rows: [], rowCount: 0 };
+    },
+  };
+  await assert.rejects(
+    () => resolveHostedTenantDatabaseId(missingTenantClient, "org_missing"),
+    /org_missing.*not provisioned/i
+  );
+});
+
+test("shared hosted tenant resolver returns the configured tenant id", async () => {
+  const configuredTenantClient = {
+    async query() {
+      return { rows: [{ id: "tenant-123" }], rowCount: 1 };
+    },
+  };
+  assert.equal(
+    await resolveHostedTenantDatabaseId(configuredTenantClient, "org_configured"),
+    "tenant-123"
+  );
+});
+
+test("shared hosted tenant resolver rejects duplicate organization mappings", async () => {
+  const duplicateTenantClient = {
+    async query() {
+      return { rows: [{ id: "tenant-123" }, { id: "tenant-456" }], rowCount: 2 };
+    },
+  };
+  await assert.rejects(
+    () => resolveHostedTenantDatabaseId(duplicateTenantClient, "org_duplicate"),
+    /org_duplicate.*duplicate organization mappings/i
+  );
+});
+
+test("hosted deployment reads fail closed until the organization is provisioned", async () => {
+  const missingTenantClient = {
+    async query() {
+      return { rows: [], rowCount: 0 };
+    },
+  };
+  const provider = Object.create(NeonHostedStateProvider.prototype) as {
+    readDeploymentState(): Promise<unknown>;
+    tenantId: string;
+    ensureDeploymentSchema(): Promise<void>;
+    transactionClient: { getStore(): typeof missingTenantClient };
+    pool: typeof missingTenantClient;
+  };
+  provider.tenantId = "org_missing";
+  provider.ensureDeploymentSchema = async () => undefined;
+  provider.transactionClient = {
+    getStore() {
+      return missingTenantClient;
+    },
+  };
+  provider.pool = missingTenantClient;
+  await assert.rejects(() => provider.readDeploymentState(), /org_missing.*not provisioned/i);
 });
 
 test("production object storage rejects artifact bodies until durable storage is configured", async () => {

@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Pool } from "@neondatabase/serverless";
 
 import {
@@ -8,6 +7,7 @@ import {
 import {
   EncryptedProtectedSecretStore,
   hostedDatabaseUrl,
+  resolveHostedTenantDatabaseId,
 } from "@/server/hosted-persistence/neon-hosted-provider";
 import type {
   VercelWebhookAuditEntry,
@@ -92,7 +92,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       `INSERT INTO vercel_deployment_projections
         (tenant_id, vercel_project_id, vercel_deployment_id, event_type, status, url, commit_sha, occurred_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT ON CONSTRAINT vercel_deployment_projections_pkey DO UPDATE SET
+      ON CONFLICT (tenant_id, vercel_project_id, vercel_deployment_id) DO UPDATE SET
          event_type = EXCLUDED.event_type,
          status = EXCLUDED.status,
          url = EXCLUDED.url,
@@ -120,7 +120,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       `INSERT INTO vercel_failure_signals
         (tenant_id, vercel_project_id, vercel_deployment_id, source_id, title, body)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT ON CONSTRAINT vercel_failure_signals_pkey DO NOTHING`,
+       ON CONFLICT (tenant_id, source_id) DO NOTHING`,
       [
         tenantId,
         event.projectId,
@@ -151,21 +151,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   }
 
   private async tenantDatabaseId(clerkOrgId: string): Promise<string> {
-    const result = await this.pool.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [clerkOrgId]
-    );
-    if (result.rows.length === 1) return result.rows[0].id;
-
-    const tenantId = randomUUID();
-    const insertResult = await this.pool.query<{ id: string }>(
-      `INSERT INTO organizations (id, name, clerk_org_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
-       RETURNING id`,
-      [tenantId, `Organization ${clerkOrgId}`, clerkOrgId]
-    );
-    return insertResult.rows[0].id;
+    return resolveHostedTenantDatabaseId(this.pool, clerkOrgId);
   }
 
   async recordAudit(entry: VercelWebhookAuditEntry): Promise<void> {
