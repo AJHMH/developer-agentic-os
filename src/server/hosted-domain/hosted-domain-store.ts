@@ -1529,7 +1529,10 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
   return store;
 }
 
-export const hostedDomainStore = new HostedDomainStore(process.cwd(), hostedWorkspaceStore);
+export const hostedDomainStore =
+  isHostedNeonConfigured() || isHostedJsonFixtureMode()
+    ? hostedDomainStoreForTenant("legacy")
+    : new HostedDomainStore(process.cwd(), hostedWorkspaceStore);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
