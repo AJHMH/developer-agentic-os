@@ -277,11 +277,11 @@ test("fresh hosted provisioning uses one authoritative contract migration", asyn
   assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*source_id\)/i);
   assert.match(
     sql,
-    /ALTER TABLE vercel_deployment_projections\s+DROP CONSTRAINT IF EXISTS vercel_deployment_projections_pkey;\s+ALTER TABLE vercel_deployment_projections\s+ADD PRIMARY KEY \(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\);/i
+    /IF NOT EXISTS \(\s*SELECT 1\s+FROM pg_constraint\s+WHERE conrelid = 'vercel_deployment_projections'::regclass[\s\S]*pg_get_constraintdef\(oid\)[\s\S]*PRIMARY KEY \(tenant_id, vercel_project_id, vercel_deployment_id\)[\s\S]*ADD PRIMARY KEY \(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\);/i
   );
   assert.match(
     sql,
-    /ALTER TABLE vercel_failure_signals\s+DROP CONSTRAINT IF EXISTS vercel_failure_signals_pkey;\s+ALTER TABLE vercel_failure_signals\s+ADD PRIMARY KEY \(tenant_id,\s*source_id\);/i
+    /IF NOT EXISTS \(\s*SELECT 1\s+FROM pg_constraint\s+WHERE conrelid = 'vercel_failure_signals'::regclass[\s\S]*pg_get_constraintdef\(oid\)[\s\S]*PRIMARY KEY \(tenant_id, source_id\)[\s\S]*ADD PRIMARY KEY \(tenant_id,\s*source_id\);/i
   );
   assert.doesNotMatch(
     sql,
