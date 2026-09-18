@@ -6,7 +6,6 @@ import { readJsonFile, writeJsonFile } from "../local-store/json-file";
 import { withStateLock } from "../local-store/state-lock";
 import {
   HostedWorkspaceStore,
-  hostedWorkspaceStore,
   hostedWorkspaceStoreForTenant,
 } from "../hosted-workspaces/hosted-workspace-store";
 import {
