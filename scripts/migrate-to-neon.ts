@@ -24,10 +24,15 @@ import WebSocket from "ws";
 neonConfig.webSocketConstructor = WebSocket;
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const CLERK_ORG_ID = process.env.CLERK_ORG_ID || "test-org-001";
+const CLERK_ORG_ID = process.env.CLERK_ORG_ID?.trim();
 
 if (!DATABASE_URL) {
   console.error("ERROR: DATABASE_URL environment variable is required");
+  process.exit(1);
+}
+
+if (!CLERK_ORG_ID) {
+  console.error("ERROR: CLERK_ORG_ID environment variable is required");
   process.exit(1);
 }
 
@@ -92,9 +97,10 @@ async function applyCanonicalMigrations(client: PoolClient): Promise<void> {
     try {
       await client.query(sql);
       await retireLegacyMigrationVersionAliases(client);
-      await client.query("INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING", [
-        version,
-      ]);
+      await client.query(
+        "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
+        [version]
+      );
       await client.query("COMMIT");
       console.log(`✓ Applied ${version}`);
     } catch (error) {

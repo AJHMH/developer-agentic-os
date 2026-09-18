@@ -65,10 +65,9 @@ export async function resolveHostedTenantDatabaseId(
   client: HostedTenantLookupClient,
   clerkOrgId: string
 ): Promise<string> {
-  const result = await client.query(
-    "SELECT id FROM organizations WHERE clerk_org_id = $1",
-    [clerkOrgId]
-  );
+  const result = await client.query("SELECT id FROM organizations WHERE clerk_org_id = $1", [
+    clerkOrgId,
+  ]);
   if (result.rows.length === 1) return (result.rows[0] as { id: string }).id;
   if (result.rows.length > 1)
     throw new Error(
@@ -244,6 +243,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
   async readDeploymentState(): Promise<HostedDeploymentState> {
     await this.ensureDeploymentSchema();
     const client = this.transactionClient.getStore() ?? this.pool;
+    const tenantId = await this.tenantDatabaseId(client);
     const mapping = await client.query<{
       vercel_project_id: string;
       vercel_team_id: string | null;
@@ -251,10 +251,9 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     }>(
       `SELECT vercel_project_id, vercel_team_id, updated_at
        FROM vercel_projects
-       JOIN organizations ON organizations.id = vercel_projects.tenant_id
-       WHERE organizations.clerk_org_id = $1
+       WHERE tenant_id = $1
        ORDER BY updated_at DESC LIMIT 1`,
-      [this.tenantId]
+      [tenantId]
     );
     const history = await client.query<{
       vercel_project_id: string;
@@ -263,9 +262,8 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     }>(
       `SELECT vercel_project_id, vercel_team_id, changed_at
        FROM vercel_project_history
-       JOIN organizations ON organizations.id = vercel_project_history.tenant_id
-       WHERE organizations.clerk_org_id = $1 ORDER BY changed_at`,
-      [this.tenantId]
+       WHERE tenant_id = $1 ORDER BY changed_at`,
+      [tenantId]
     );
     const repositories = await client.query<{
       id: string;
@@ -276,11 +274,10 @@ export class NeonHostedStateProvider implements HostedStateProvider {
       created_at: string;
     }>(
       `SELECT repos.id, repos.github_owner, repos.github_repo,
-              repos.deployment_workflow, repos.deployment_ref, repos.created_at
+             repos.deployment_workflow, repos.deployment_ref, repos.created_at
        FROM repos
-       JOIN organizations ON organizations.id = repos.tenant_id
-       WHERE organizations.clerk_org_id = $1 AND repos.deployment_workflow IS NOT NULL`,
-      [this.tenantId]
+       WHERE tenant_id = $1 AND repos.deployment_workflow IS NOT NULL`,
+      [tenantId]
     );
     return {
       vercelProject: mapping.rows[0]

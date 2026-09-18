@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   EncryptedProtectedSecretStore,
   hostedDatabaseUrl,
+  NeonHostedStateProvider,
   resolveHostedTenantDatabaseId,
 } from "../src/server/hosted-persistence/neon-hosted-provider";
 import type {
@@ -281,6 +282,30 @@ test("hosted tenant lookup fails closed until the organization is provisioned", 
     () => resolveHostedTenantDatabaseId(duplicateTenantClient, "org_duplicate"),
     /org_duplicate.*duplicate organizations mappings/i
   );
+});
+
+test("hosted deployment reads fail closed until the organization is provisioned", async () => {
+  const missingTenantClient = {
+    async query() {
+      return { rows: [], rowCount: 0 };
+    },
+  };
+  const provider = Object.create(NeonHostedStateProvider.prototype) as {
+    readDeploymentState(): Promise<unknown>;
+    tenantId: string;
+    ensureDeploymentSchema(): Promise<void>;
+    transactionClient: { getStore(): typeof missingTenantClient };
+    pool: typeof missingTenantClient;
+  };
+  provider.tenantId = "org_missing";
+  provider.ensureDeploymentSchema = async () => undefined;
+  provider.transactionClient = {
+    getStore() {
+      return missingTenantClient;
+    },
+  };
+  provider.pool = missingTenantClient;
+  await assert.rejects(() => provider.readDeploymentState(), /org_missing.*not provisioned/i);
 });
 
 test("production object storage rejects artifact bodies until durable storage is configured", async () => {
