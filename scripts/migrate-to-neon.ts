@@ -59,6 +59,15 @@ const legacyMigrationVersions = new Map<string, string>([
   ["004-hosted-state-normalization", "004-hosted-state-normalization.sql"],
 ]);
 
+async function recordCanonicalMigrationVersion(client: PoolClient, version: string): Promise<void> {
+  await client.query(
+    `INSERT INTO schema_migrations (version)
+     SELECT $1
+     WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)`,
+    [version]
+  );
+}
+
 async function retireLegacyMigrationVersionAliases(client: PoolClient): Promise<void> {
   for (const [legacyVersion, canonicalVersion] of legacyMigrationVersions) {
     await client.query(
@@ -66,7 +75,7 @@ async function retireLegacyMigrationVersionAliases(client: PoolClient): Promise<
          INSERT INTO schema_migrations (version)
          SELECT $2
          WHERE EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)
-         ON CONFLICT DO NOTHING
+           AND NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $2)
        )
        DELETE FROM schema_migrations
        WHERE version = $1`,
@@ -97,10 +106,7 @@ async function applyCanonicalMigrations(client: PoolClient): Promise<void> {
     try {
       await client.query(sql);
       await retireLegacyMigrationVersionAliases(client);
-      await client.query(
-        "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
-        [version]
-      );
+      await recordCanonicalMigrationVersion(client, version);
       await client.query("COMMIT");
       console.log(`✓ Applied ${version}`);
     } catch (error) {

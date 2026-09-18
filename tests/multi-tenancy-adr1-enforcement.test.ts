@@ -63,11 +63,16 @@ test("migration script migrates handoffs under the active tenant", async () => {
 test("migration script normalizes legacy schema version aliases to canonical filenames", async () => {
   const script = await read(migrationScriptPath);
   assert.match(script, /retireLegacyMigrationVersionAliases/);
+  assert.match(script, /recordCanonicalMigrationVersion/);
   assert.doesNotMatch(script, /process\.env\.CLERK_ORG_ID\s*\|\|/);
   assert.match(script, /ERROR: CLERK_ORG_ID environment variable is required/);
   assert.match(
     script,
-    /WITH canonicalized AS \(\s+INSERT INTO schema_migrations \(version\)\s+SELECT \$2\s+WHERE EXISTS \(SELECT 1 FROM schema_migrations WHERE version = \$1\)\s+ON CONFLICT DO NOTHING\s+\)\s+DELETE FROM schema_migrations\s+WHERE version = \$1/i
+    /WITH canonicalized AS \(\s+INSERT INTO schema_migrations \(version\)\s+SELECT \$2\s+WHERE EXISTS \(SELECT 1 FROM schema_migrations WHERE version = \$1\)\s+AND NOT EXISTS \(SELECT 1 FROM schema_migrations WHERE version = \$2\)\s+\)\s+DELETE FROM schema_migrations\s+WHERE version = \$1/i
+  );
+  assert.match(
+    script,
+    /INSERT INTO schema_migrations \(version\)\s+SELECT \$1\s+WHERE NOT EXISTS \(SELECT 1 FROM schema_migrations WHERE version = \$1\)/i
   );
   assert.doesNotMatch(script, /version = ANY\(\$1::text\[\]\)/);
 });
