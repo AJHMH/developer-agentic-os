@@ -65,9 +65,10 @@ export async function resolveHostedTenantDatabaseId(
   client: HostedTenantLookupClient,
   clerkOrgId: string
 ): Promise<string> {
-  const result = await client.query("SELECT id FROM organizations WHERE clerk_org_id = $1", [
-    clerkOrgId,
-  ]);
+  const result = await client.query(
+    "SELECT id FROM organizations WHERE clerk_org_id = $1 LIMIT 2",
+    [clerkOrgId]
+  );
   if (result.rows.length === 1) return (result.rows[0] as { id: string }).id;
   if (result.rows.length > 1)
     throw new Error(
