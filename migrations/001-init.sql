@@ -161,11 +161,11 @@ CREATE TABLE IF NOT EXISTS vercel_webhook_events (
   occurred_at TIMESTAMP NOT NULL,
   raw_expires_at TIMESTAMP NOT NULL,
   received_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE (vercel_project_id, vercel_deployment_id, event_type)
+  UNIQUE (tenant_id, vercel_project_id, vercel_deployment_id, event_type)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id
-  ON vercel_webhook_events(delivery_id) WHERE delivery_id IS NOT NULL;
+  ON vercel_webhook_events(tenant_id, delivery_id) WHERE delivery_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS vercel_deployment_projections (
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS vercel_deployment_projections (
   url VARCHAR(255),
   commit_sha VARCHAR(255),
   occurred_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (vercel_project_id, vercel_deployment_id)
+  PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id)
 );
 
 CREATE TABLE IF NOT EXISTS vercel_webhook_audit (
@@ -440,4 +440,4 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   executed_at TIMESTAMP DEFAULT NOW()
 );
 
-INSERT INTO schema_migrations (version) VALUES ('001-init') ON CONFLICT DO NOTHING;
+INSERT INTO schema_migrations (version) VALUES ('001-init.sql') ON CONFLICT DO NOTHING;

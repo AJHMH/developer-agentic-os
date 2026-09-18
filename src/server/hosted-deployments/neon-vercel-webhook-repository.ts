@@ -1,9 +1,13 @@
-import { randomUUID } from "node:crypto";
 import { Pool } from "@neondatabase/serverless";
 
 import {
+  canonicalHostedWebhookTables,
+  provisionCanonicalHostedSchema,
+} from "@/server/hosted-persistence/canonical-hosted-schema";
+import {
   EncryptedProtectedSecretStore,
   hostedDatabaseUrl,
+  resolveHostedTenantDatabaseId,
 } from "@/server/hosted-persistence/neon-hosted-provider";
 import type {
   VercelWebhookAuditEntry,
@@ -88,8 +92,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       `INSERT INTO vercel_deployment_projections
         (tenant_id, vercel_project_id, vercel_deployment_id, event_type, status, url, commit_sha, occurred_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (vercel_project_id, vercel_deployment_id) DO UPDATE SET
-         tenant_id = EXCLUDED.tenant_id,
+      ON CONFLICT (tenant_id, vercel_project_id, vercel_deployment_id) DO UPDATE SET
          event_type = EXCLUDED.event_type,
          status = EXCLUDED.status,
          url = EXCLUDED.url,
@@ -117,7 +120,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       `INSERT INTO vercel_failure_signals
         (tenant_id, vercel_project_id, vercel_deployment_id, source_id, title, body)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (source_id) DO NOTHING`,
+       ON CONFLICT (tenant_id, source_id) DO NOTHING`,
       [
         tenantId,
         event.projectId,
@@ -134,35 +137,21 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   }
 
   private ensureSchema(): Promise<void> {
-    return (this.ready ??= this.pool
-      .query(
-        `SELECT 1 FROM information_schema.tables
-         WHERE table_schema = 'public' AND table_name IN
-         ('organizations', 'vercel_projects', 'vercel_webhook_events',
-          'vercel_deployment_projections', 'vercel_failure_signals')
-         GROUP BY table_schema HAVING COUNT(*) = 5`
-      )
-      .then((result) => {
-        if (result.rowCount !== 1) throw new Error("Canonical webhook schema is not installed.");
-      }));
+    const ready = this.ready;
+    if (ready) return ready;
+    const provisioning = provisionCanonicalHostedSchema(
+      this.pool,
+      canonicalHostedWebhookTables
+    ).catch((error) => {
+      this.ready = undefined;
+      throw error;
+    });
+    this.ready = provisioning;
+    return provisioning;
   }
 
   private async tenantDatabaseId(clerkOrgId: string): Promise<string> {
-    const result = await this.pool.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [clerkOrgId]
-    );
-    if (result.rows.length === 1) return result.rows[0].id;
-
-    const tenantId = randomUUID();
-    const insertResult = await this.pool.query<{ id: string }>(
-      `INSERT INTO organizations (id, name, clerk_org_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
-       RETURNING id`,
-      [tenantId, `Organization ${clerkOrgId}`, clerkOrgId]
-    );
-    return insertResult.rows[0].id;
+    return resolveHostedTenantDatabaseId(this.pool, clerkOrgId);
   }
 
   async recordAudit(entry: VercelWebhookAuditEntry): Promise<void> {

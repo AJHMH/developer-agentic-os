@@ -5,6 +5,7 @@ import type { HostedAuditEvent, HostedIdentity, HostedWorkspace } from "@/types/
 import { readJsonFile, writeJsonFile } from "../local-store/json-file";
 import { withStateLock } from "../local-store/state-lock";
 import {
+  assertHostedProductionPersistenceConfigured,
   isHostedJsonFixtureMode,
   isHostedNeonConfigured,
   NeonHostedWorkspaceStateProvider,
@@ -219,9 +220,16 @@ export function hostedWorkspaceStoreForTenant(tenantId: string): HostedWorkspace
     tenantWorkspaceStores.set(tenantId, store);
     return store;
   }
+  if (!isHostedJsonFixtureMode()) assertHostedProductionPersistenceConfigured();
   const store = new HostedWorkspaceStore(tenantRoot);
   tenantWorkspaceStores.set(tenantId, store);
   return store;
 }
 
-export const hostedWorkspaceStore = hostedWorkspaceStoreForTenant("legacy");
+export const hostedWorkspaceStore = new Proxy({} as HostedWorkspaceStore, {
+  get(_target, property, receiver) {
+    const store = hostedWorkspaceStoreForTenant("legacy");
+    const value = Reflect.get(store as object, property, receiver);
+    return typeof value === "function" ? value.bind(store) : value;
+  },
+});
