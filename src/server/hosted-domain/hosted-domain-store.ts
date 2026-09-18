@@ -1528,7 +1528,13 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
   return store;
 }
 
-export const hostedDomainStore = hostedDomainStoreForTenant("legacy");
+export const hostedDomainStore = new Proxy({} as HostedDomainStore, {
+  get(_target, property, receiver) {
+    const store = hostedDomainStoreForTenant("legacy");
+    const value = Reflect.get(store as object, property, receiver);
+    return typeof value === "function" ? value.bind(store) : value;
+  },
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

@@ -92,7 +92,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       `INSERT INTO vercel_deployment_projections
         (tenant_id, vercel_project_id, vercel_deployment_id, event_type, status, url, commit_sha, occurred_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT ON CONSTRAINT vercel_deployment_projections_pkey DO UPDATE SET
+      ON CONFLICT (tenant_id, vercel_project_id, vercel_deployment_id) DO UPDATE SET
          event_type = EXCLUDED.event_type,
          status = EXCLUDED.status,
          url = EXCLUDED.url,
@@ -120,7 +120,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       `INSERT INTO vercel_failure_signals
         (tenant_id, vercel_project_id, vercel_deployment_id, source_id, title, body)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT ON CONSTRAINT vercel_failure_signals_pkey DO NOTHING`,
+       ON CONFLICT (tenant_id, source_id) DO NOTHING`,
       [
         tenantId,
         event.projectId,
