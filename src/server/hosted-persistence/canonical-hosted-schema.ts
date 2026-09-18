@@ -150,5 +150,5 @@ export function assertHostedProductionPersistenceConfigured(): void {
 }
 
 async function readCanonicalHostedMigration(path: string): Promise<string> {
-  return readFile(join(process.cwd(), path), "utf8");
+  return readFile(join(process.cwd(), "migrations", path.split("/").at(-1) ?? path), "utf8");
 }
