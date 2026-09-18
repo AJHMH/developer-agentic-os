@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  hostedError,
-  hostedIdentity,
-  hostedInfrastructureError,
-} from "@/app/api/hosted/_shared";
+import { hostedError, hostedIdentity, hostedInfrastructureError } from "@/app/api/hosted/_shared";
 import {
   DeploymentResolutionError,
   resolveDeploymentTarget,
@@ -245,25 +241,25 @@ export async function resolveGitHubActionsDeployment(
     });
     await domainStore.recordDeploymentResolution(
       `github-actions:${claims.owner}/${claims.repository}`,
-    "allowed",
-    `${claims.owner}/${claims.repository}`,
-    target,
-    auditWorkspaceId
+      "allowed",
+      `${claims.owner}/${claims.repository}`,
+      target,
+      auditWorkspaceId
     );
     return NextResponse.json(target);
   } catch (error) {
     if (tenantId && claims) {
-    try {
-      await storeForTenant(tenantId).recordDeploymentResolution(
-        `github-actions:${claims.owner}/${claims.repository}`,
+      try {
+        await storeForTenant(tenantId).recordDeploymentResolution(
+          `github-actions:${claims.owner}/${claims.repository}`,
           "denied",
-        `${claims.owner}/${claims.repository}`,
-        undefined,
-        auditWorkspaceId
-      );
-    } catch {
-      // Ignore best-effort denial audit failures.
-    }
+          `${claims.owner}/${claims.repository}`,
+          undefined,
+          auditWorkspaceId
+        );
+      } catch {
+        // Ignore best-effort denial audit failures.
+      }
     }
     if (error instanceof DeploymentResolutionError)
       return NextResponse.json(
@@ -275,8 +271,8 @@ export async function resolveGitHubActionsDeployment(
       error.message === "Deployment identity verification is temporarily unavailable."
     )
       return NextResponse.json(
-      { error: "Deployment identity verification is temporarily unavailable." },
-      { status: 503 }
+        { error: "Deployment identity verification is temporarily unavailable." },
+        { status: 503 }
       );
     const infrastructure = hostedInfrastructureError(error);
     if (infrastructure) return infrastructure;

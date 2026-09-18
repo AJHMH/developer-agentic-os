@@ -128,7 +128,10 @@ test("hosted deployment route protects mapping mutations and fails closed after 
   const resolvedBody = await json(resolved);
   assert.equal(resolvedBody.projectId, "prj_acme");
   assert.equal(typeof resolvedBody.updatedAt, "string");
-  const storedRecords = await hostedDomainStoreForTenant(tenantId).listAllRecords(userId, workspaceId);
+  const storedRecords = await hostedDomainStoreForTenant(tenantId).listAllRecords(
+    userId,
+    workspaceId
+  );
   assert.equal(storedRecords.automationRuns?.length, 1);
   assert.equal(storedRecords.automationRuns?.[0]?.projectId, "prj_acme");
   assert.equal(storedRecords.automationRuns?.[0]?.workspaceId, workspaceId);

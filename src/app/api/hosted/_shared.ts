@@ -11,7 +11,8 @@ const persistenceUnconfiguredResponse = {
   error: "Hosted persistence is not configured. Set the hosted database URL and retry.",
 };
 const persistenceUnavailableResponse = {
-  error: "Hosted persistence is temporarily unavailable. Retry once the hosted database is reachable.",
+  error:
+    "Hosted persistence is temporarily unavailable. Retry once the hosted database is reachable.",
 };
 
 export async function hostedIdentity(request: Request) {

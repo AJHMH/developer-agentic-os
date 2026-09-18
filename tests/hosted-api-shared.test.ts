@@ -11,7 +11,9 @@ test("hostedError does not leak unexpected internal error messages", async () =>
 });
 
 test("hostedError returns actionable cutover and persistence responses", async () => {
-  const migrationIncomplete = hostedError(new Error("Canonical hosted state schema is not installed."));
+  const migrationIncomplete = hostedError(
+    new Error("Canonical hosted state schema is not installed.")
+  );
   assert.equal(migrationIncomplete.status, 409);
   assert.deepEqual(await migrationIncomplete.json(), {
     error: "Hosted Tenant migration is incomplete. Run the hosted Neon migrations and retry.",
