@@ -109,6 +109,16 @@ CREATE TABLE IF NOT EXISTS vercel_deployment_projections (
   PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id)
 );
 
+ALTER TABLE vercel_deployment_projections
+  DROP CONSTRAINT IF EXISTS vercel_deployment_projections_pkey;
+ALTER TABLE vercel_deployment_projections
+  ADD PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id);
+
+ALTER TABLE vercel_failure_signals
+  DROP CONSTRAINT IF EXISTS vercel_failure_signals_pkey;
+ALTER TABLE vercel_failure_signals
+  ADD PRIMARY KEY (tenant_id, source_id);
+
 CREATE TABLE IF NOT EXISTS vercel_webhook_audit (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID REFERENCES organizations(id) ON DELETE CASCADE,

@@ -219,6 +219,14 @@ test("fresh hosted provisioning uses one authoritative contract migration", asyn
   );
   assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\)/i);
   assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*source_id\)/i);
+  assert.match(
+    sql,
+    /ALTER TABLE vercel_deployment_projections\s+DROP CONSTRAINT IF EXISTS vercel_deployment_projections_pkey;\s+ALTER TABLE vercel_deployment_projections\s+ADD PRIMARY KEY \(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\);/i
+  );
+  assert.match(
+    sql,
+    /ALTER TABLE vercel_failure_signals\s+DROP CONSTRAINT IF EXISTS vercel_failure_signals_pkey;\s+ALTER TABLE vercel_failure_signals\s+ADD PRIMARY KEY \(tenant_id,\s*source_id\);/i
+  );
   assert.doesNotMatch(
     sql,
     /CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team/i
