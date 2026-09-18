@@ -80,30 +80,16 @@ export async function applyCanonicalHostedSchemaMigrations(
 
   for (const migrationPath of canonicalHostedSchemaMigrations) {
     const version = migrationPath.split("/").at(-1) ?? migrationPath;
-    const legacyVersion = version.replace(/\.sql$/, "");
-    const knownVersions = Array.from(new Set([version, legacyVersion]));
     const applied = (await client.query(
-      "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])",
-      [knownVersions]
+      "SELECT version FROM schema_migrations WHERE version = $1",
+      [version]
     )) as QueryResultLike<{ version: string }>;
-    if (applied.rowCount) {
-      const appliedVersions = new Set(applied.rows.map((row) => row.version));
-      for (const knownVersion of knownVersions) {
-        if (appliedVersions.has(knownVersion)) continue;
-        await client.query(
-          "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
-          [knownVersion]
-        );
-      }
-      continue;
-    }
+    if (applied.rowCount) continue;
 
     await client.query(await readMigration(migrationPath));
-    for (const knownVersion of knownVersions)
-      await client.query(
-        "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
-        [knownVersion]
-      );
+    await client.query("INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING", [
+      version,
+    ]);
   }
 }
 

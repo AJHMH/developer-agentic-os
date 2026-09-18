@@ -71,10 +71,11 @@ CREATE TABLE IF NOT EXISTS vercel_failure_signals (
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   vercel_project_id VARCHAR(255) NOT NULL,
   vercel_deployment_id VARCHAR(255) NOT NULL,
-  source_id VARCHAR(255) PRIMARY KEY,
+  source_id VARCHAR(255) NOT NULL,
   title VARCHAR(255) NOT NULL,
   body TEXT NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (tenant_id, source_id)
 );
 
 CREATE TABLE IF NOT EXISTS vercel_webhook_events (

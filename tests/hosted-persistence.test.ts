@@ -54,14 +54,11 @@ class FakeSchemaProvisioningClient {
     const sql = query.trim();
     if (sql.startsWith("CREATE TABLE IF NOT EXISTS schema_migrations"))
       return { rowCount: 0, rows: [] as Row[] };
-    if (sql === "SELECT version FROM schema_migrations WHERE version = ANY($1::text[])") {
-      const versions = ((values?.[0] as string[] | undefined) ?? []).filter((version) =>
-        this.versions.has(version)
-      );
-      return {
-        rowCount: versions.length,
-        rows: versions.map((version) => ({ version })) as Row[],
-      };
+    if (sql === "SELECT version FROM schema_migrations WHERE version = $1") {
+      const version = values?.[0] as string;
+      return this.versions.has(version)
+        ? { rowCount: 1, rows: [{ version }] as Row[] }
+        : { rowCount: 0, rows: [] as Row[] };
     }
     if (sql === "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING") {
       this.versions.add(values?.[0] as string);
@@ -222,6 +219,7 @@ test("fresh hosted provisioning uses one authoritative contract migration", asyn
     sql,
     /PRIMARY KEY\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\)/i
   );
+  assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*source_id\)/i);
   assert.doesNotMatch(sql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team/i);
 });
 
@@ -237,10 +235,7 @@ test("canonical hosted provisioning is versioned and idempotent across retries",
   await applyCanonicalHostedSchemaMigrations(client, readMigration);
 
   assert.deepEqual(reads, ["migrations/005-hosted-canonical-contract.sql"]);
-  assert.deepEqual([...client.versions].sort(), [
-    "005-hosted-canonical-contract",
-    "005-hosted-canonical-contract.sql",
-  ]);
+  assert.deepEqual([...client.versions], ["005-hosted-canonical-contract.sql"]);
   assert.deepEqual(client.appliedSql, ["-- canonical hosted schema"]);
 });
 

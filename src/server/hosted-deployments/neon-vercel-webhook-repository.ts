@@ -121,7 +121,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
       `INSERT INTO vercel_failure_signals
         (tenant_id, vercel_project_id, vercel_deployment_id, source_id, title, body)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (source_id) DO NOTHING`,
+       ON CONFLICT (tenant_id, source_id) DO NOTHING`,
       [
         tenantId,
         event.projectId,
