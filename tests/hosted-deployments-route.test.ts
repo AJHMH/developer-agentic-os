@@ -7,6 +7,7 @@ process.env.HOSTED_JSON_FIXTURE_MODE = "true";
 
 import { DELETE, GET, POST } from "../src/app/api/hosted/deployments/route";
 import { POST as resolveDeployment } from "../src/app/api/hosted/deployments/resolve/route";
+import { hostedDomainStoreForTenant } from "../src/server/hosted-domain/hosted-domain-store";
 import { POST as createWorkspace } from "../src/app/api/hosted/workspaces/route";
 
 async function json(response: Response): Promise<Record<string, unknown>> {
@@ -127,6 +128,10 @@ test("hosted deployment route protects mapping mutations and fails closed after 
   const resolvedBody = await json(resolved);
   assert.equal(resolvedBody.projectId, "prj_acme");
   assert.equal(typeof resolvedBody.updatedAt, "string");
+  const storedRecords = await hostedDomainStoreForTenant(tenantId).listAllRecords(userId, workspaceId);
+  assert.equal(storedRecords.automationRuns?.length, 1);
+  assert.equal(storedRecords.automationRuns?.[0]?.projectId, "prj_acme");
+  assert.equal(storedRecords.automationRuns?.[0]?.workspaceId, workspaceId);
 
   const deleted = await DELETE(
     new Request(
@@ -342,4 +347,124 @@ test("hosted deployment route reports unknown actions before workspace validatio
 
   assert.equal(response.status, 400);
   assert.deepEqual(await json(response), { error: "Unknown deployment action." });
+});
+
+test("hosted deployment mappings and resolution stay isolated between tenants", async () => {
+  const sharedUserId = `multi-tenant-admin-${Date.now()}`;
+  const tenantA = `tenant-a-${Date.now()}`;
+  const tenantB = `tenant-b-${Date.now()}`;
+  const originalOrgMap = process.env.GITHUB_ORG_MAP;
+  process.env.GITHUB_ORG_MAP = JSON.stringify({ [tenantA]: "acme", [tenantB]: "stripe" });
+  try {
+    const workspaceAResponse = await createWorkspace(
+      request(sharedUserId, tenantA, "org:admin", {
+        method: "POST",
+        body: JSON.stringify({ name: "Tenant A" }),
+      })
+    );
+    const workspaceAId = ((await json(workspaceAResponse)).workspace as { id: string }).id;
+    const workspaceBResponse = await createWorkspace(
+      request(sharedUserId, tenantB, "org:admin", {
+        method: "POST",
+        body: JSON.stringify({ name: "Tenant B" }),
+      })
+    );
+    const workspaceBId = ((await json(workspaceBResponse)).workspace as { id: string }).id;
+
+    const mappingResponse = await POST(
+      request(sharedUserId, tenantA, "org:admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "set-project",
+          workspaceId: workspaceAId,
+          projectId: "prj_tenant_a",
+          webhookSecret: "secret-a",
+        }),
+      })
+    );
+    assert.equal(mappingResponse.status, 200);
+    const mappingBody = (await json(mappingResponse)) as {
+      project: { projectId: string; updatedAt: string };
+    };
+    const registrationResponse = await POST(
+      request(sharedUserId, tenantA, "org:admin", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "register-repository",
+          workspaceId: workspaceAId,
+          owner: "acme",
+          repository: "checkout",
+          workflow: "deploy.yml",
+          ref: "refs/heads/main",
+        }),
+      })
+    );
+    assert.equal(registrationResponse.status, 201);
+    const registrationBody = (await json(registrationResponse)) as {
+      repository: {
+        id: string;
+        tenantId: string;
+        owner: string;
+        repository: string;
+        workflow: string;
+        ref: string;
+        createdAt: string;
+      };
+    };
+
+    const tenantAView = await GET(
+      new Request(
+        `http://localhost/api/hosted/deployments?workspaceId=${encodeURIComponent(workspaceAId)}`,
+        { headers: request(sharedUserId, tenantA, "org:admin").headers }
+      )
+    );
+    assert.deepEqual(await json(tenantAView), {
+      project: {
+        projectId: "prj_tenant_a",
+        updatedAt: mappingBody.project.updatedAt,
+      },
+      repositories: [
+        {
+          id: registrationBody.repository.id,
+          tenantId: tenantA,
+          owner: "acme",
+          repository: "checkout",
+          workflow: "deploy.yml",
+          ref: "refs/heads/main",
+          createdAt: registrationBody.repository.createdAt,
+        },
+      ],
+    });
+
+    const tenantBView = await GET(
+      new Request(
+        `http://localhost/api/hosted/deployments?workspaceId=${encodeURIComponent(workspaceBId)}`,
+        { headers: request(sharedUserId, tenantB, "org:admin").headers }
+      )
+    );
+    assert.equal(tenantBView.status, 200);
+    assert.deepEqual(await json(tenantBView), { project: null, repositories: [] });
+
+    const crossTenantResolve = await POST(
+      request("workflow", tenantB, "org:member", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "resolve",
+          workspaceId: workspaceBId,
+          owner: "acme",
+          repository: "checkout",
+          workflow: "deploy.yml",
+          ref: "refs/heads/main",
+          audience: "developer-agentic-os",
+        }),
+      })
+    );
+    assert.equal(crossTenantResolve.status, 403);
+    assert.deepEqual(await json(crossTenantResolve), {
+      error: "Deployment repository is not allowed for this Tenant.",
+    });
+  } finally {
+    if (originalOrgMap === undefined) delete process.env.GITHUB_ORG_MAP;
+    else process.env.GITHUB_ORG_MAP = originalOrgMap;
+  }
 });

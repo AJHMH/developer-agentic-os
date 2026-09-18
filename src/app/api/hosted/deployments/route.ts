@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { hostedError, hostedIdentity } from "@/app/api/hosted/_shared";
+import {
+  hostedError,
+  hostedIdentity,
+  hostedInfrastructureError,
+} from "@/app/api/hosted/_shared";
 import {
   DeploymentResolutionError,
   resolveDeploymentTarget,
@@ -202,6 +206,10 @@ export async function resolveGitHubActionsDeployment(
     process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
       ? request.headers.get("x-hosted-tenant-id")
       : null;
+  const auditWorkspaceId =
+    typeof requestBody?.workspaceId === "string" && requestBody.workspaceId.trim()
+      ? requestBody.workspaceId.trim()
+      : undefined;
   let claims: DeploymentResolutionClaims | null = null;
   let tenantId: string | null = null;
   try {
@@ -237,31 +245,43 @@ export async function resolveGitHubActionsDeployment(
     });
     await domainStore.recordDeploymentResolution(
       `github-actions:${claims.owner}/${claims.repository}`,
-      "deployment",
-      "allowed",
-      `${claims.owner}/${claims.repository}`
+    "allowed",
+    `${claims.owner}/${claims.repository}`,
+    target,
+    auditWorkspaceId
     );
     return NextResponse.json(target);
   } catch (error) {
     if (tenantId && claims) {
-      try {
-        await storeForTenant(tenantId).recordDeploymentResolution(
-          `github-actions:${claims.owner}/${claims.repository}`,
-          "deployment",
+    try {
+      await storeForTenant(tenantId).recordDeploymentResolution(
+        `github-actions:${claims.owner}/${claims.repository}`,
           "denied",
-          `${claims.owner}/${claims.repository}`
-        );
-      } catch {
-        // Ignore best-effort denial audit failures.
-      }
+        `${claims.owner}/${claims.repository}`,
+        undefined,
+        auditWorkspaceId
+      );
+    } catch {
+      // Ignore best-effort denial audit failures.
+    }
     }
     if (error instanceof DeploymentResolutionError)
       return NextResponse.json(
         { error: error.message },
         { status: error.code === "UNCONFIGURED" ? 409 : error.code === "NOT_FOUND" ? 404 : 403 }
       );
-    return NextResponse.json(
+    if (
+      error instanceof Error &&
+      error.message === "Deployment identity verification is temporarily unavailable."
+    )
+      return NextResponse.json(
       { error: "Deployment identity verification is temporarily unavailable." },
+      { status: 503 }
+      );
+    const infrastructure = hostedInfrastructureError(error);
+    if (infrastructure) return infrastructure;
+    return NextResponse.json(
+      { error: "Hosted persistence is temporarily unavailable. Retry once the hosted database is reachable." },
       { status: 503 }
     );
   }
