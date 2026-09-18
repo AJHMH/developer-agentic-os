@@ -36,7 +36,7 @@ If those files are missing, provisioning still succeeds and only the tenant regi
 ### 1. Provision the tenant and import local data if present
 
 ```bash
-cd /home/runner/work/developer-agentic-os/developer-agentic-os
+cd <repo-root>
 DATABASE_URL="$DATABASE_URL" CLERK_ORG_ID="$CLERK_ORG_ID" npx tsx scripts/migrate-to-neon.ts
 ```
 
