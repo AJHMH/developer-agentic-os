@@ -38,6 +38,10 @@ type HostedStateRepositoryRow = {
   created_at: string;
 };
 
+type HostedTenantLookupClient = {
+  query(queryText: string, values?: unknown[]): Promise<{ rows: unknown[]; rowCount: number }>;
+};
+
 export function hostedDatabaseUrl(): string {
   const url =
     process.env.DEV_AGENTIC_OS_DATABASE_URL ??
@@ -49,6 +53,28 @@ export function hostedDatabaseUrl(): string {
       "Hosted persistence requires DATABASE_URL, DATABASE_URL_UNPOOLED, DEV_AGENTIC_OS_DATABASE_URL, or DEV_AGENTIC_OS_DATABASE_URL_UNPOOLED."
     );
   return url;
+}
+
+export function missingHostedTenantProvisioningError(clerkOrgId: string): Error {
+  return new Error(
+    `Hosted organization ${clerkOrgId} is not provisioned in organizations. Run the canonical Neon migration/provisioning path first.`
+  );
+}
+
+export async function resolveHostedTenantDatabaseId(
+  client: HostedTenantLookupClient,
+  clerkOrgId: string
+): Promise<string> {
+  const result = await client.query(
+    "SELECT id FROM organizations WHERE clerk_org_id = $1 LIMIT 2",
+    [clerkOrgId]
+  );
+  if (result.rows.length === 1) return (result.rows[0] as { id: string }).id;
+  if (result.rows.length > 1)
+    throw new Error(
+      `Hosted organization ${clerkOrgId} has duplicate organization mappings. Resolve data integrity before continuing.`
+    );
+  throw missingHostedTenantProvisioningError(clerkOrgId);
 }
 
 export async function findHostedTenantForGitHubRepository(
@@ -218,6 +244,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
   async readDeploymentState(): Promise<HostedDeploymentState> {
     await this.ensureDeploymentSchema();
     const client = this.transactionClient.getStore() ?? this.pool;
+    const tenantId = await this.tenantDatabaseId(client);
     const mapping = await client.query<{
       vercel_project_id: string;
       vercel_team_id: string | null;
@@ -225,10 +252,9 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     }>(
       `SELECT vercel_project_id, vercel_team_id, updated_at
        FROM vercel_projects
-       JOIN organizations ON organizations.id = vercel_projects.tenant_id
-       WHERE organizations.clerk_org_id = $1
+       WHERE tenant_id = $1
        ORDER BY updated_at DESC LIMIT 1`,
-      [this.tenantId]
+      [tenantId]
     );
     const history = await client.query<{
       vercel_project_id: string;
@@ -237,9 +263,8 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     }>(
       `SELECT vercel_project_id, vercel_team_id, changed_at
        FROM vercel_project_history
-       JOIN organizations ON organizations.id = vercel_project_history.tenant_id
-       WHERE organizations.clerk_org_id = $1 ORDER BY changed_at`,
-      [this.tenantId]
+       WHERE tenant_id = $1 ORDER BY changed_at`,
+      [tenantId]
     );
     const repositories = await client.query<{
       id: string;
@@ -250,11 +275,10 @@ export class NeonHostedStateProvider implements HostedStateProvider {
       created_at: string;
     }>(
       `SELECT repos.id, repos.github_owner, repos.github_repo,
-              repos.deployment_workflow, repos.deployment_ref, repos.created_at
+             repos.deployment_workflow, repos.deployment_ref, repos.created_at
        FROM repos
-       JOIN organizations ON organizations.id = repos.tenant_id
-       WHERE organizations.clerk_org_id = $1 AND repos.deployment_workflow IS NOT NULL`,
-      [this.tenantId]
+       WHERE tenant_id = $1 AND repos.deployment_workflow IS NOT NULL`,
+      [tenantId]
     );
     return {
       vercelProject: mapping.rows[0]
@@ -414,21 +438,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
       }));
   }
   private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
-    const result = await client.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [this.tenantId]
-    );
-    if (result.rows.length === 1) return result.rows[0].id;
-
-    const tenantId = randomUUID();
-    const insertResult = await client.query<{ id: string }>(
-      `INSERT INTO organizations (id, name, clerk_org_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
-       RETURNING id`,
-      [tenantId, `Organization ${this.tenantId}`, this.tenantId]
-    );
-    return insertResult.rows[0].id;
+    return resolveHostedTenantDatabaseId(client, this.tenantId);
   }
   private ensureDeploymentSchema(): Promise<void> {
     return (this.deploymentReady ??= this.pool
@@ -608,21 +618,7 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
   }
 
   private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
-    const result = await client.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [this.tenantId]
-    );
-    if (result.rows.length === 1) return result.rows[0].id;
-
-    const tenantId = randomUUID();
-    const insertResult = await client.query<{ id: string }>(
-      `INSERT INTO organizations (id, name, clerk_org_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
-       RETURNING id`,
-      [tenantId, `Organization ${this.tenantId}`, this.tenantId]
-    );
-    return insertResult.rows[0].id;
+    return resolveHostedTenantDatabaseId(client, this.tenantId);
   }
 }
 
