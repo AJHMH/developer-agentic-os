@@ -63,6 +63,7 @@ export async function findHostedTenantForGitHubRepository(
 ): Promise<string | null> {
   const pool = new Pool({ connectionString: hostedDatabaseUrl() });
   try {
+    await provisionCanonicalHostedSchema(pool, canonicalHostedDeploymentTables);
     const result = await pool.query<{ clerk_org_id: string }>(
       `SELECT organizations.clerk_org_id
        FROM repos
