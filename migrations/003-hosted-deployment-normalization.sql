@@ -33,10 +33,11 @@ CREATE TABLE IF NOT EXISTS vercel_failure_signals (
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   vercel_project_id VARCHAR(255) NOT NULL,
   vercel_deployment_id VARCHAR(255) NOT NULL,
-  source_id VARCHAR(255) PRIMARY KEY,
+  source_id VARCHAR(255) NOT NULL,
   title VARCHAR(255) NOT NULL,
   body TEXT NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (tenant_id, source_id)
 );
 
 ALTER TABLE vercel_webhook_audit
@@ -46,6 +47,7 @@ DO $$
 DECLARE
   webhook_constraint_name TEXT;
   projection_constraint_name TEXT;
+  failure_signal_constraint_name TEXT;
 BEGIN
   SELECT conname INTO webhook_constraint_name
   FROM pg_constraint
@@ -88,6 +90,28 @@ BEGIN
   ) THEN
     ALTER TABLE vercel_deployment_projections
       ADD PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id);
+  END IF;
+
+  SELECT conname INTO failure_signal_constraint_name
+  FROM pg_constraint
+  WHERE conrelid = 'vercel_failure_signals'::regclass
+    AND contype = 'p'
+    AND pg_get_constraintdef(oid) = 'PRIMARY KEY (source_id)';
+  IF failure_signal_constraint_name IS NOT NULL THEN
+    EXECUTE format(
+      'ALTER TABLE vercel_failure_signals DROP CONSTRAINT %I',
+      failure_signal_constraint_name
+    );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'vercel_failure_signals'::regclass
+      AND contype = 'p'
+      AND pg_get_constraintdef(oid) = 'PRIMARY KEY (tenant_id, source_id)'
+  ) THEN
+    ALTER TABLE vercel_failure_signals
+      ADD PRIMARY KEY (tenant_id, source_id);
   END IF;
 END $$;
 
@@ -496,7 +520,7 @@ BEGIN
                legacy.title, legacy.body, legacy.created_at
         FROM developer_agentic_os_vercel_failure_signals AS legacy
         WHERE legacy.tenant_id = legacy_tenant_id
-        ON CONFLICT (source_id) DO NOTHING;
+        ON CONFLICT (tenant_id, source_id) DO NOTHING;
 
         UPDATE migration_status
         SET status = 'completed', completed_at = NOW(), failure_details = NULL

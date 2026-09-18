@@ -11,6 +11,7 @@ const deploymentMigrationPath = resolve(
 const initMigrationPath = resolve(process.cwd(), "migrations/001-init.sql");
 const stateMigrationPath = resolve(process.cwd(), "migrations/004-hosted-state-normalization.sql");
 const guidePath = resolve(process.cwd(), "NEON-MIGRATION-GUIDE.md");
+const systemDiagramsPath = resolve(process.cwd(), "docs/system-diagrams.md");
 const webhookRepositoryPath = resolve(
   process.cwd(),
   "src/server/hosted-deployments/neon-vercel-webhook-repository.ts"
@@ -143,10 +144,13 @@ test("canonical webhook tables and runtime writes use tenant-scoped conflict key
     deploymentSql,
     /ON CONFLICT \(tenant_id, vercel_project_id, vercel_deployment_id\) DO UPDATE SET/
   );
+  assert.match(deploymentSql, /PRIMARY KEY \(tenant_id, source_id\)/);
+  assert.match(deploymentSql, /ON CONFLICT \(tenant_id, source_id\) DO NOTHING;/);
   assert.match(
     repository,
     /ON CONFLICT \(tenant_id, vercel_project_id, vercel_deployment_id\) DO UPDATE SET/
   );
+  assert.match(repository, /ON CONFLICT \(tenant_id, source_id\) DO NOTHING/);
 });
 
 test("deployment migration execution preserves per-tenant webhook and projection rows across retries", async () => {
@@ -203,6 +207,15 @@ test("deployment migration execution preserves per-tenant webhook and projection
         project_id VARCHAR(255),
         occurred_at TIMESTAMP
       );
+      CREATE TABLE developer_agentic_os_vercel_failure_signals (
+        tenant_id TEXT NOT NULL,
+        project_id VARCHAR(255) NOT NULL,
+        deployment_id VARCHAR(255) NOT NULL,
+        source_id VARCHAR(255) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        body TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL
+      );
 
       INSERT INTO developer_agentic_os_vercel_project_mapping VALUES
         ('org-a', 'shared-project', 'shared-team', 'secret-a', NULL, NULL, '2026-01-01T00:00:00Z'),
@@ -219,6 +232,9 @@ test("deployment migration execution preserves per-tenant webhook and projection
       INSERT INTO developer_agentic_os_vercel_webhook_audit VALUES
         ('org-a', 'duplicate', 'shared-project', '2026-01-01T00:00:00Z'),
         ('org-b', 'duplicate', 'shared-project', '2026-01-01T00:00:00Z');
+      INSERT INTO developer_agentic_os_vercel_failure_signals VALUES
+        ('org-a', 'shared-project', 'shared-deployment', 'shared-source', 'Fail A', 'Body A', '2026-01-01T00:00:00Z'),
+        ('org-b', 'shared-project', 'shared-deployment', 'shared-source', 'Fail B', 'Body B', '2026-01-01T00:00:00Z');
     `);
 
     await applyMigration(db, deploymentMigrationPath);
@@ -227,6 +243,7 @@ test("deployment migration execution preserves per-tenant webhook and projection
     assert.equal(await rowCount(db, "vercel_webhook_events"), 2);
     assert.equal(await rowCount(db, "vercel_deployment_projections"), 2);
     assert.equal(await rowCount(db, "vercel_webhook_audit"), 2);
+    assert.equal(await rowCount(db, "vercel_failure_signals"), 2);
     assert.equal(await tableExists(db, "developer_agentic_os_vercel_webhook_events"), false);
 
     await db.exec(`
@@ -275,6 +292,15 @@ test("deployment migration execution preserves per-tenant webhook and projection
         project_id VARCHAR(255),
         occurred_at TIMESTAMP
       );
+      CREATE TABLE developer_agentic_os_vercel_failure_signals (
+        tenant_id TEXT NOT NULL,
+        project_id VARCHAR(255) NOT NULL,
+        deployment_id VARCHAR(255) NOT NULL,
+        source_id VARCHAR(255) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        body TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL
+      );
 
       INSERT INTO developer_agentic_os_vercel_project_mapping VALUES
         ('org-a', 'shared-project', 'shared-team', 'secret-a', NULL, NULL, '2026-01-01T00:00:00Z'),
@@ -291,6 +317,9 @@ test("deployment migration execution preserves per-tenant webhook and projection
       INSERT INTO developer_agentic_os_vercel_webhook_audit VALUES
         ('org-a', 'duplicate', 'shared-project', '2026-01-01T00:00:00Z'),
         ('org-b', 'duplicate', 'shared-project', '2026-01-01T00:00:00Z');
+      INSERT INTO developer_agentic_os_vercel_failure_signals VALUES
+        ('org-a', 'shared-project', 'shared-deployment', 'shared-source', 'Fail A', 'Body A', '2026-01-01T00:00:00Z'),
+        ('org-b', 'shared-project', 'shared-deployment', 'shared-source', 'Fail B', 'Body B', '2026-01-01T00:00:00Z');
     `);
 
     await applyMigration(db, deploymentMigrationPath);
@@ -299,6 +328,7 @@ test("deployment migration execution preserves per-tenant webhook and projection
     assert.equal(await rowCount(db, "vercel_webhook_events"), 2);
     assert.equal(await rowCount(db, "vercel_deployment_projections"), 2);
     assert.equal(await rowCount(db, "vercel_webhook_audit"), 2);
+    assert.equal(await rowCount(db, "vercel_failure_signals"), 2);
   } finally {
     await db.close();
   }
@@ -375,6 +405,7 @@ test("hosted state migration execution keeps legacy tables for failed tenants un
 
 test("migration guide documents recovery via per-tenant status and retained legacy tables", async () => {
   const guide = await read(guidePath);
+  const diagrams = await read(systemDiagramsPath);
 
   assert.match(guide, /## Hosted Legacy-Table Recovery/);
   assert.match(guide, /Each tenant writes a `migration_status` row/);
@@ -383,4 +414,8 @@ test("migration guide documents recovery via per-tenant status and retained lega
     /if any tenant fails, the migration keeps\s+the legacy source table in place instead of dropping it/i
   );
   assert.match(guide, /Re-run the canonical migrations; completed tenants are safe to retry\./);
+  assert.match(
+    diagrams,
+    /Migration `004-hosted-state-normalization\.sql` backfills legacy JSONB state tenant-by-tenant, records migration status, and only drops the retired blob tables after every tenant succeeds\./
+  );
 });
