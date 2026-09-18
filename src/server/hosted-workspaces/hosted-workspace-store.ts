@@ -226,7 +226,4 @@ export function hostedWorkspaceStoreForTenant(tenantId: string): HostedWorkspace
   return store;
 }
 
-export const hostedWorkspaceStore =
-  isHostedNeonConfigured() || isHostedJsonFixtureMode()
-    ? hostedWorkspaceStoreForTenant("legacy")
-    : new HostedWorkspaceStore(process.cwd());
+export const hostedWorkspaceStore = hostedWorkspaceStoreForTenant("legacy");
