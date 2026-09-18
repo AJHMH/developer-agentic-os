@@ -3,7 +3,7 @@ import { Pool } from "@neondatabase/serverless";
 import {
   EncryptedProtectedSecretStore,
   hostedDatabaseUrl,
-  missingHostedTenantProvisioningError,
+  resolveHostedTenantDatabaseId,
 } from "@/server/hosted-persistence/neon-hosted-provider";
 import type {
   VercelWebhookAuditEntry,
@@ -148,12 +148,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   }
 
   private async tenantDatabaseId(clerkOrgId: string): Promise<string> {
-    const result = await this.pool.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [clerkOrgId]
-    );
-    if (result.rows.length === 1) return result.rows[0].id;
-    throw missingHostedTenantProvisioningError(clerkOrgId);
+    return resolveHostedTenantDatabaseId(this.pool, clerkOrgId);
   }
 
   async recordAudit(entry: VercelWebhookAuditEntry): Promise<void> {

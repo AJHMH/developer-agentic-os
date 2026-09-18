@@ -38,6 +38,10 @@ type HostedStateRepositoryRow = {
   created_at: string;
 };
 
+type HostedTenantLookupClient = {
+  query(queryText: string, values?: unknown[]): Promise<{ rows: unknown[]; rowCount: number }>;
+};
+
 export function hostedDatabaseUrl(): string {
   const url =
     process.env.DEV_AGENTIC_OS_DATABASE_URL ??
@@ -55,6 +59,18 @@ export function missingHostedTenantProvisioningError(clerkOrgId: string): Error 
   return new Error(
     `Hosted organization ${clerkOrgId} is not provisioned in organizations. Run the canonical Neon migration/provisioning path first.`
   );
+}
+
+export async function resolveHostedTenantDatabaseId(
+  client: HostedTenantLookupClient,
+  clerkOrgId: string
+): Promise<string> {
+  const result = await client.query(
+    "SELECT id FROM organizations WHERE clerk_org_id = $1",
+    [clerkOrgId]
+  );
+  if (result.rows.length === 1) return (result.rows[0] as { id: string }).id;
+  throw missingHostedTenantProvisioningError(clerkOrgId);
 }
 
 export async function findHostedTenantForGitHubRepository(
@@ -420,12 +436,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
       }));
   }
   private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
-    const result = await client.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [this.tenantId]
-    );
-    if (result.rows.length === 1) return result.rows[0].id;
-    throw missingHostedTenantProvisioningError(this.tenantId);
+    return resolveHostedTenantDatabaseId(client, this.tenantId);
   }
   private ensureDeploymentSchema(): Promise<void> {
     return (this.deploymentReady ??= this.pool
@@ -605,12 +616,7 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
   }
 
   private async tenantDatabaseId(client: Pool | PoolClient): Promise<string> {
-    const result = await client.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [this.tenantId]
-    );
-    if (result.rows.length === 1) return result.rows[0].id;
-    throw missingHostedTenantProvisioningError(this.tenantId);
+    return resolveHostedTenantDatabaseId(client, this.tenantId);
   }
 }
 
