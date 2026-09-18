@@ -150,7 +150,7 @@ This document describes four key diagrams for the Developer Workflow OS v2 archi
 ### Schema Notes
 
 - Hosted workspace/domain state is persisted in tenant-scoped `hosted_*` tables.
-- Migration `004-hosted-state-normalization.sql` backfills legacy JSONB state and drops the retired blob tables.
+- Canonical hosted persistence uses `hosted_*` and `vercel_*` tables; migrations `003-hosted-deployment-normalization.sql` and `004-hosted-state-normalization.sql` only backfill and retire the old `developer_agentic_os_*` tables.
 - `NeonHostedStateProvider` is the active hosted persistence path.
 
 ---

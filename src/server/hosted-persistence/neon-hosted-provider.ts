@@ -51,6 +51,12 @@ export function hostedDatabaseUrl(): string {
   return url;
 }
 
+export function missingHostedTenantProvisioningError(clerkOrgId: string): Error {
+  return new Error(
+    `Hosted organization ${clerkOrgId} is not provisioned in organizations. Run the canonical Neon migration/provisioning path first.`
+  );
+}
+
 export async function findHostedTenantForGitHubRepository(
   owner: string,
   repository: string
@@ -419,16 +425,7 @@ export class NeonHostedStateProvider implements HostedStateProvider {
       [this.tenantId]
     );
     if (result.rows.length === 1) return result.rows[0].id;
-
-    const tenantId = randomUUID();
-    const insertResult = await client.query<{ id: string }>(
-      `INSERT INTO organizations (id, name, clerk_org_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
-       RETURNING id`,
-      [tenantId, `Organization ${this.tenantId}`, this.tenantId]
-    );
-    return insertResult.rows[0].id;
+    throw missingHostedTenantProvisioningError(this.tenantId);
   }
   private ensureDeploymentSchema(): Promise<void> {
     return (this.deploymentReady ??= this.pool
@@ -613,16 +610,7 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
       [this.tenantId]
     );
     if (result.rows.length === 1) return result.rows[0].id;
-
-    const tenantId = randomUUID();
-    const insertResult = await client.query<{ id: string }>(
-      `INSERT INTO organizations (id, name, clerk_org_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
-       RETURNING id`,
-      [tenantId, `Organization ${this.tenantId}`, this.tenantId]
-    );
-    return insertResult.rows[0].id;
+    throw missingHostedTenantProvisioningError(this.tenantId);
   }
 }
 

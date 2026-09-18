@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   EncryptedProtectedSecretStore,
+  NeonHostedStateProvider,
+  NeonHostedWorkspaceStateProvider,
   hostedDatabaseUrl,
 } from "../src/server/hosted-persistence/neon-hosted-provider";
 import type {
@@ -16,6 +18,7 @@ import type {
   HostedWorkspaceStateProvider,
 } from "../src/server/hosted-workspaces/hosted-workspace-store";
 import { HostedWorkspaceStore } from "../src/server/hosted-workspaces/hosted-workspace-store";
+import { NeonVercelWebhookRepository } from "../src/server/hosted-deployments/neon-vercel-webhook-repository";
 
 const emptyDomainState = (): HostedState => ({
   repositories: {},
@@ -247,6 +250,50 @@ test("production database configuration is explicit and credential encryption fa
     else environment.DATABASE_URL = previousStandardUrl;
     if (previousStandardUnpooled === undefined) delete environment.DATABASE_URL_UNPOOLED;
     else environment.DATABASE_URL_UNPOOLED = previousStandardUnpooled;
+    if (previousKey === undefined) delete environment.DEV_AGENTIC_OS_SECRET_KEY;
+    else environment.DEV_AGENTIC_OS_SECRET_KEY = previousKey;
+  }
+});
+
+test("hosted Neon providers and webhook writes require a provisioned organization mapping", async () => {
+  const environment = process.env as Record<string, string | undefined>;
+  const previousUrl = environment.DATABASE_URL;
+  const previousKey = environment.DEV_AGENTIC_OS_SECRET_KEY;
+  environment.DATABASE_URL = "postgresql://example.test/developer-os";
+  environment.DEV_AGENTIC_OS_SECRET_KEY = Buffer.alloc(32, 9).toString("base64url");
+  try {
+    const missingTenantClient = {
+      async query() {
+        return { rows: [], rowCount: 0 };
+      },
+    };
+    await assert.rejects(
+      () =>
+        (new NeonHostedStateProvider("org_missing") as unknown as {
+          tenantDatabaseId(client: { query(): Promise<{ rows: unknown[]; rowCount: number }> }): Promise<string>;
+        }).tenantDatabaseId(missingTenantClient),
+      /org_missing.*not provisioned/i
+    );
+    await assert.rejects(
+      () =>
+        (new NeonHostedWorkspaceStateProvider("org_missing") as unknown as {
+          tenantDatabaseId(client: { query(): Promise<{ rows: unknown[]; rowCount: number }> }): Promise<string>;
+        }).tenantDatabaseId(missingTenantClient),
+      /org_missing.*not provisioned/i
+    );
+
+    const webhookRepository = new NeonVercelWebhookRepository() as unknown as {
+      pool: { query(): Promise<{ rows: unknown[]; rowCount: number }> };
+      tenantDatabaseId(clerkOrgId: string): Promise<string>;
+    };
+    webhookRepository.pool = missingTenantClient;
+    await assert.rejects(
+      () => webhookRepository.tenantDatabaseId("org_missing"),
+      /org_missing.*not provisioned/i
+    );
+  } finally {
+    if (previousUrl === undefined) delete environment.DATABASE_URL;
+    else environment.DATABASE_URL = previousUrl;
     if (previousKey === undefined) delete environment.DEV_AGENTIC_OS_SECRET_KEY;
     else environment.DEV_AGENTIC_OS_SECRET_KEY = previousKey;
   }
