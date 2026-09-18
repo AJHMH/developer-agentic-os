@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
+import { PGlite } from "@electric-sql/pglite";
 
 import {
   applyCanonicalHostedSchemaMigrations,
@@ -42,6 +43,51 @@ const canonicalHostedMigrationPath = resolve(
   process.cwd(),
   "migrations/005-hosted-canonical-contract.sql"
 );
+
+async function createPgLite(): Promise<PGlite> {
+  const db = new PGlite();
+  await db.exec(`
+    CREATE OR REPLACE FUNCTION gen_random_uuid() RETURNS uuid AS $$
+      SELECT (
+        substr(md5(random()::text || clock_timestamp()::text), 1, 8) || '-' ||
+        substr(md5(random()::text || clock_timestamp()::text), 9, 4) || '-' ||
+        '4' || substr(md5(random()::text || clock_timestamp()::text), 14, 3) || '-' ||
+        'a' || substr(md5(random()::text || clock_timestamp()::text), 18, 3) || '-' ||
+        substr(md5(random()::text || clock_timestamp()::text), 21, 12)
+      )::uuid;
+    $$ LANGUAGE SQL;
+  `);
+  return db;
+}
+
+function toSqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function pgLiteQueryable(db: PGlite) {
+  return {
+    async query<Row = unknown>(
+      query: string,
+      values?: unknown[]
+    ): Promise<{ rowCount: number; rows: Row[] }> {
+      const sql = values
+        ? query.replaceAll(/\$(\d+)/g, (_, index: string) =>
+            toSqlLiteral(values[Number.parseInt(index, 10) - 1])
+          )
+        : query;
+      const statement = sql.trim().toUpperCase();
+      if (statement.startsWith("SELECT")) {
+        const result = await db.query<Row>(sql);
+        return { rowCount: result.rows.length, rows: result.rows };
+      }
+      await db.exec(sql);
+      return { rowCount: 0, rows: [] as Row[] };
+    },
+  };
+}
 
 class FakeSchemaProvisioningClient {
   readonly versions = new Set<string>();
@@ -247,6 +293,39 @@ test("canonical hosted provisioning is versioned and idempotent across retries",
   assert.deepEqual(reads, ["migrations/005-hosted-canonical-contract.sql"]);
   assert.deepEqual([...client.versions], ["005-hosted-canonical-contract.sql"]);
   assert.deepEqual(client.appliedSql, ["-- canonical hosted schema"]);
+});
+
+test("canonical hosted provisioning executes migration 005 against a database and retries cleanly", async () => {
+  const db = await createPgLite();
+  const client = pgLiteQueryable(db);
+  try {
+    await applyCanonicalHostedSchemaMigrations(client);
+    const tableCheck = await client.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name IN ('organizations', 'vercel_webhook_events', 'hosted_workspaces')`
+    );
+    assert.equal(Number(tableCheck.rows[0]?.count ?? 0), 3);
+    await client.query(
+      "INSERT INTO organizations (id, name, clerk_org_id) VALUES ($1, $2, $3)",
+      ["00000000-0000-0000-0000-000000000123", "Tenant round-trip", "org-round-trip"]
+    );
+    const org = await client.query<{ name: string }>(
+      "SELECT name FROM organizations WHERE clerk_org_id = $1",
+      ["org-round-trip"]
+    );
+    assert.equal(org.rows[0]?.name, "Tenant round-trip");
+
+    await applyCanonicalHostedSchemaMigrations(client);
+    const migration = await client.query<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM schema_migrations WHERE version = $1",
+      ["005-hosted-canonical-contract.sql"]
+    );
+    assert.equal(Number(migration.rows[0]?.count ?? 0), 1);
+  } finally {
+    await db.close();
+  }
 });
 
 test("hosted workspace mutations delegate concurrency control to the shared provider", async () => {
