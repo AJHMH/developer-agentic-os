@@ -148,9 +148,9 @@ test("canonical webhook tables and runtime writes use tenant-scoped conflict key
   assert.match(deploymentSql, /ON CONFLICT \(tenant_id, source_id\) DO NOTHING;/);
   assert.match(
     repository,
-    /ON CONFLICT ON CONSTRAINT vercel_deployment_projections_pkey DO UPDATE SET/
+    /ON CONFLICT \(tenant_id, vercel_project_id, vercel_deployment_id\) DO UPDATE SET/
   );
-  assert.match(repository, /ON CONFLICT ON CONSTRAINT vercel_failure_signals_pkey DO NOTHING/);
+  assert.match(repository, /ON CONFLICT \(tenant_id, source_id\) DO NOTHING/);
 });
 
 test("deployment migration execution preserves per-tenant webhook and projection rows across retries", async () => {
