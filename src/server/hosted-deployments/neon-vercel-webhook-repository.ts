@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Pool } from "@neondatabase/serverless";
 
 import {
@@ -8,6 +7,7 @@ import {
 import {
   EncryptedProtectedSecretStore,
   hostedDatabaseUrl,
+  resolveHostedTenantDatabaseId,
 } from "@/server/hosted-persistence/neon-hosted-provider";
 import type {
   VercelWebhookAuditEntry,
@@ -151,21 +151,7 @@ export class NeonVercelWebhookRepository implements VercelWebhookRepository {
   }
 
   private async tenantDatabaseId(clerkOrgId: string): Promise<string> {
-    const result = await this.pool.query<{ id: string }>(
-      "SELECT id FROM organizations WHERE clerk_org_id = $1",
-      [clerkOrgId]
-    );
-    if (result.rows.length === 1) return result.rows[0].id;
-
-    const tenantId = randomUUID();
-    const insertResult = await this.pool.query<{ id: string }>(
-      `INSERT INTO organizations (id, name, clerk_org_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (clerk_org_id) DO UPDATE SET updated_at = NOW()
-       RETURNING id`,
-      [tenantId, `Organization ${clerkOrgId}`, clerkOrgId]
-    );
-    return insertResult.rows[0].id;
+    return resolveHostedTenantDatabaseId(this.pool, clerkOrgId);
   }
 
   async recordAudit(entry: VercelWebhookAuditEntry): Promise<void> {

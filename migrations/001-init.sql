@@ -440,4 +440,4 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   executed_at TIMESTAMP DEFAULT NOW()
 );
 
-INSERT INTO schema_migrations (version) VALUES ('001-init') ON CONFLICT DO NOTHING;
+INSERT INTO schema_migrations (version) VALUES ('001-init.sql') ON CONFLICT DO NOTHING;

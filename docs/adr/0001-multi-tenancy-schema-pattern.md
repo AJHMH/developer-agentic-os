@@ -7,9 +7,9 @@
 
 ## Status Update
 
-This pattern is now implemented in the hosted product. The Neon migrations create tenant-scoped normalized tables in `migrations/001-init.sql` and later hosted-state migrations, tenant filtering is enforced in the persistence layer, and hosted workspace/domain aggregates no longer use a general JSONB state blob.
+This pattern is now implemented in the hosted product. The canonical migrations are `migrations/001-init.sql`, `migrations/003-hosted-deployment-normalization.sql`, and `migrations/004-hosted-state-normalization.sql`; the hosted runtime reads and writes only canonical tenant-scoped tables, and the older JSONB blob tables are migration inputs only.
 
-The application now treats each Clerk organization as a tenant, each table as tenant-scoped, and all reads/writes as constrained to the authenticated org's `tenant_id`.
+The application now treats each Clerk organization as a tenant, constrains hosted reads/writes to the authenticated org's `tenant_id`, and fails closed if the Clerk org has not been provisioned into `organizations`.
 
 ## Context
 
@@ -31,7 +31,7 @@ We will use **row-level tenant ID isolation** as the multi-tenancy pattern:
 2. **All queries against tenant-owned tables must include `WHERE tenant_id = ?`** in the ORM/query layer or middleware
 3. **The Clerk session provides the authenticated tenant context** on each request
 4. **The Next.js API layer enforces tenant filtering** before any data is returned
-5. **A small set of global reference tables, such as `users` and `schema_migrations`, remain intentionally outside the tenant scope**
+5. **A small set of global reference tables, such as `schema_migrations`, remain intentionally outside the tenant scope**
 
 ### Schema Principles
 
@@ -57,9 +57,9 @@ Row-level is the SaaS standard for good reasons: it scales, it's maintainable, a
 ### Enforcement Strategy
 
 1. **Database Layer**: Foreign key constraints ensure `tenant_id` references a valid org for tenant-owned rows
-2. **ORM Layer**: middleware adds `WHERE tenant_id = current_tenant_id` to all tenant-scoped queries; global tables such as `users` are exempt by design
-3. **API Layer**: Next.js route handlers read `tenant_id` from Clerk session, pass it to all data access functions, and reject cross-tenant access attempts
-4. **Testing**: Every test seeds a test tenant; queries are scoped to it
+2. **Persistence Layer**: hosted query methods read the Clerk org, resolve it through `organizations`, and scope writes/reads to the resulting UUID; missing org mappings fail closed instead of being auto-created at runtime
+3. **API Layer**: Next.js route handlers read `tenant_id` from the active Clerk organization, pass it to hosted stores, and reject cross-tenant access attempts
+4. **Testing**: tenant-scoped migrations and hosted persistence are covered by focused regression tests
 
 This is still row-level isolation, not table-per-tenant. The system shares a single schema while keeping data access constrained to the authenticated organization's `tenant_id` across tenant-owned tables.
 

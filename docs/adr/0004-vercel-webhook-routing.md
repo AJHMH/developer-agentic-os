@@ -222,7 +222,7 @@ Even with signature validation:
 2. Failure records are persisted by the hosted webhook adapter but are not yet connected to the existing Agent Inbox / Incoming Signal presentation abstraction.
 3. Authorized event replay, including its admin/platform authorization boundary and replay endpoint, is not yet implemented.
 4. Runtime retention cleanup and deletion/transfer lifecycle operations remain to be scheduled and exposed as operational workflows.
-5. The hosted runtime's `developer_agentic_os_*` text-tenant tables and the older normalized UUID-based migration tables still need a single schema ownership decision before the migration can be considered the sole provisioning path.
+5. The canonical hosted schema ownership decision is complete: `003-hosted-deployment-normalization.sql` and `004-hosted-state-normalization.sql` backfill retired `developer_agentic_os_*` tables and drop them, and hosted runtime writes now require a pre-provisioned `organizations` mapping instead of runtime fallback inserts.
 
 ## References
 
