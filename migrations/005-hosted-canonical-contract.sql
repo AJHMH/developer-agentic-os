@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS vercel_projects (
 
 CREATE INDEX IF NOT EXISTS idx_vercel_projects_tenant_id ON vercel_projects(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_vercel_projects_vercel_project_id ON vercel_projects(vercel_project_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team
+CREATE INDEX IF NOT EXISTS idx_vercel_projects_project_team
   ON vercel_projects(vercel_project_id, COALESCE(vercel_team_id, ''));
 
 CREATE TABLE IF NOT EXISTS vercel_project_history (
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS vercel_webhook_events (
   occurred_at TIMESTAMP NOT NULL,
   raw_expires_at TIMESTAMP NOT NULL,
   received_at TIMESTAMP DEFAULT NOW(),
-  UNIQUE (vercel_project_id, vercel_deployment_id, event_type)
+  UNIQUE (tenant_id, vercel_project_id, vercel_deployment_id, event_type)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id
@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS vercel_deployment_projections (
   url VARCHAR(255),
   commit_sha VARCHAR(255),
   occurred_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (vercel_project_id, vercel_deployment_id)
+  PRIMARY KEY (tenant_id, vercel_project_id, vercel_deployment_id)
 );
 
 CREATE TABLE IF NOT EXISTS vercel_webhook_audit (

@@ -214,6 +214,15 @@ test("fresh hosted provisioning uses one authoritative contract migration", asyn
   assert.doesNotMatch(sql, /CREATE TABLE IF NOT EXISTS routines\b/i);
   assert.doesNotMatch(sql, /CREATE TABLE IF NOT EXISTS handoffs\b/i);
   assert.doesNotMatch(sql, /CREATE TABLE IF NOT EXISTS deployment_events\b/i);
+  assert.match(
+    sql,
+    /UNIQUE\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id,\s*event_type\)/i
+  );
+  assert.match(
+    sql,
+    /PRIMARY KEY\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\)/i
+  );
+  assert.doesNotMatch(sql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team/i);
 });
 
 test("canonical hosted provisioning is versioned and idempotent across retries", async () => {

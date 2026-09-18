@@ -136,7 +136,11 @@ export async function provisionCanonicalHostedSchema(
     await assertCanonicalHostedSchema(client, requiredTables);
     await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // Ignore rollback cleanup failures so the original provisioning error is preserved.
+    }
     throw error;
   } finally {
     client.release();
