@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS vercel_webhook_events (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_webhook_delivery_id
-  ON vercel_webhook_events(delivery_id) WHERE delivery_id IS NOT NULL;
+  ON vercel_webhook_events(tenant_id, delivery_id) WHERE delivery_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS vercel_deployment_projections (
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
