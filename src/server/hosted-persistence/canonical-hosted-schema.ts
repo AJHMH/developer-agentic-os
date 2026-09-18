@@ -87,9 +87,10 @@ export async function applyCanonicalHostedSchemaMigrations(
     if (applied.rowCount) continue;
 
     await client.query(await readMigration(migrationPath));
-    await client.query("INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING", [
-      version,
-    ]);
+    await client.query(
+      "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING",
+      [version]
+    );
   }
 }
 
@@ -105,7 +106,9 @@ export async function assertCanonicalHostedSchema(
   const present = new Set(result.rows.map((row) => row.table_name));
   const missing = requiredTables.filter((table) => !present.has(table));
   if (missing.length > 0)
-    throw new Error(`Canonical hosted schema is incomplete. Missing tables: ${missing.join(", ")}.`);
+    throw new Error(
+      `Canonical hosted schema is incomplete. Missing tables: ${missing.join(", ")}.`
+    );
 }
 
 export async function provisionCanonicalHostedSchema(

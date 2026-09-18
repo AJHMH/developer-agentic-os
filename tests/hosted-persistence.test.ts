@@ -202,7 +202,9 @@ test("hosted stores persist through injected deterministic providers", async () 
 
 test("fresh hosted provisioning uses one authoritative contract migration", async () => {
   const sql = await readFile(canonicalHostedMigrationPath, "utf8");
-  assert.deepEqual(canonicalHostedSchemaMigrations, ["migrations/005-hosted-canonical-contract.sql"]);
+  assert.deepEqual(canonicalHostedSchemaMigrations, [
+    "migrations/005-hosted-canonical-contract.sql",
+  ]);
   for (const table of canonicalHostedSchemaTables)
     assert.match(sql, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`, "i"));
   assert.doesNotMatch(sql, /CREATE TABLE IF NOT EXISTS artifacts\b/i);
@@ -215,12 +217,12 @@ test("fresh hosted provisioning uses one authoritative contract migration", asyn
     sql,
     /UNIQUE\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id,\s*event_type\)/i
   );
-  assert.match(
-    sql,
-    /PRIMARY KEY\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\)/i
-  );
+  assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*vercel_project_id,\s*vercel_deployment_id\)/i);
   assert.match(sql, /PRIMARY KEY\s+\(tenant_id,\s*source_id\)/i);
-  assert.doesNotMatch(sql, /CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team/i);
+  assert.doesNotMatch(
+    sql,
+    /CREATE UNIQUE INDEX IF NOT EXISTS idx_vercel_projects_global_project_team/i
+  );
 });
 
 test("canonical hosted provisioning is versioned and idempotent across retries", async () => {

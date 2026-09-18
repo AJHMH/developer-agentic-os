@@ -409,12 +409,13 @@ export class NeonHostedStateProvider implements HostedStateProvider {
   private ensureSchema(): Promise<void> {
     const ready = this.ready;
     if (ready) return ready;
-    const provisioning = provisionCanonicalHostedSchema(this.pool, canonicalHostedStateTables).catch(
-      (error) => {
-        this.ready = undefined;
-        throw error;
-      }
-    );
+    const provisioning = provisionCanonicalHostedSchema(
+      this.pool,
+      canonicalHostedStateTables
+    ).catch((error) => {
+      this.ready = undefined;
+      throw error;
+    });
     this.ready = provisioning;
     return provisioning;
   }
@@ -602,12 +603,13 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
   private ensureSchema(): Promise<void> {
     const ready = this.ready;
     if (ready) return ready;
-    const provisioning = provisionCanonicalHostedSchema(this.pool, canonicalHostedStateTables).catch(
-      (error) => {
-        this.ready = undefined;
-        throw error;
-      }
-    );
+    const provisioning = provisionCanonicalHostedSchema(
+      this.pool,
+      canonicalHostedStateTables
+    ).catch((error) => {
+      this.ready = undefined;
+      throw error;
+    });
     this.ready = provisioning;
     return provisioning;
   }
