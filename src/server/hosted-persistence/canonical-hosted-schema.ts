@@ -118,7 +118,7 @@ export async function provisionCanonicalHostedSchema(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+    await client.query("SELECT pg_advisory_xact_lock(hashtext(current_database() || ':' || $1))", [
       "canonical_hosted_schema:v1",
     ]);
     await applyCanonicalHostedSchemaMigrations(client);
