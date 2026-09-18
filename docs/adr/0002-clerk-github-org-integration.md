@@ -7,9 +7,9 @@
 
 ## Status Update
 
-This identity model is now in effect. Clerk organization membership provides app-level access; GitHub org membership is verified separately through the GitHub OAuth token flow in `src/server/hosted-auth/github-link.ts`, and the system uses the tenant mapping created in `migrations/001-init.sql` to keep org membership and repository data scoped to the correct tenant.
+This identity model is now in effect. Clerk organization membership provides app-level access; the hosted runtime requires an active Clerk organization and resolves it through the `organizations.clerk_org_id` mapping created by the canonical Neon provisioning path. GitHub org entitlements are enforced separately through `src/server/hosted-auth/github-link.ts` and deployment registration checks.
 
-The app has moved from an abstract pattern to an enforced tenant model: users must be invited to the Clerk org and verified as members of the GitHub org before they can access GitHub-backed repository data.
+The app has moved from an abstract pattern to an enforced tenant model: users must be in the active Clerk org, the org must already be provisioned into Neon, and GitHub-backed access is constrained to the tenant's configured GitHub organization.
 
 ## Context
 
@@ -164,7 +164,7 @@ async function registerClerkOrg(clerkOrgId: string) {
 ## Current Status and Deferred Extensions
 
 1. GitHub org sync is intentionally still manual for now.
-   - We continue to prefer the explicit Clerk invite flow rather than auto-provisioning access from GitHub membership.
+   - We continue to prefer the explicit Clerk invite flow and explicit Neon tenant provisioning rather than auto-provisioning access from GitHub membership or runtime fallback inserts.
 2. GitHub team-based access constraints remain a future extension if a tenant requires narrower repo permissions than org-level membership.
 3. GitHub org rename handling remains a deferred operational concern; the current implementation assumes a stable configured org name.
 
