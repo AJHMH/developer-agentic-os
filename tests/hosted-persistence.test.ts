@@ -280,7 +280,7 @@ test("hosted tenant lookup fails closed until the organization is provisioned", 
   };
   await assert.rejects(
     () => resolveHostedTenantDatabaseId(duplicateTenantClient, "org_duplicate"),
-    /org_duplicate.*duplicate organizations mappings/i
+    /org_duplicate.*duplicate organization mappings/i
   );
 });
 

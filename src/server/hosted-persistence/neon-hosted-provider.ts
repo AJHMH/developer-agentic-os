@@ -72,7 +72,7 @@ export async function resolveHostedTenantDatabaseId(
   if (result.rows.length === 1) return (result.rows[0] as { id: string }).id;
   if (result.rows.length > 1)
     throw new Error(
-      `Hosted organization ${clerkOrgId} has duplicate organizations mappings. Resolve data integrity before continuing.`
+      `Hosted organization ${clerkOrgId} has duplicate organization mappings. Resolve data integrity before continuing.`
     );
   throw missingHostedTenantProvisioningError(clerkOrgId);
 }
