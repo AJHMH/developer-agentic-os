@@ -28,11 +28,12 @@ export async function resolveRepositoryContext(
       : typeof input.root === "string"
         ? input.root
         : undefined;
+  const normalizedRoot = root ? await normalizePath(root) : undefined;
 
   if (id) {
     try {
       const context = await workspaceStore.getContext(id);
-      if (root && resolve(root) !== resolve(context.path))
+      if (normalizedRoot && normalizedRoot !== (await normalizePath(context.path)))
         throw new WorkspaceError("INVALID_PATH", "Repository context root does not match its id.");
       return context;
     } catch (error) {
@@ -43,15 +44,14 @@ export async function resolveRepositoryContext(
       return fallback;
     }
   }
-  if (root) {
+  if (normalizedRoot) {
     const repositories = await workspaceStore.listRepositories();
     const fallback = await workspaceStore.getActiveContext();
     const allKnown = [fallback, ...repositories];
-    const resolvedInput = resolve(root);
-    const registered = allKnown.find(
-      (repository) =>
-        resolve(repository.path) === resolvedInput || repository.id === repositoryId(resolvedInput)
-    );
+    const registered = allKnown.find((repository) => {
+      const canonicalPath = resolve(repository.path);
+      return canonicalPath === normalizedRoot || repository.id === repositoryId(normalizedRoot);
+    });
     if (registered) return registered;
     throw new WorkspaceError(
       "NOT_FOUND",
@@ -59,6 +59,15 @@ export async function resolveRepositoryContext(
     );
   }
   return workspaceStore.getActiveContext();
+}
+
+async function normalizePath(inputPath: string): Promise<string> {
+  const resolved = resolve(inputPath);
+  try {
+    return await realpath(resolved);
+  } catch {
+    return resolved;
+  }
 }
 
 export async function contextFromRoot(inputRoot: string): Promise<RepositoryContext> {
