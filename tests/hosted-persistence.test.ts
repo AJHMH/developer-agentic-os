@@ -272,6 +272,15 @@ test("hosted tenant lookup fails closed until the organization is provisioned", 
     await resolveHostedTenantDatabaseId(configuredTenantClient, "org_configured"),
     "tenant-123"
   );
+  const duplicateTenantClient = {
+    async query() {
+      return { rows: [{ id: "tenant-123" }, { id: "tenant-456" }], rowCount: 2 };
+    },
+  };
+  await assert.rejects(
+    () => resolveHostedTenantDatabaseId(duplicateTenantClient, "org_duplicate"),
+    /org_duplicate.*duplicate organizations mappings/i
+  );
 });
 
 test("production object storage rejects artifact bodies until durable storage is configured", async () => {
