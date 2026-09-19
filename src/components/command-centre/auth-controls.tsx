@@ -63,7 +63,7 @@ function ConnectGitHubButton() {
   );
 }
 
-export function AuthControls() {
+function ClerkAuthControls() {
   return (
     <div className="auth-controls" aria-label="Account controls">
       <Show when="signed-out">
@@ -92,4 +92,11 @@ export function AuthControls() {
       </Show>
     </div>
   );
+}
+
+export function AuthControls() {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    return null;
+  }
+  return <ClerkAuthControls />;
 }
