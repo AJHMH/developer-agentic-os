@@ -8,10 +8,12 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const publishableKey =
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || process.env.CLERK_PUBLISHABLE_KEY;
   const fixtureMode =
-    process.env.NODE_ENV !== "production" &&
-    process.env.VERCEL === "1" &&
-    process.env.HOSTED_AUTH_FIXTURE_MODE === "true";
+    process.env.NODE_ENV !== "production" && process.env.HOSTED_AUTH_FIXTURE_MODE === "true";
+  const hasClerk = Boolean(publishableKey) && !fixtureMode;
+
   return (
     <html lang="en">
       <head>
@@ -22,7 +24,13 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           rel="stylesheet"
         />
       </head>
-      <body>{fixtureMode ? children : <ClerkProvider>{children}</ClerkProvider>}</body>
+      <body>
+        {hasClerk ? (
+          <ClerkProvider publishableKey={publishableKey}>{children}</ClerkProvider>
+        ) : (
+          children
+        )}
+      </body>
     </html>
   );
 }
