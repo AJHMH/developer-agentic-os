@@ -1,3 +1,3 @@
 # tests/scaffold.test.mjs
 
-_No extracted symbols in this file._
+- readCommandCentreSource · function · L8-L17 — async function readCommandCentreSource()

@@ -133,12 +133,14 @@ function baseStatus(
     id: "email",
     name: "Email",
     kind: "email",
+    category: status === "disabled" ? "configurable" : "connected",
     required: false,
     status,
     capabilities: ["communication signals"],
     setup:
       "Email adapter is read-only: send, reply, delete, and full-client actions are unavailable.",
     message,
+    configSnippet: "export EMAIL_ENABLED=true EMAIL_PROVIDER=imap EMAIL_PROVIDER_DATA='[]'",
   };
 }
 

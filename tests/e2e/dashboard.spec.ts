@@ -712,4 +712,91 @@ test.describe("Developer Agentic OS dashboard", () => {
     );
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test("toggles the Second Brain micro-app explorer and inspects nodes", async ({ page }) => {
+    await page.goto("/");
+    const secondBrainButton = page.getByRole("button", {
+      name: "Second Brain: Workspace graph and living map",
+    });
+    await expect(secondBrainButton).toBeVisible();
+    await expect(secondBrainButton).toHaveAttribute("aria-expanded", "false");
+
+    await secondBrainButton.click();
+    await expect(secondBrainButton).toHaveAttribute("aria-expanded", "true");
+    await expect(secondBrainButton).toHaveClass(/active/);
+
+    const explorer = page.getByRole("region", { name: "Second Brain Explorer" });
+    await expect(explorer).toBeVisible();
+    await expect(explorer.getByText("Second Brain Explorer")).toBeVisible();
+    await expect(explorer.getByText(/Nodes:/)).toBeVisible();
+
+    // The orbital stage should receive focused styling
+    await expect(page.locator(".orbital-stage")).toHaveClass(/second-brain-focused/);
+
+    // Clicking a node inside the explorer list opens the Inspector Panel
+    const firstNodeRow = explorer.locator(".second-brain-node-row").first();
+    if (await firstNodeRow.isVisible()) {
+      await firstNodeRow.click();
+      await expect(page.getByRole("complementary", { name: "Inspector Panel" })).toBeVisible();
+    }
+
+    // Clicking the micro-app button again closes the drawer
+    await secondBrainButton.click();
+    await expect(secondBrainButton).toHaveAttribute("aria-expanded", "false");
+    await expect(explorer).not.toBeVisible();
+  });
+
+  test("opens full-canvas Second Brain modal, searches, filters by type, and inspects nodes", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    // Launch Second Brain drawer from Left Rail
+    const secondBrainButton = page.getByRole("button", {
+      name: "Second Brain: Workspace graph and living map",
+    });
+    await secondBrainButton.click();
+
+    const explorer = page.getByRole("region", { name: "Second Brain Explorer" });
+    await expect(explorer).toBeVisible();
+
+    // Open Full Canvas Modal from drawer
+    const expandBtn = explorer.getByRole("button", { name: /Open Full Canvas/i });
+    await expect(expandBtn).toBeVisible();
+    await expandBtn.click();
+
+    // Verify modal is open
+    const modal = page.getByRole("dialog", { name: "Second Brain Canvas Modal" });
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole("heading", { name: "Second Brain Canvas" })).toBeVisible();
+
+    // Real-time search filters nodes
+    const searchInput = modal.getByPlaceholder("Search by title, path, or ID...");
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill("skill");
+    await expect(modal.locator(".second-brain-modal-metrics")).toBeVisible();
+
+    // Clear search
+    await searchInput.fill("");
+
+    // Toggle type filter chips
+    const artifactChip = modal.getByRole("button", { name: /Toggle Artifacts/i });
+    if (await artifactChip.isVisible()) {
+      await artifactChip.click();
+    }
+
+    // Node selection in SVG canvas
+    const nodeGroup = modal.locator(".canvas-node-group").first();
+    if (await nodeGroup.isVisible()) {
+      await nodeGroup.click();
+      // Inspector sidebar appears with neighborhood info
+      const inspector = modal.getByRole("complementary", { name: "Node Inspector" });
+      await expect(inspector).toBeVisible();
+    }
+
+    // Close modal via close button
+    const closeBtn = modal.getByRole("button", { name: "Close Second Brain modal" });
+    await closeBtn.click();
+    await expect(modal).not.toBeVisible();
+  });
 });

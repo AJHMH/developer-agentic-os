@@ -1,3 +1,3 @@
 # src/proxy.ts
 
-_No extracted symbols in this file._
+- unauthenticatedApiResponse · function · L23-L28 — function unauthenticatedApiResponse(request: Request)

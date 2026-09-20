@@ -1,25 +1,28 @@
 # src/server/hosted-workspaces/hosted-workspace-store.ts
 
-- HostedUserState · type · L9-L12 — type HostedUserState = { workspaces: HostedWorkspace[]; activeWorkspaceId: string | null; };
-- HostedWorkspaceState · type · L14-L17 — type HostedWorkspaceState = { users: Record<string, HostedUserState>; audit: HostedAuditEvent[]; };
-- HostedWorkspaceStateProvider · interface · L19-L19 — interface HostedWorkspaceStateProvider
-- HostedWorkspaceError · class · L21-L26 — class HostedWorkspaceError extends Error
-- constructor · method · L22-L25 — constructor(readonly code: "INVALID_NAME" | "NOT_FOUND", message: string)
-- HostedWorkspaceStore · class · L28-L136 — class HostedWorkspaceStore
-- constructor · method · L32-L35 — constructor(root = process.cwd(), private readonly provider?: HostedWorkspaceStateProvider)
-- list · method · L37-L40 — async list(userId: string): Promise<HostedWorkspace[]>
-- create · method · L42-L53 — async create(userId: string, name: string): Promise<HostedWorkspace>
-- select · method · L55-L63 — async select(userId: string, workspaceId: string): Promise<HostedWorkspace>
-- active · method · L65-L69 — async active(userId: string): Promise<HostedWorkspace | null>
-- owns · method · L71-L74 — async owns(userId: string, workspaceId: string): Promise<boolean>
-- owner · method · L76-L82 — async owner(workspaceId: string): Promise<string>
-- recordIdentity · method · L84-L89 — async recordIdentity(identity: HostedIdentity): Promise<void>
-- recordList · method · L91-L96 — async recordList(userId: string): Promise<void>
-- audit · method · L98-L101 — async audit(userId: string): Promise<HostedAuditEvent[]>
-- user · method · L103-L105 — private user(state: HostedWorkspaceState, userId: string): HostedUserState
-- event · method · L107-L109 — private event(action: HostedAuditEvent["action"], userId: string, workspaceId?: string): HostedAuditEvent
-- read · method · L111-L115 — private read(): Promise<HostedWorkspaceState>
-- write · method · L117-L121 — private write(state: HostedWorkspaceState): Promise<void>
-- mutate · method · L123-L131 — private async mutate<T>(operation: (state: HostedWorkspaceState) => T | Promise<T>): Promise<T>
-- assertFixtureOnly · method · L133-L135 — private assertFixtureOnly(): void
-- createHostedWorkspaceStore · function · L138-L143 — function createHostedWorkspaceStore(): HostedWorkspaceStore
+- HostedUserState · type · L14-L17 — type HostedUserState = { workspaces: HostedWorkspace[]; activeWorkspaceId: string | null; };
+- HostedWorkspaceState · type · L19-L22 — type HostedWorkspaceState = { users: Record<string, HostedUserState>; audit: HostedAuditEvent[]; };
+- HostedWorkspaceStateProvider · interface · L24-L28 — interface HostedWorkspaceStateProvider
+- HostedWorkspaceError · class · L30-L38 — class HostedWorkspaceError extends Error
+- constructor · method · L31-L37 — constructor( readonly code: "INVALID_NAME" | "NOT_FOUND", message: string )
+- HostedWorkspaceStore · class · L40-L202 — class HostedWorkspaceStore
+- constructor · method · L44-L50 — constructor( root = process.cwd(), private readonly provider?: HostedWorkspaceStateProvider )
+- list · method · L52-L55 — async list(userId: string): Promise<HostedWorkspace[]>
+- create · method · L57-L73 — async create(userId: string, name: string): Promise<HostedWorkspace>
+- ensureDefault · method · L75-L97 — async ensureDefault(userId: string): Promise<HostedWorkspace>
+- select · method · L99-L107 — async select(userId: string, workspaceId: string): Promise<HostedWorkspace>
+- active · method · L109-L113 — async active(userId: string): Promise<HostedWorkspace | null>
+- owns · method · L115-L118 — async owns(userId: string, workspaceId: string): Promise<boolean>
+- owner · method · L120-L127 — async owner(workspaceId: string): Promise<string>
+- recordIdentity · method · L129-L134 — async recordIdentity(identity: HostedIdentity): Promise<void>
+- recordList · method · L136-L141 — async recordList(userId: string): Promise<void>
+- audit · method · L143-L146 — async audit(userId: string): Promise<HostedAuditEvent[]>
+- user · method · L148-L152 — private user(state: HostedWorkspaceState, userId: string): HostedUserState
+- event · method · L154-L166 — private event( action: HostedAuditEvent["action"], userId: string, workspaceId?: string ): HostedAuditEvent
+- read · method · L168-L172 — private read(): Promise<HostedWorkspaceState>
+- write · method · L174-L178 — private write(state: HostedWorkspaceState): Promise<void>
+- mutate · method · L180-L190 — private async mutate<T>(operation: (state: HostedWorkspaceState) => T | Promise<T>): Promise<T>
+- mutateState · function · L182-L187 — mutateState = async ()
+- assertFixtureOnly · method · L192-L201 — private assertFixtureOnly(): void
+- hostedWorkspaceStoreForTenant · function · L206-L227 — function hostedWorkspaceStoreForTenant(tenantId: string): HostedWorkspaceStore
+- get · method · L230-L234 — get(_target, property, receiver)

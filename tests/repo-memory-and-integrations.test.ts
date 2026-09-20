@@ -94,24 +94,47 @@ test("integration registry reports the operations provider catalog and credentia
     ]);
     assert.equal(localGit?.required, true);
     assert.equal(localGit?.status, "connected");
+    assert.equal(localGit?.category, "connected");
     assert.equal(github?.status, "unconfigured");
+    assert.equal(github?.category, "configurable");
+    assert.ok(github?.configSnippet?.includes("GITHUB_TOKEN"));
     assert.equal(vercel?.status, "unconfigured");
-    assert.equal(
-      withoutToken.find((integration) => integration.id === "sentry")?.status,
-      "unconfigured"
-    );
-    assert.equal(
-      withoutToken.find((integration) => integration.id === "email")?.status,
-      "available"
-    );
+    assert.equal(vercel?.category, "configurable");
+    assert.ok(vercel?.configSnippet?.includes("VERCEL_TOKEN"));
+    const sentry = withoutToken.find((integration) => integration.id === "sentry");
+    assert.equal(sentry?.status, "unconfigured");
+    assert.equal(sentry?.category, "configurable");
+    assert.ok(sentry?.configSnippet?.includes("SENTRY_AUTH_TOKEN"));
+    const email = withoutToken.find((integration) => integration.id === "email");
+    assert.equal(email?.status, "available");
+    assert.equal(email?.category, "connected");
+
+    for (const id of [
+      "cloudflare",
+      "coderabbit",
+      "workos",
+      "clerk",
+      "convex",
+      "neondb",
+      "upstash",
+      "slack",
+    ]) {
+      const deferred = withoutToken.find((integration) => integration.id === id);
+      assert.equal(deferred?.status, "deferred");
+      assert.equal(deferred?.category, "deferred");
+    }
 
     const withToken = await getIntegrationStatuses(root, {
       GITHUB_TOKEN: "redacted-test-token",
       VERCEL_TOKEN: "redacted-vercel-token",
       VERCEL_PROJECT_ID: "prj_test",
     });
-    assert.equal(withToken.find((integration) => integration.id === "github")?.status, "connected");
-    assert.equal(withToken.find((integration) => integration.id === "vercel")?.status, "connected");
+    const githubWithToken = withToken.find((integration) => integration.id === "github");
+    assert.equal(githubWithToken?.status, "connected");
+    assert.equal(githubWithToken?.category, "connected");
+    const vercelWithToken = withToken.find((integration) => integration.id === "vercel");
+    assert.equal(vercelWithToken?.status, "connected");
+    assert.equal(vercelWithToken?.category, "connected");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

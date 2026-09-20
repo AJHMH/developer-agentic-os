@@ -1,11 +1,31 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 
 import { repositoryContextForRequest } from "@/server/workspace/request-context";
 import { createWorkspaceContext } from "@/server/workspace/workspace-context";
 import { WorkspaceError } from "@/server/workspace/workspace-store";
+import { isHostedMode, resolveHostedWorkspaceContext } from "@/server/workspace/hosted-mode";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
+
+  if (isHostedMode(request)) {
+    const hosted = await resolveHostedWorkspaceContext(
+      request,
+      searchParams.get("repositoryId") ?? searchParams.get("contextId")
+    );
+    if (hosted instanceof NextResponse) return hosted;
+
+    const records = await hosted.domainStore.listAllRecords(
+      hosted.userId,
+      hosted.activeWorkspace.id
+    );
+    let artifacts = (records.artifacts ?? []) as any[];
+    const type = searchParams.get("type");
+    if (type) artifacts = artifacts.filter((a) => a.type === type);
+    return NextResponse.json({ artifacts });
+  }
+
   try {
     const context = await repositoryContextForRequest(request);
     const workspace = await createWorkspaceContext(context.path);
@@ -24,9 +44,33 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  const body = await request.json().catch(() => null);
   if (!body?.name || !body?.type || body.content === undefined) {
     return NextResponse.json({ error: "name, type, and content are required" }, { status: 400 });
+  }
+
+  if (isHostedMode(request)) {
+    const hosted = await resolveHostedWorkspaceContext(
+      request,
+      body?.repositoryId ?? body?.contextId
+    );
+    if (hosted instanceof NextResponse) return hosted;
+
+    const artifact = await hosted.domainStore.putRecord(
+      hosted.userId,
+      hosted.activeWorkspace.id,
+      "artifacts",
+      {
+        id: randomUUID(),
+        name: body.name,
+        type: body.type,
+        content: body.content,
+        tags: Array.isArray(body.tags) ? body.tags : [],
+        contextRefs: Array.isArray(body.contextRefs) ? body.contextRefs : [],
+        createdAt: new Date().toISOString(),
+      }
+    );
+    return NextResponse.json(artifact, { status: 201 });
   }
 
   try {
