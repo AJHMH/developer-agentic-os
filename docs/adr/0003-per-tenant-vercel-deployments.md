@@ -1,13 +1,13 @@
 # ADR 0003: Per-Tenant Vercel Deployments
 
-**Status**: Accepted, Partially Implemented
+**Status**: Accepted, Implemented
 
 **Date**: 2026-09-09
-**Last Updated**: 2026-09-12
+**Last Updated**: 2026-09-20
 
 ## Status Update
 
-The tenant-scoped deployment mapping and deployment-resolution flow are implemented in the hosted path. The remaining gaps are operational migration and production workflow rollout details.
+The tenant-scoped deployment mapping, resolution flow, and deployment workflow pipeline are implemented. The GitHub Actions deployment workflow (`.github/workflows/deploy.yml`) requests an OIDC token with `id-token: write` permissions, calls the authenticated resolution endpoint (`/api/hosted/deployments/resolve`) via `scripts/resolve-deployment.ts`, fails closed when unconfigured (`deployment_unconfigured`), and deploys directly to the tenant's mapped Vercel project while preserving historical target data across replacements in `vercel_project_history`.
 
 The canonical tenant boundary is the Clerk organization. Repository registrations and deployment resources belong to that tenant. The Vercel project association is treated as an org-level resource rather than a shared global deployment target.
 
@@ -184,15 +184,14 @@ _This is simpler initially but limits per-org customization later._
 | Vercel project ID wrong or outdated                       | Validate on each deploy; alert on API errors                          |
 | GitHub Actions token is compromised → bad actor redeploys | Use org-scoped tokens; rotate regularly; audit logs                   |
 
-## Implementation Gaps
+## Implementation Status
 
-The following work remains before this decision can be marked fully implemented:
+The tenant deployment workflow integration is complete:
 
-1. Update and roll out the tenant deployment workflow to call the dedicated hosted resolution endpoint with a GitHub Actions OIDC token and `id-token: write` permission.
-2. Add production integration coverage for OIDC verification against stubbed JWKS and signed claims; fixture-mode route tests cover the current unit path.
-3. Complete the versioned migration rollout for existing installations and remove any remaining temporary fallback credential configuration.
-
-Until these operational gaps are closed, this ADR remains **Accepted, Partially Implemented**.
+1. **Workflow Integration**: `.github/workflows/deploy.yml` requests an OIDC token with `id-token: write` and executes `scripts/resolve-deployment.ts`, extracting the resolved `project_id` and optional `team_id`.
+2. **Failure Handling**: If the target mapping is unconfigured, the resolver returns `409 deployment_unconfigured` and halts execution before invoking any Vercel deployment command.
+3. **Historical Target Preservation**: Updates to the primary Vercel project record historical mappings in `vercel_project_history` without mutating previous deployment records.
+4. **Integration Coverage**: Contract and integration coverage in `tests/deployment-workflow.test.ts`, `tests/hosted-deployments-route.test.ts`, and `tests/github-actions-oidc.test.ts` validates end-to-end token verification, resolver behavior, and adapter compatibility.
 
 ## Related Decisions
 

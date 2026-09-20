@@ -1,0 +1,48 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Per-Tenant Vercel Deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve deployment target
+        id: resolve
+        run: npx tsx scripts/resolve-deployment.ts
+        env:
+          DEVELOPER_AGENTIC_OS_HOST: ${{ vars.DEVELOPER_AGENTIC_OS_HOST || secrets.DEVELOPER_AGENTIC_OS_HOST || 'https://app.developer-agentic-os.com' }}
+
+      - name: Deploy to Vercel
+        if: steps.resolve.outputs.configured == 'true' && steps.resolve.outputs.project_id != ''
+        run: |
+          DEPLOY_CMD="npx vercel deploy --prod --token ${{ secrets.VERCEL_TOKEN }} --project-id ${{ steps.resolve.outputs.project_id }}"
+          if [ -n "${{ steps.resolve.outputs.team_id }}" ]; then
+            DEPLOY_CMD="$DEPLOY_CMD --scope ${{ steps.resolve.outputs.team_id }}"
+          fi
+          eval "$DEPLOY_CMD"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
