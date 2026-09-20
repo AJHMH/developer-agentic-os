@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 
 import type { HostedAuditEvent, HostedIdentity, HostedWorkspace } from "@/types/hosted-workspace";
+import { currentCorrelationId } from "../hosted-api/context";
 import { readJsonFile, writeJsonFile } from "../local-store/json-file";
 import { withStateLock } from "../local-store/state-lock";
 import {
@@ -154,13 +155,16 @@ export class HostedWorkspaceStore {
   private event(
     action: HostedAuditEvent["action"],
     userId: string,
-    workspaceId?: string
+    workspaceId?: string,
+    correlationId?: string
   ): HostedAuditEvent {
+    const resolvedCorrelationId = correlationId ?? currentCorrelationId();
     return {
       id: randomUUID(),
       action,
       userId,
       ...(workspaceId ? { workspaceId } : {}),
+      ...(resolvedCorrelationId ? { correlationId: resolvedCorrelationId } : {}),
       occurredAt: new Date().toISOString(),
     };
   }

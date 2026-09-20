@@ -56,8 +56,15 @@ const hostedRoutines = [
 ];
 
 async function responseJson<T>(response: Response): Promise<T> {
-  const body = (await response.json()) as T & { error?: string };
-  if (!response.ok) throw new Error(body.error ?? `Request failed with ${response.status}`);
+  const body = (await response.json()) as T & {
+    error?: string | { message?: string };
+    message?: string;
+  };
+  const errorMessage =
+    (typeof body.error === "string" ? body.error : body.error?.message) ??
+    body.message ??
+    `Request failed with ${response.status}`;
+  if (!response.ok) throw new Error(errorMessage);
   return body;
 }
 
