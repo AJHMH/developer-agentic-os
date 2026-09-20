@@ -358,6 +358,15 @@ export class HostedDomainStore {
     return state.vercelProject;
   }
 
+  async listVercelProjectHistory(
+    userId: string,
+    workspaceId: string
+  ): Promise<HostedVercelProjectMapping[]> {
+    const state = await this.readDeploymentState();
+    await this.assertWorkspace(userId, workspaceId);
+    return state.vercelProjectHistory;
+  }
+
   async setVercelProject(
     userId: string,
     workspaceId: string,
