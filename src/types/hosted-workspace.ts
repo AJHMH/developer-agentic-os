@@ -20,5 +20,6 @@ export type HostedAuditEvent = {
   action: HostedAuditAction;
   userId: string;
   workspaceId?: string;
+  correlationId?: string;
   occurredAt: string;
 };

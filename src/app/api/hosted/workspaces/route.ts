@@ -1,42 +1,70 @@
 import { NextResponse } from "next/server";
 
-import { hostedIdentity, hostedError } from "@/app/api/hosted/_shared";
+import { executeHostedRoute } from "@/app/api/hosted/_shared";
+import { applyStandardHeaders, createHostedErrorResponse } from "@/server/hosted-api/contract";
 
 export async function GET(request: Request) {
-  const identity = await hostedIdentity(request);
-  if (identity instanceof NextResponse) return identity;
-  const hostedWorkspaceStore = identity.workspaceStore;
-  try {
-    await hostedWorkspaceStore.ensureDefault(identity.userId);
-    const workspaces = await hostedWorkspaceStore.list(identity.userId);
-    await hostedWorkspaceStore.recordList(identity.userId);
+  return executeHostedRoute(request, async ({ identity, workspaceStore }) => {
+    await workspaceStore.ensureDefault(identity.userId);
+    const workspaces = await workspaceStore.list(identity.userId);
+    await workspaceStore.recordList(identity.userId);
     return NextResponse.json({
       workspaces,
-      activeWorkspace: await hostedWorkspaceStore.active(identity.userId),
+      activeWorkspace: await workspaceStore.active(identity.userId),
     });
-  } catch (error) {
-    return hostedError(error);
-  }
+  });
 }
 
 export async function POST(request: Request) {
-  const identity = await hostedIdentity(request);
-  if (identity instanceof NextResponse) return identity;
-  const hostedWorkspaceStore = identity.workspaceStore;
-  try {
-    let body: { name?: unknown } | null;
-    try {
-      body = (await request.json()) as { name?: unknown } | null;
-    } catch {
-      return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
+  return executeHostedRoute(
+    request,
+    async ({ identity, workspaceStore, correlationId, version, isVersioned }) => {
+      let body: { name?: unknown } | null;
+      try {
+        body = (await request.json()) as { name?: unknown } | null;
+      } catch {
+        if (!isVersioned) {
+          return applyStandardHeaders(
+            NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 }),
+            correlationId,
+            version
+          );
+        }
+        return createHostedErrorResponse({
+          code: "VALIDATION_ERROR",
+          message: "Request body must be valid JSON.",
+          status: 400,
+          retryable: false,
+          correlationId,
+          version,
+        });
+      }
+
+      if (
+        !body ||
+        typeof body !== "object" ||
+        Array.isArray(body) ||
+        typeof body.name !== "string"
+      ) {
+        if (!isVersioned) {
+          return applyStandardHeaders(
+            NextResponse.json({ error: "Workspace name is required." }, { status: 400 }),
+            correlationId,
+            version
+          );
+        }
+        return createHostedErrorResponse({
+          code: "VALIDATION_ERROR",
+          message: "Workspace name is required.",
+          status: 400,
+          retryable: false,
+          correlationId,
+          version,
+        });
+      }
+
+      const workspace = await workspaceStore.create(identity.userId, body.name);
+      return NextResponse.json({ workspace }, { status: 201 });
     }
-    if (!body || typeof body !== "object" || Array.isArray(body) || typeof body.name !== "string")
-      return NextResponse.json({ error: "Workspace name is required." }, { status: 400 });
-    return NextResponse.json(
-      { workspace: await hostedWorkspaceStore.create(identity.userId, body.name) },
-      { status: 201 }
-    );
-  } catch (error) {
-    return hostedError(error);
-  }
+  );
 }
