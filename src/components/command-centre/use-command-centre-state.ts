@@ -37,6 +37,7 @@ export function useCommandCentreState() {
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
   const [focusBoardOpen, setFocusBoardOpen] = useState(true);
   const [secondBrainOpen, setSecondBrainOpen] = useState(false);
+  const [secondBrainModalOpen, setSecondBrainModalOpen] = useState(false);
   const [secondBrainSearch, setSecondBrainSearch] = useState("");
   const [secondBrainTypeFilter, setSecondBrainTypeFilter] = useState<string>("all");
   const [handoffOpen, setHandoffOpen] = useState(false);
@@ -806,6 +807,8 @@ export function useCommandCentreState() {
     setFocusBoardOpen,
     secondBrainOpen,
     setSecondBrainOpen,
+    secondBrainModalOpen,
+    setSecondBrainModalOpen,
     secondBrainSearch,
     setSecondBrainSearch,
     secondBrainTypeFilter,
