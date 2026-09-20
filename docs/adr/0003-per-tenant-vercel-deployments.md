@@ -199,7 +199,16 @@ The tenant deployment workflow integration is complete:
 1. **Workflow Integration**: `.github/workflows/deploy.yml` requests an OIDC token with `id-token: write` and executes `scripts/resolve-deployment.ts`, extracting the resolved `project_id` and optional `team_id`.
 2. **Failure Handling**: If the target mapping is unconfigured, the resolver returns `409 deployment_unconfigured` and halts execution before invoking any Vercel deployment command.
 3. **Historical Target Preservation**: Updates to the primary Vercel project record historical mappings in `vercel_project_history` without mutating previous deployment records.
-4. **Integration Coverage**: Contract and integration coverage in `tests/deployment-workflow.test.ts`, `tests/hosted-deployments-route.test.ts`, and `tests/github-actions-oidc.test.ts` validates end-to-end token verification, resolver behavior, and adapter compatibility.
+4. **Temporary Fallback Retirement**: Short-lived fallback credentials require future removal deadlines, fail closed when expired/revoked, and are encrypted at rest with full audit observability (`tests/fallback-credentials.test.ts`).
+5. **End-to-End Tenant Isolation**: Proven across multiple concurrent tenants in `tests/tenant-deployment-isolation.test.ts`:
+   - Cross-tenant mapping mutations, deletions, queries, and cross-org repository registrations are strictly rejected (`403`/`404`).
+   - Cross-tenant deployment resolution and fallback credential scope mismatches fail closed with `403 Forbidden`.
+   - Valid same-tenant deployment resolutions succeed end to end via steady-state OIDC and active fallback credentials.
+   - Unconfigured repositories fail closed with `409 deployment_unconfigured` and bypass deployer execution.
+   - Mapping deletion preserves registered repositories in state while blocking subsequent deployments.
+   - Historical target preservation isolates previous mappings per tenant.
+   - Audit event logs are completely isolated per tenant with zero cross-tenant leakage.
+   - Existing Vercel adapter operations and status checks remain fully compatible.
 
 ## Related Decisions
 
