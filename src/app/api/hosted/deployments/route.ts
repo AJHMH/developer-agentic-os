@@ -8,11 +8,16 @@ import { verifyGitHubActionsOidcToken } from "@/server/hosted-deployments/github
 import { requiredGitHubOrgForTenant } from "@/server/hosted-auth/github-link";
 import { findHostedTenantForGitHubRepository } from "@/server/hosted-persistence/neon-hosted-provider";
 import { hostedDomainStoreForTenant } from "@/server/hosted-domain/hosted-domain-store";
+import {
+  type DeploymentFallbackCredentialManager,
+  fallbackCredentialManager,
+} from "@/server/hosted-deployments/fallback-credentials";
 
 export type GitHubActionsDeploymentDependencies = {
   verifyToken?: typeof verifyGitHubActionsOidcToken;
   findTenant?: typeof findHostedTenantForGitHubRepository;
   storeForTenant?: typeof hostedDomainStoreForTenant;
+  fallbackCredentialManager?: DeploymentFallbackCredentialManager;
 };
 
 type DeploymentResolutionClaims = {
@@ -21,6 +26,7 @@ type DeploymentResolutionClaims = {
   workflow: string;
   ref: string;
   audience: string;
+  fallbackCredentialId?: string;
 };
 
 function isVerificationFailure(error: unknown): boolean {
@@ -55,9 +61,17 @@ export async function GET(request: Request) {
     const denied = adminRequired(identity);
     if (denied) return denied;
     const project = await identity.domainStore.getVercelProject(identity.userId, workspaceId);
+    const repositories = await identity.domainStore.listGitHubRepositories(
+      identity.userId,
+      workspaceId
+    );
+    const includeFallback = new URL(request.url).searchParams.get("fallback") === "true";
     return NextResponse.json({
       project,
-      repositories: await identity.domainStore.listGitHubRepositories(identity.userId, workspaceId),
+      repositories,
+      ...(includeFallback
+        ? { fallbackCredentials: fallbackCredentialManager.list(identity.tenantId) }
+        : {}),
     });
   } catch (error) {
     return hostedError(error);
@@ -81,6 +95,10 @@ export async function POST(request: Request) {
     "set-webhook-secret",
     "register-repository",
     "resolve",
+    "create-fallback-credential",
+    "rotate-fallback-credential",
+    "revoke-fallback-credential",
+    "list-fallback-credentials",
   ]);
   if (!action)
     return NextResponse.json({ error: "workspaceId and action are required." }, { status: 400 });
@@ -144,6 +162,123 @@ export async function POST(request: Request) {
         { status: 201 }
       );
     }
+    if (action === "create-fallback-credential") {
+      const denied = adminRequired(identity);
+      if (denied) return denied;
+      const owner = typeof body.owner === "string" ? body.owner.trim() : "";
+      const repository = typeof body.repository === "string" ? body.repository.trim() : "";
+      const removalDeadline =
+        typeof body.removalDeadline === "string" ? body.removalDeadline.trim() : "";
+      const description =
+        typeof body.description === "string" ? body.description.trim() : undefined;
+      const rawSecret = typeof body.rawSecret === "string" ? body.rawSecret.trim() : undefined;
+
+      if (!owner || !repository)
+        return NextResponse.json({ error: "owner and repository are required." }, { status: 400 });
+      if (!removalDeadline)
+        return NextResponse.json({ error: "removalDeadline is required." }, { status: 400 });
+
+      const configuredOrg = requiredGitHubOrgForTenant(identity.tenantId);
+      if (!configuredOrg || owner.toLowerCase() !== configuredOrg.toLowerCase())
+        return NextResponse.json(
+          { error: "Repository owner must match the Tenant's configured GitHub organization." },
+          { status: 403 }
+        );
+
+      const created = await fallbackCredentialManager.create({
+        tenantId: identity.tenantId,
+        owner,
+        repository,
+        removalDeadline,
+        description,
+        rawSecret,
+      });
+
+      await identity.domainStore.recordFallbackCredentialEvent({
+        userId: identity.userId,
+        workspaceId,
+        action: "deployment.fallback_credential.created",
+        credentialId: created.credential.id,
+        repositoryId: `${owner}/${repository}`,
+        outcome: "allowed",
+      });
+
+      return NextResponse.json(created, { status: 201 });
+    }
+    if (action === "rotate-fallback-credential") {
+      const denied = adminRequired(identity);
+      if (denied) return denied;
+      const credentialId =
+        typeof body.credentialId === "string"
+          ? body.credentialId.trim()
+          : typeof body.id === "string"
+            ? body.id.trim()
+            : "";
+      if (!credentialId)
+        return NextResponse.json({ error: "credentialId is required." }, { status: 400 });
+
+      const existing = fallbackCredentialManager.get(credentialId);
+      if (!existing || existing.tenantId !== identity.tenantId)
+        return NextResponse.json({ error: "Fallback credential not found." }, { status: 404 });
+
+      const newRawSecret =
+        typeof body.newRawSecret === "string" ? body.newRawSecret.trim() : undefined;
+      const newRemovalDeadline =
+        typeof body.newRemovalDeadline === "string" ? body.newRemovalDeadline.trim() : undefined;
+
+      const rotated = await fallbackCredentialManager.rotate(
+        credentialId,
+        newRawSecret,
+        newRemovalDeadline
+      );
+
+      await identity.domainStore.recordFallbackCredentialEvent({
+        userId: identity.userId,
+        workspaceId,
+        action: "deployment.fallback_credential.rotated",
+        credentialId: rotated.credential.id,
+        repositoryId: `${rotated.credential.owner}/${rotated.credential.repository}`,
+        outcome: "allowed",
+      });
+
+      return NextResponse.json(rotated);
+    }
+    if (action === "revoke-fallback-credential") {
+      const denied = adminRequired(identity);
+      if (denied) return denied;
+      const credentialId =
+        typeof body.credentialId === "string"
+          ? body.credentialId.trim()
+          : typeof body.id === "string"
+            ? body.id.trim()
+            : "";
+      if (!credentialId)
+        return NextResponse.json({ error: "credentialId is required." }, { status: 400 });
+
+      const existing = fallbackCredentialManager.get(credentialId);
+      if (!existing || existing.tenantId !== identity.tenantId)
+        return NextResponse.json({ error: "Fallback credential not found." }, { status: 404 });
+
+      const revoked = fallbackCredentialManager.revoke(credentialId);
+
+      await identity.domainStore.recordFallbackCredentialEvent({
+        userId: identity.userId,
+        workspaceId,
+        action: "deployment.fallback_credential.revoked",
+        credentialId: revoked.id,
+        repositoryId: `${revoked.owner}/${revoked.repository}`,
+        outcome: "allowed",
+      });
+
+      return NextResponse.json({ credential: revoked });
+    }
+    if (action === "list-fallback-credentials") {
+      const denied = adminRequired(identity);
+      if (denied) return denied;
+      return NextResponse.json({
+        credentials: fallbackCredentialManager.list(identity.tenantId),
+      });
+    }
     return NextResponse.json({ error: "Unknown deployment action." }, { status: 400 });
   } catch (error) {
     return hostedError(error);
@@ -152,13 +287,18 @@ export async function POST(request: Request) {
 
 async function resolveGitHubActionsClaims(
   request: Request,
-  verifyToken: typeof verifyGitHubActionsOidcToken,
+  dependencies: GitHubActionsDeploymentDependencies = {},
   requestBody?: Record<string, unknown>
 ): Promise<DeploymentResolutionClaims | null> {
+  const verifyToken = dependencies.verifyToken ?? verifyGitHubActionsOidcToken;
+  const credentialManager = dependencies.fallbackCredentialManager ?? fallbackCredentialManager;
+  const storeForTenant = dependencies.storeForTenant ?? hostedDomainStoreForTenant;
+
   if (
     requestBody &&
     (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") &&
-    process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
+    process.env.HOSTED_AUTH_FIXTURE_MODE === "true" &&
+    !request.headers.get("authorization")
   ) {
     return {
       owner: String(requestBody.owner ?? ""),
@@ -170,8 +310,10 @@ async function resolveGitHubActionsClaims(
   }
   const authorization = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i);
   if (!authorization) return null;
+  const token = authorization[1];
+
   try {
-    const verified = await verifyToken(authorization[1], "developer-agentic-os");
+    const verified = await verifyToken(token, "developer-agentic-os");
     return {
       owner: verified.repositoryOwner,
       repository: verified.repository.split("/").at(-1) ?? "",
@@ -180,6 +322,63 @@ async function resolveGitHubActionsClaims(
       audience: verified.audience,
     };
   } catch (error) {
+    // If OIDC token verification failed, check for temporary fallback credential
+    const expectedOwner = typeof requestBody?.owner === "string" ? requestBody.owner : undefined;
+    const expectedRepo =
+      typeof requestBody?.repository === "string" ? requestBody.repository : undefined;
+    const fallbackResult = credentialManager.verify(token, {
+      owner: expectedOwner,
+      repository: expectedRepo,
+    });
+
+    if (fallbackResult.valid) {
+      return {
+        owner: fallbackResult.credential.owner,
+        repository: fallbackResult.credential.repository,
+        workflow:
+          typeof requestBody?.workflow === "string"
+            ? requestBody.workflow
+            : ".github/workflows/deploy.yml",
+        ref: typeof requestBody?.ref === "string" ? requestBody.ref : "refs/heads/main",
+        audience: "developer-agentic-os",
+        fallbackCredentialId: fallbackResult.credential.id,
+      };
+    }
+
+    if (fallbackResult.code === "EXPIRED") {
+      if (fallbackResult.credential) {
+        try {
+          await storeForTenant(fallbackResult.credential.tenantId).recordFallbackCredentialEvent({
+            userId: `fallback-credential:${fallbackResult.credential.id}`,
+            action: "deployment.fallback_credential.expired",
+            credentialId: fallbackResult.credential.id,
+            repositoryId: `${fallbackResult.credential.owner}/${fallbackResult.credential.repository}`,
+            outcome: "denied",
+          });
+        } catch {
+          // Ignore best-effort denial audit failures.
+        }
+      }
+      throw new DeploymentResolutionError("FORBIDDEN", fallbackResult.reason);
+    }
+
+    if (fallbackResult.code === "REVOKED" || fallbackResult.code === "SCOPE_MISMATCH") {
+      if (fallbackResult.credential) {
+        try {
+          await storeForTenant(fallbackResult.credential.tenantId).recordFallbackCredentialEvent({
+            userId: `fallback-credential:${fallbackResult.credential.id}`,
+            action: "deployment.fallback_credential.rejected",
+            credentialId: fallbackResult.credential.id,
+            repositoryId: `${fallbackResult.credential.owner}/${fallbackResult.credential.repository}`,
+            outcome: "denied",
+          });
+        } catch {
+          // Ignore best-effort denial audit failures.
+        }
+      }
+      throw new DeploymentResolutionError("FORBIDDEN", fallbackResult.reason);
+    }
+
     if (isVerificationFailure(error))
       throw new DeploymentResolutionError("FORBIDDEN", "Deployment identity is not allowed.");
     throw new Error("Deployment identity verification is temporarily unavailable.", {
@@ -193,7 +392,6 @@ export async function resolveGitHubActionsDeployment(
   dependencies: GitHubActionsDeploymentDependencies = {},
   requestBody?: Record<string, unknown>
 ): Promise<NextResponse> {
-  const verifyToken = dependencies.verifyToken ?? verifyGitHubActionsOidcToken;
   const findTenant = dependencies.findTenant ?? findHostedTenantForGitHubRepository;
   const storeForTenant = dependencies.storeForTenant ?? hostedDomainStoreForTenant;
   const fixtureTenantId =
@@ -209,7 +407,7 @@ export async function resolveGitHubActionsDeployment(
   let claims: DeploymentResolutionClaims | null = null;
   let tenantId: string | null = null;
   try {
-    claims = await resolveGitHubActionsClaims(request, verifyToken, requestBody);
+    claims = await resolveGitHubActionsClaims(request, dependencies, requestBody);
     if (!claims)
       return NextResponse.json(
         { error: "A GitHub Actions OIDC token is required." },
@@ -218,7 +416,11 @@ export async function resolveGitHubActionsDeployment(
     tenantId =
       fixtureTenantId && fixtureTenantId.trim()
         ? fixtureTenantId
-        : await findTenant(claims.owner, claims.repository);
+        : claims.fallbackCredentialId
+          ? ((dependencies.fallbackCredentialManager ?? fallbackCredentialManager).get(
+              claims.fallbackCredentialId
+            )?.tenantId ?? null)
+          : await findTenant(claims.owner, claims.repository);
     if (!tenantId)
       return NextResponse.json(
         { error: "Repository registration was not found." },
@@ -239,8 +441,20 @@ export async function resolveGitHubActionsDeployment(
       ref: claims.ref,
       audience: claims.audience,
     });
+    if (claims.fallbackCredentialId) {
+      await domainStore.recordFallbackCredentialEvent({
+        userId: `fallback-credential:${claims.fallbackCredentialId}`,
+        workspaceId: auditWorkspaceId,
+        action: "deployment.fallback_credential.used",
+        credentialId: claims.fallbackCredentialId,
+        repositoryId: `${claims.owner}/${claims.repository}`,
+        outcome: "allowed",
+      });
+    }
     await domainStore.recordDeploymentResolution(
-      `github-actions:${claims.owner}/${claims.repository}`,
+      claims.fallbackCredentialId
+        ? `fallback-credential:${claims.fallbackCredentialId}`
+        : `github-actions:${claims.owner}/${claims.repository}`,
       "allowed",
       `${claims.owner}/${claims.repository}`,
       target,
@@ -250,8 +464,20 @@ export async function resolveGitHubActionsDeployment(
   } catch (error) {
     if (tenantId && claims) {
       try {
+        if (claims.fallbackCredentialId) {
+          await storeForTenant(tenantId).recordFallbackCredentialEvent({
+            userId: `fallback-credential:${claims.fallbackCredentialId}`,
+            workspaceId: auditWorkspaceId,
+            action: "deployment.fallback_credential.rejected",
+            credentialId: claims.fallbackCredentialId,
+            repositoryId: `${claims.owner}/${claims.repository}`,
+            outcome: "denied",
+          });
+        }
         await storeForTenant(tenantId).recordDeploymentResolution(
-          `github-actions:${claims.owner}/${claims.repository}`,
+          claims.fallbackCredentialId
+            ? `fallback-credential:${claims.fallbackCredentialId}`
+            : `github-actions:${claims.owner}/${claims.repository}`,
           "denied",
           `${claims.owner}/${claims.repository}`,
           undefined,

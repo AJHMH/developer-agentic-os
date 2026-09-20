@@ -92,7 +92,15 @@ The resolver returns only the primary Vercel project and optional team identifie
 
 Each tenant has one primary Vercel project for this ADR. A dedicated tenant-scoped persistence boundary stores the project and optional team identifiers. Tenant administrators may create or update the mapping; deletion leaves repository registrations intact but marks deployment configuration as unconfigured. Mapping changes affect future deployments, preserve historical deployment targets, and emit an audit event.
 
-No long-lived fallback credential is supported by the current implementation. GitHub Actions OIDC is required for deployment resolution; any future migration fallback must first add encryption, tenant scoping, rotation, audit events, and an explicit removal deadline.
+### Steady-state authentication and temporary fallback credential retirement
+
+1. **Default steady-state authentication:** GitHub Actions OIDC is the default, steady-state authentication path for all deployment resolution requests (`id-token: write`).
+2. **Temporary fallback credential constraints:** For environments or transitional migrations where OIDC is temporarily unavailable, short-lived fallback credentials may be issued subject to strict controls:
+   - **Tenant and repository scoping:** Credentials are bound to a specific tenant ID and registered repository (`owner/repo`). Scope mismatches fail closed immediately.
+   - **Encryption at rest:** Secret references are encrypted using AES-256-GCM (`EncryptedProtectedSecretStore`) in production environments and deterministic secret references in fixture modes.
+   - **Mandatory removal deadline:** Every fallback credential requires an explicit future `removalDeadline` (ISO timestamp). Once this deadline passes, any authentication attempt fails closed with `403 Forbidden` (`FALLBACK_CREDENTIAL_EXPIRED`).
+   - **Rotation and revocation:** Tenant administrators can rotate secrets or revoke credentials at any time. Revoked credentials immediately fail closed (`403 Forbidden`).
+   - **Audit observability:** Every lifecycle transition and verification check emits an audit event (`deployment.fallback_credential.created`, `deployment.fallback_credential.rotated`, `deployment.fallback_credential.revoked`, `deployment.fallback_credential.used`, `deployment.fallback_credential.expired`, `deployment.fallback_credential.rejected`).
 
 ### GitHub Actions Workflow (in the tenant's repo)
 

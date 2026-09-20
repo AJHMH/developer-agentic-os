@@ -540,6 +540,31 @@ export class HostedDomainStore {
       await this.write(state);
     });
   }
+
+  async recordFallbackCredentialEvent(input: {
+    userId: string;
+    action: string;
+    workspaceId?: string;
+    credentialId?: string;
+    repositoryId?: string;
+    outcome?: "allowed" | "denied";
+  }): Promise<void> {
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      await this.auditEvent(
+        state,
+        input.userId,
+        input.workspaceId,
+        input.action,
+        input.credentialId,
+        input.repositoryId,
+        undefined,
+        input.outcome
+      );
+      await this.write(state);
+    });
+  }
+
   async listSnapshots(userId: string, workspaceId: string): Promise<HostedSnapshot[]> {
     return this.withMutationLock(async () => {
       const state = await this.read();
