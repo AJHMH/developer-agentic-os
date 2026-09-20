@@ -115,3 +115,40 @@ function attentionFor(item: WorkItem, nowValue: number): FocusBoardWorkItem["att
 function priorityRank(priority: FocusBoardWorkItem["priority"]): number {
   return { low: 0, normal: 1, high: 2, urgent: 3 }[priority];
 }
+
+export function buildHostedFocusBoard(
+  repositoryId: string,
+  records: { workItems?: WorkItem[]; artifacts?: unknown[] },
+  limit = 12
+): FocusBoard {
+  const nowValue = Date.now();
+  const workItems = (records.workItems ?? []) as WorkItem[];
+  const withAttention = workItems
+    .filter((item) => item.status !== "completed")
+    .map((item): FocusBoardWorkItem => ({
+      ...item,
+      attention: attentionFor(item, nowValue),
+    }))
+    .sort(
+      (left, right) =>
+        attentionRank(left) - attentionRank(right) ||
+        priorityRank(right.priority) - priorityRank(left.priority) ||
+        (right.updatedAt || "").localeCompare(left.updatedAt || "")
+    );
+
+  return {
+    repositoryId,
+    generatedAt: new Date().toISOString(),
+    workItems: withAttention.slice(0, limit),
+    dueWorkItems: withAttention
+      .filter((item) => item.attention === "due" || item.attention === "overdue")
+      .slice(0, limit),
+    overdueWorkItems: withAttention.filter((item) => item.attention === "overdue").slice(0, limit),
+    blockedWorkItems: withAttention.filter((item) => item.attention === "blocked").slice(0, limit),
+    recentArtifacts: ((records.artifacts ?? []) as FocusBoard["recentArtifacts"]).slice(0, limit),
+    failedSkillRuns: [],
+    failedRoutineExecutions: [],
+    operationalIncidents: [],
+    operationalRuns: [],
+  };
+}

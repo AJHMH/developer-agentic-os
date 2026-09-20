@@ -2,7 +2,6 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 import { CommandCentreShell } from "@/components/command-centre/command-centre-shell";
-import { HostedCommandCentre } from "@/components/command-centre/hosted-command-centre";
 
 export default async function Home() {
   if (process.env.VERCEL === "1") {
@@ -13,7 +12,6 @@ export default async function Home() {
       if (!session.userId) redirect("/sign-in");
       if (!session.orgId) redirect("/select-organization");
     }
-    return <HostedCommandCentre fixtureMode={fixtureMode} />;
   }
   return <CommandCentreShell />;
 }

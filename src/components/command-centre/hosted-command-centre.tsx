@@ -61,6 +61,9 @@ async function responseJson<T>(response: Response): Promise<T> {
   return body;
 }
 
+/**
+ * @deprecated Deprecated as part of Issue #70. Use the unified CommandCentreShell instead.
+ */
 export function HostedCommandCentre({ fixtureMode = false }: { fixtureMode?: boolean }) {
   const [view, setView] = useState<HostedView>("focus");
   const [workspaces, setWorkspaces] = useState<HostedWorkspace[]>([]);

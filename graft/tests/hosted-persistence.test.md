@@ -1,12 +1,34 @@
 # tests/hosted-persistence.test.ts
 
-- emptyDomainState · function · L10-L10 — emptyDomainState = (): HostedState
-- emptyWorkspaceState · function · L11-L11 — emptyWorkspaceState = (): HostedWorkspaceState
-- MemoryDomainProvider · class · L13-L17 — class MemoryDomainProvider implements HostedStateProvider
-- constructor · method · L14-L14 — constructor(private state: HostedState)
-- read · method · L15-L15 — async read(): Promise<HostedState>
-- write · method · L16-L16 — async write(state: HostedState): Promise<void>
-- MemoryWorkspaceProvider · class · L19-L23 — class MemoryWorkspaceProvider implements HostedWorkspaceStateProvider
-- constructor · method · L20-L20 — constructor(private state: HostedWorkspaceState)
-- read · method · L21-L21 — async read(): Promise<HostedWorkspaceState>
-- write · method · L22-L22 — async write(state: HostedWorkspaceState): Promise<void>
+- emptyDomainState · function · L34-L42 — emptyDomainState = (): HostedState
+- emptyWorkspaceState · function · L43-L43 — emptyWorkspaceState = (): HostedWorkspaceState
+- createPgLite · function · L49-L63 — async function createPgLite(): Promise<PGlite>
+- toSqlLiteral · function · L65-L70 — function toSqlLiteral(value: unknown): string
+- pgLiteQueryable · function · L72-L92 — function pgLiteQueryable(db: PGlite)
+- query · method · L74-L90 — async query<Row = unknown>( query: string, values?: unknown[] ): Promise<{ rowCount: number; rows: Row[] }>
+- FakeSchemaProvisioningClient · class · L94-L118 — class FakeSchemaProvisioningClient
+- query · method · L98-L117 — async query<Row = unknown>( query: string, values?: unknown[] ): Promise<{ rowCount: number; rows: Row[] }>
+- MemoryDomainProvider · class · L120-L128 — class MemoryDomainProvider implements HostedStateProvider
+- constructor · method · L121-L121 — constructor(private state: HostedState)
+- read · method · L122-L124 — async read(): Promise<HostedState>
+- write · method · L125-L127 — async write(state: HostedState): Promise<void>
+- TransactionalMemoryDomainProvider · class · L130-L170 — class TransactionalMemoryDomainProvider implements HostedStateProvider
+- read · method · L138-L148 — async read(): Promise<HostedState>
+- write · method · L150-L152 — async write(state: HostedState): Promise<void>
+- withMutationLock · method · L154-L169 — async withMutationLock<T>(operation: () => Promise<T>): Promise<T>
+- release · function · L157-L157 — release: () => void = ()
+- MemoryWorkspaceProvider · class · L172-L180 — class MemoryWorkspaceProvider implements HostedWorkspaceStateProvider
+- constructor · method · L173-L173 — constructor(private state: HostedWorkspaceState)
+- read · method · L174-L176 — async read(): Promise<HostedWorkspaceState>
+- write · method · L177-L179 — async write(state: HostedWorkspaceState): Promise<void>
+- TransactionalMemoryWorkspaceProvider · class · L182-L222 — class TransactionalMemoryWorkspaceProvider implements HostedWorkspaceStateProvider
+- read · method · L190-L200 — async read(): Promise<HostedWorkspaceState>
+- write · method · L202-L204 — async write(state: HostedWorkspaceState): Promise<void>
+- withMutationLock · method · L206-L221 — async withMutationLock<T>(operation: () => Promise<T>): Promise<T>
+- release · function · L209-L209 — release: () => void = ()
+- readMigration · function · L295-L298 — readMigration = async (path: string)
+- query · method · L476-L478 — async query()
+- query · method · L488-L490 — async query()
+- query · method · L500-L502 — async query()
+- query · method · L512-L514 — async query()
+- getStore · method · L526-L528 — getStore()

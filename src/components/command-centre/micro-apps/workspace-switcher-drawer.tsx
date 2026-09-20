@@ -12,11 +12,15 @@ export function WorkspaceSwitcherDrawer({
   onSwitchRepository: (id: string) => void;
 }) {
   return (
-    <div
+    <section
       className="workspace-switcher-detail"
       id="workspace-switcher"
+      role="region"
       aria-label="Workspace Switcher"
     >
+      <div className="workspace-switcher-header">
+        <span className="tiny">Workspace Switcher</span>
+      </div>
       {workspaceLoading ? <p className="dashboard-placeholder">Loading repositories...</p> : null}
       {workspaceError ? <p className="dashboard-banner error">{workspaceError}</p> : null}
       {workspace ? (
@@ -56,6 +60,6 @@ export function WorkspaceSwitcherDrawer({
       {workspace?.repositories.length === 0 ? (
         <p className="dashboard-placeholder">No registered repositories.</p>
       ) : null}
-    </div>
+    </section>
   );
 }

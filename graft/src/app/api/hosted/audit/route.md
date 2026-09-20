@@ -1,3 +1,3 @@
 # src/app/api/hosted/audit/route.ts
 
-- GET · function · L7-L13 — async function GET(request: Request)
+- GET · function · L5-L23 — async function GET(request: Request)
