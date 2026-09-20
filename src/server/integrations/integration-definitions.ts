@@ -4,7 +4,10 @@ import type { IntegrationAdapterStatus } from "@/types/integration";
  * Deferred integration definitions - these are planned but not yet implemented.
  * This is a pure data module - no dependencies, no orchestration.
  */
-export const deferredIntegrations: Omit<IntegrationAdapterStatus, "status" | "message">[] = [
+export const deferredIntegrations: Omit<
+  IntegrationAdapterStatus,
+  "status" | "message" | "category"
+>[] = [
   {
     id: "sentry",
     name: "Sentry",
@@ -92,6 +95,7 @@ export function createDeferredIntegration(
     id,
     name,
     kind,
+    category: "deferred",
     required: false,
     status: "deferred",
     capabilities,

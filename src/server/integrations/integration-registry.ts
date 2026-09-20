@@ -37,19 +37,23 @@ export async function getIntegrationStatuses(
       id: "local-git",
       name: "Local Git",
       kind: "local",
+      category: git.available ? "connected" : "configurable",
       required: true,
       status: git.available ? "connected" : "error",
       capabilities: ["current branch", "recent commits", "changed files"],
+      configSnippet: "git init",
       message: git.message,
     },
     {
       id: "github",
       name: "GitHub",
       kind: "scm",
+      category: hasGitHubToken ? "connected" : "configurable",
       required: false,
       status: hasGitHubToken ? "connected" : "unconfigured",
       capabilities: ["issues", "pull requests", "Actions", "merge status"],
       setup: "Set GITHUB_TOKEN or GH_TOKEN and GITHUB_REPOSITORY to enable GitHub operations.",
+      configSnippet: "export GITHUB_TOKEN=ghp_your_token GITHUB_REPOSITORY=owner/repo",
       message: hasGitHubToken
         ? "GitHub credentials detected."
         : "GitHub credentials are not configured.",
@@ -59,21 +63,25 @@ export async function getIntegrationStatuses(
           id: "vercel",
           name: "Vercel",
           kind: "cloud",
+          category: "configurable",
           required: false,
           status: "disabled",
           capabilities: ["deployments", "build logs", "runtime logs"],
           setup: "Set VERCEL_INTEGRATION_ENABLED=true to enable Vercel operations.",
+          configSnippet: "export VERCEL_INTEGRATION_ENABLED=true",
           message: "Vercel integration is disabled by configuration.",
         }
       : {
           id: "vercel",
           name: "Vercel",
           kind: "cloud",
+          category: hasVercelToken && hasVercelProject ? "connected" : "configurable",
           required: false,
           status: hasVercelToken && hasVercelProject ? "connected" : "unconfigured",
           capabilities: ["deployments", "build logs", "runtime logs"],
           setup:
             "Set VERCEL_TOKEN or VERCEL_API_TOKEN and VERCEL_PROJECT_ID to enable Vercel operations.",
+          configSnippet: "export VERCEL_TOKEN=your_token VERCEL_PROJECT_ID=prj_your_project_id",
           message:
             hasVercelToken && hasVercelProject
               ? "Vercel credentials detected."
@@ -83,6 +91,7 @@ export async function getIntegrationStatuses(
       id: "sentry",
       name: "Sentry",
       kind: "observability",
+      category: sentryObservation?.state === "healthy" ? "connected" : "configurable",
       required: false,
       status:
         sentryObservation?.state === "healthy"
@@ -96,6 +105,8 @@ export async function getIntegrationStatuses(
             : "unconfigured",
       capabilities: ["events and outages", "breached metrics", "warnings", "traces", "errors"],
       setup: "Set SENTRY_AUTH_TOKEN, SENTRY_ORG, and SENTRY_PROJECT or configure .sentryclirc.",
+      configSnippet:
+        "export SENTRY_AUTH_TOKEN=sntrys_your_token SENTRY_ORG=org_slug SENTRY_PROJECT=proj_slug",
       message: sentryObservation?.title ?? "Sentry status is unavailable.",
     },
     createDeferredIntegration("cloudflare", "Cloudflare", "cloud", ["domains", "workers"]),

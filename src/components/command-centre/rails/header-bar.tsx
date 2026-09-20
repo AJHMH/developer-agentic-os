@@ -47,6 +47,25 @@ export function HeaderBar({
   vercelOperationsLoading: boolean;
   onRefreshIntegrations: () => void;
 }) {
+  const connectedIntegrations = dashboard.integrations.filter(
+    (item) =>
+      item.category === "connected" ||
+      (!item.category &&
+        (item.status === "connected" || item.status === "healthy" || item.status === "available"))
+  );
+  const configurableIntegrations = dashboard.integrations.filter(
+    (item) =>
+      item.category === "configurable" ||
+      (!item.category &&
+        item.status !== "deferred" &&
+        item.status !== "connected" &&
+        item.status !== "healthy" &&
+        item.status !== "available")
+  );
+  const deferredIntegrations = dashboard.integrations.filter(
+    (item) => item.category === "deferred" || (!item.category && item.status === "deferred")
+  );
+
   return (
     <header className="brand">
       <div className="brand-mark">
@@ -105,15 +124,83 @@ export function HeaderBar({
           {dashboardLoading ? (
             <span className="dashboard-placeholder">Loading integrations...</span>
           ) : null}
-          {dashboard.integrations.map((integration) => (
-            <div className="integration-row" key={integration.id}>
-              <div>
-                <span>{integration.name}</span>
-                <small>{integration.setup ?? integration.message}</small>
-              </div>
-              <b className={`integration-status ${integration.status}`}>{integration.status}</b>
+
+          {/* Active / Connected Integrations */}
+          {connectedIntegrations.length > 0 ? (
+            <div className="integration-section" aria-label="Active integrations">
+              <span className="integration-section-title">Active Services</span>
+              {connectedIntegrations.map((integration) => (
+                <div className="integration-row" key={integration.id}>
+                  <div>
+                    <span>{integration.name}</span>
+                    <small>{integration.setup ?? integration.message}</small>
+                  </div>
+                  <b className={`integration-status ${integration.status}`}>{integration.status}</b>
+                </div>
+              ))}
             </div>
-          ))}
+          ) : null}
+
+          {/* Configurable Integrations */}
+          {configurableIntegrations.length > 0 ? (
+            <div className="integration-section" aria-label="Configurable integrations">
+              <span className="integration-section-title">Available to Configure</span>
+              {configurableIntegrations.map((integration) => (
+                <div className="integration-row configurable" key={integration.id}>
+                  <div className="integration-main-col">
+                    <div className="integration-row-head">
+                      <span>{integration.name}</span>
+                      <b className={`integration-status ${integration.status}`}>
+                        {integration.status}
+                      </b>
+                    </div>
+                    <small>{integration.setup ?? integration.message}</small>
+                    {integration.configSnippet ? (
+                      <div className="integration-config-box">
+                        <code>{integration.configSnippet}</code>
+                        <button
+                          type="button"
+                          className="copy-snippet-btn"
+                          title={`Copy ${integration.name} configuration snippet`}
+                          aria-label={`Copy ${integration.name} configuration snippet`}
+                          onClick={() => {
+                            if (typeof navigator !== "undefined" && navigator.clipboard) {
+                              navigator.clipboard.writeText(integration.configSnippet!);
+                            }
+                          }}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {/* Upcoming / Deferred Integrations Tray */}
+          {deferredIntegrations.length > 0 ? (
+            <details className="deferred-integrations-tray">
+              <summary className="deferred-summary">
+                <span>Upcoming Integrations ({deferredIntegrations.length})</span>
+                <span className="roadmap-badge">Roadmap</span>
+              </summary>
+              <div className="deferred-list">
+                {deferredIntegrations.map((integration) => (
+                  <div className="integration-row deferred" key={integration.id}>
+                    <div>
+                      <span>{integration.name}</span>
+                      <small>{integration.setup ?? integration.message}</small>
+                    </div>
+                    <b className={`integration-status ${integration.status}`}>
+                      {integration.status}
+                    </b>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
           <div className="github-operations" aria-label="GitHub operations">
             <strong>GitHub operations</strong>
             {githubOperationsLoading ? (
