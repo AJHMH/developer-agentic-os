@@ -8,6 +8,8 @@ export type IntegrationStatus =
   | "disabled"
   | "error";
 
+export type IntegrationCategory = "connected" | "configurable" | "deferred";
+
 export type IntegrationAdapterStatus = {
   id: string;
   name: string;
@@ -21,9 +23,11 @@ export type IntegrationAdapterStatus = {
     | "cloud"
     | "identity"
     | "database";
+  category: IntegrationCategory;
   required: boolean;
   status: IntegrationStatus;
   capabilities: string[];
   setup?: string;
   message: string;
+  configSnippet?: string;
 };
