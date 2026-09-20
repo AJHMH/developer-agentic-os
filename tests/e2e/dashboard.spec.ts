@@ -712,4 +712,37 @@ test.describe("Developer Agentic OS dashboard", () => {
     );
     expect(overflow).toBeLessThanOrEqual(1);
   });
+
+  test("toggles the Second Brain micro-app explorer and inspects nodes", async ({ page }) => {
+    await page.goto("/");
+    const secondBrainButton = page.getByRole("button", {
+      name: "Second Brain: Workspace graph and living map",
+    });
+    await expect(secondBrainButton).toBeVisible();
+    await expect(secondBrainButton).toHaveAttribute("aria-expanded", "false");
+
+    await secondBrainButton.click();
+    await expect(secondBrainButton).toHaveAttribute("aria-expanded", "true");
+    await expect(secondBrainButton).toHaveClass(/active/);
+
+    const explorer = page.getByRole("region", { name: "Second Brain Explorer" });
+    await expect(explorer).toBeVisible();
+    await expect(explorer.getByText("Second Brain Explorer")).toBeVisible();
+    await expect(explorer.getByText(/Nodes:/)).toBeVisible();
+
+    // The orbital stage should receive focused styling
+    await expect(page.locator(".orbital-stage")).toHaveClass(/second-brain-focused/);
+
+    // Clicking a node inside the explorer list opens the Inspector Panel
+    const firstNodeRow = explorer.locator(".second-brain-node-row").first();
+    if (await firstNodeRow.isVisible()) {
+      await firstNodeRow.click();
+      await expect(page.getByRole("complementary", { name: "Inspector Panel" })).toBeVisible();
+    }
+
+    // Clicking the micro-app button again closes the drawer
+    await secondBrainButton.click();
+    await expect(secondBrainButton).toHaveAttribute("aria-expanded", "false");
+    await expect(explorer).not.toBeVisible();
+  });
 });

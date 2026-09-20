@@ -223,6 +223,153 @@ h2 {
   gap: 8px;
 }
 
+.second-brain-app {
+  display: grid;
+  gap: 10px;
+}
+
+.second-brain-app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.second-brain-app-header div {
+  display: grid;
+  gap: 2px;
+}
+
+.second-brain-metrics {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.second-brain-metrics .metric-chip {
+  background: rgba(243, 238, 229, 0.08);
+  border: 1px solid rgba(232, 216, 188, 0.16);
+  padding: 3px 7px;
+  font-size: 0.65rem;
+  border-radius: 2px;
+}
+
+.second-brain-metrics .metric-chip strong {
+  color: var(--orange, #ff6a1b);
+}
+
+.second-brain-controls {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+}
+
+.second-brain-search {
+  width: 100%;
+  border: 1px solid rgba(232, 216, 188, 0.18);
+  background: rgba(17, 16, 14, 0.78);
+  color: var(--foreground);
+  padding: 6px 8px;
+  font-size: 0.68rem;
+}
+
+.second-brain-type-select {
+  border: 1px solid rgba(232, 216, 188, 0.18);
+  background: rgba(17, 16, 14, 0.78);
+  color: var(--foreground);
+  padding: 6px 8px;
+  font-size: 0.68rem;
+}
+
+.second-brain-node-list {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.second-brain-node-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: rgba(17, 16, 14, 0.5);
+  border: 1px solid rgba(232, 216, 188, 0.1);
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.second-brain-node-row:hover,
+.second-brain-node-row.active {
+  background: rgba(243, 238, 229, 0.12);
+  border-color: rgba(255, 106, 27, 0.4);
+}
+
+.second-brain-node-row .node-row-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.second-brain-node-row .node-row-label {
+  display: grid;
+  min-width: 0;
+}
+
+.second-brain-node-row .node-row-label strong {
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.second-brain-node-row .node-row-label small {
+  font-size: 0.62rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.second-brain-node-row .node-type-badge {
+  font-size: 0.58rem;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(243, 238, 229, 0.1);
+  color: var(--muted);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.second-brain-node-row .node-type-badge.artifact {
+  color: #ff8c42;
+}
+
+.second-brain-node-row .node-type-badge.skill {
+  color: #58a6ff;
+}
+
+.second-brain-node-row .node-type-badge.routine {
+  color: #7ee787;
+}
+
+.second-brain-node-row .node-type-badge.work_item {
+  color: #d2a8ff;
+}
+
+.second-brain-more {
+  font-size: 0.62rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 4px;
+}
+
 .handoff-app {
   display: grid;
   gap: 10px;
@@ -1016,6 +1163,17 @@ h1 span {
   display: grid;
   place-items: start center;
   margin-top: 0;
+}
+
+.orbital-stage.second-brain-focused .orbit {
+  border-color: var(--orange, #ff6a1b);
+  box-shadow:
+    inset 0 0 76px rgba(0, 0, 0, 0.8),
+    0 0 36px rgba(255, 106, 27, 0.3),
+    0 0 80px rgba(0, 0, 0, 0.68);
+  transition:
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .constellation {

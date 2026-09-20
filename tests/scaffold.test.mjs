@@ -1,6 +1,20 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
+
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+async function readCommandCentreSource() {
+  const baseDir = fileURLToPath(new URL("../src/components/command-centre/", import.meta.url));
+  const entries = await readdir(baseDir, { recursive: true, withFileTypes: true });
+  const fileContents = await Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && /\.(tsx|ts)$/.test(entry.name))
+      .map((entry) => readFile(path.join(entry.parentPath, entry.name), "utf8"))
+  );
+  return fileContents.join("\n");
+}
 
 test("project scaffold exposes required npm scripts", async () => {
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
@@ -12,20 +26,14 @@ test("project scaffold exposes required npm scripts", async () => {
 
 test("application shell uses approved product name", async () => {
   const page = await readFile(new URL("../src/app/page.tsx", import.meta.url), "utf8");
-  const shell = await readFile(
-    new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url),
-    "utf8"
-  );
+  const shell = await readCommandCentreSource();
   assert.match(page, /CommandCentreShell/);
   assert.match(shell, /Developer Agentic OS/);
   assert.doesNotMatch(shell, /Robonuggets|YouTube/i);
 });
 
 test("application shell includes approved command centre panels", async () => {
-  const shell = await readFile(
-    new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url),
-    "utf8"
-  );
+  const shell = await readCommandCentreSource();
   for (const panel of [
     "Micro Apps",
     "Calendar",
@@ -40,10 +48,7 @@ test("application shell includes approved command centre panels", async () => {
 });
 
 test("application shell includes persisted layout resizing controls", async () => {
-  const shell = await readFile(
-    new URL("../src/components/command-centre/command-centre-shell.tsx", import.meta.url),
-    "utf8"
-  );
+  const shell = await readCommandCentreSource();
   const css = await readFile(new URL("../src/app/globals.css", import.meta.url), "utf8");
   assert.match(shell, /developer-agentic-os-layout-v1/);
   assert.match(shell, /ResizeObserver/);
