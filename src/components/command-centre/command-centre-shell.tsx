@@ -14,6 +14,7 @@ import { SignalInspector } from "./modals/signal-inspector";
 import { OperationalRunInspector } from "./modals/operational-run-inspector";
 import { OperationalIncidentInspector } from "./modals/operational-incident-inspector";
 import { HandoffInspector } from "./modals/handoff-inspector";
+import { SecondBrainModal } from "./micro-apps/second-brain-modal";
 
 export function CommandCentreShell() {
   const s = useCommandCentreState();
@@ -39,6 +40,8 @@ export function CommandCentreShell() {
         setFocusBoardOpen={s.setFocusBoardOpen}
         secondBrainOpen={s.secondBrainOpen}
         setSecondBrainOpen={s.setSecondBrainOpen}
+        secondBrainModalOpen={s.secondBrainModalOpen}
+        setSecondBrainModalOpen={s.setSecondBrainModalOpen}
         secondBrainSearch={s.secondBrainSearch}
         setSecondBrainSearch={s.setSecondBrainSearch}
         secondBrainTypeFilter={s.secondBrainTypeFilter}
@@ -249,6 +252,24 @@ export function CommandCentreShell() {
           onClose={() => s.setSelectedHandoff(null)}
           onSaveDraft={() => void s.saveHandoff()}
           onFinalize={() => void s.finalizeHandoff()}
+        />
+      ) : null}
+
+      {s.secondBrainModalOpen ? (
+        <SecondBrainModal
+          isOpen={s.secondBrainModalOpen}
+          onClose={() => s.setSecondBrainModalOpen(false)}
+          graph={s.graph}
+          workspace={s.workspace}
+          onInspectNode={s.inspectNode}
+          onSelectWorkItem={s.setSelectedWorkItem}
+          onSelectSignal={s.setSelectedSignal}
+          onOpenArtifact={() => void s.openInspectedArtifact()}
+          onRunSkill={(id) => void s.runSkill(id)}
+          onRunRoutine={(id) => void s.runRoutine(id)}
+          workItems={s.workItems}
+          signals={s.signals}
+          onRefresh={() => void s.loadDashboard(s.workspace?.context.id)}
         />
       ) : null}
     </main>

@@ -24,6 +24,8 @@ export function LeftRail({
   setFocusBoardOpen,
   secondBrainOpen,
   setSecondBrainOpen,
+  secondBrainModalOpen,
+  setSecondBrainModalOpen,
   secondBrainSearch,
   setSecondBrainSearch,
   secondBrainTypeFilter,
@@ -62,6 +64,8 @@ export function LeftRail({
   setFocusBoardOpen: (updater: (open: boolean) => boolean) => void;
   secondBrainOpen: boolean;
   setSecondBrainOpen: (updater: (open: boolean) => boolean) => void;
+  secondBrainModalOpen: boolean;
+  setSecondBrainModalOpen: (open: boolean) => void;
   secondBrainSearch: string;
   setSecondBrainSearch: (value: string) => void;
   secondBrainTypeFilter: string;
@@ -114,7 +118,7 @@ export function LeftRail({
             const isAppActive =
               (title === "Workspace Switcher" && workspaceSwitcherOpen) ||
               (title === "Today / Focus Board" && focusBoardOpen) ||
-              (title === "Second Brain" && secondBrainOpen) ||
+              (title === "Second Brain" && (secondBrainOpen || secondBrainModalOpen)) ||
               (title === "Session Handoff" && handoffOpen);
             return (
               <button
@@ -193,6 +197,7 @@ export function LeftRail({
             selectedNode={selectedNode}
             onInspectNode={onInspectNode}
             onRefresh={onRefreshSecondBrain}
+            onOpenModal={() => setSecondBrainModalOpen(true)}
           />
         ) : null}
       </section>

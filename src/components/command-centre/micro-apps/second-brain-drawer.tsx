@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { Maximize2, RefreshCw } from "lucide-react";
 import type { ClientGraph, ClientGraphNode, WorkspaceData } from "../types";
 import { iconForNode } from "../utils";
 
@@ -13,6 +13,7 @@ export function SecondBrainDrawer({
   selectedNode,
   onInspectNode,
   onRefresh,
+  onOpenModal,
 }: {
   workspace: WorkspaceData | null;
   graph: ClientGraph | null;
@@ -24,6 +25,7 @@ export function SecondBrainDrawer({
   selectedNode: ClientGraphNode | null;
   onInspectNode: (node: ClientGraphNode) => void;
   onRefresh: () => void;
+  onOpenModal?: () => void;
 }) {
   return (
     <section
@@ -36,15 +38,28 @@ export function SecondBrainDrawer({
           <span className="tiny">{workspace?.context.name ?? "selected repository"}</span>
           <strong>Second Brain Explorer</strong>
         </div>
-        <button
-          className="icon-button"
-          type="button"
-          aria-label="Refresh graph"
-          title="Refresh graph data"
-          onClick={onRefresh}
-        >
-          <RefreshCw size={12} aria-hidden="true" />
-        </button>
+        <div className="second-brain-app-header-actions">
+          {onOpenModal ? (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label="Open canvas modal"
+              title="Open full canvas modal"
+              onClick={onOpenModal}
+            >
+              <Maximize2 size={12} aria-hidden="true" />
+            </button>
+          ) : null}
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Refresh graph"
+            title="Refresh graph data"
+            onClick={onRefresh}
+          >
+            <RefreshCw size={12} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       {graph ? (
@@ -57,6 +72,16 @@ export function SecondBrainDrawer({
               Links: <strong>{graph.links.length}</strong>
             </span>
           </div>
+
+          {onOpenModal ? (
+            <button
+              className="outline-button expand-second-brain-btn"
+              type="button"
+              onClick={onOpenModal}
+            >
+              <Maximize2 size={12} aria-hidden="true" /> Open Full Canvas
+            </button>
+          ) : null}
 
           <div className="second-brain-controls">
             <input
