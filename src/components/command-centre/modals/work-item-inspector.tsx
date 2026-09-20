@@ -63,7 +63,7 @@ export function WorkItemInspector({
       </div>
       <div className="work-history">
         <span className="tiny">Completion history</span>
-        {selectedWorkItem.statusHistory.map((change) => (
+        {(selectedWorkItem.statusHistory ?? []).map((change) => (
           <p className="inspector-line" key={`${change.status}-${change.changedAt}`}>
             <code>{change.status}</code> {new Date(change.changedAt).toLocaleString()}
           </p>

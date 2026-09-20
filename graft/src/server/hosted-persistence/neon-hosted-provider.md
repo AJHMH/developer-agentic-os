@@ -1,20 +1,35 @@
 # src/server/hosted-persistence/neon-hosted-provider.ts
 
-- emptyHostedState · function · L20-L20 — emptyHostedState = (): HostedState
-- emptyWorkspaceState · function · L21-L21 — emptyWorkspaceState = (): HostedWorkspaceState
-- hostedDatabaseUrl · function · L23-L27 — function hostedDatabaseUrl(): string
-- NeonHostedStateProvider · class · L29-L37 — class NeonHostedStateProvider implements HostedStateProvider
-- read · method · L33-L33 — async read(): Promise<HostedState>
-- write · method · L34-L34 — async write(state: HostedState): Promise<void>
-- close · method · L35-L35 — async close(): Promise<void>
-- ensureSchema · method · L36-L36 — private ensureSchema(): Promise<void>
-- NeonHostedWorkspaceStateProvider · class · L39-L47 — class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStateProvider
-- read · method · L43-L43 — async read(): Promise<HostedWorkspaceState>
-- write · method · L44-L44 — async write(state: HostedWorkspaceState): Promise<void>
-- close · method · L45-L45 — async close(): Promise<void>
-- ensureSchema · method · L46-L46 — private ensureSchema(): Promise<void>
-- EncryptedProtectedSecretStore · class · L49-L69 — class EncryptedProtectedSecretStore implements ProtectedSecretStore
-- put · method · L52-L58 — async put(secret: string): Promise<string>
-- decrypt · method · L60-L66 — decrypt(reference: string): string
-- loadKey · method · L68-L68 — private loadKey(): Buffer
-- isHostedNeonConfigured · function · L71-L71 — function isHostedNeonConfigured(): boolean
+- emptyHostedState · function · L26-L37 — emptyHostedState = (): HostedState
+- HostedStateRepositoryRow · type · L39-L45 — type HostedStateRepositoryRow = { id: string; workspace_id: string; local_path: string; path_identity: string; created_at: string; };
+- HostedTenantLookupClient · type · L47-L49 — type HostedTenantLookupClient = { query(queryText: string, values?: unknown[]): Promise<{ rows: unknown[]; rowCount: number }>; };
+- hostedDatabaseUrl · function · L51-L62 — function hostedDatabaseUrl(): string
+- missingHostedTenantProvisioningError · function · L64-L68 — function missingHostedTenantProvisioningError(clerkOrgId: string): Error
+- resolveHostedTenantDatabaseId · function · L70-L84 — async function resolveHostedTenantDatabaseId( client: HostedTenantLookupClient, clerkOrgId: string ): Promise<string>
+- findHostedTenantForGitHubRepository · function · L86-L106 — async function findHostedTenantForGitHubRepository( owner: string, repository: string ): Promise<string | null>
+- NeonHostedStateProvider · class · L108-L463 — class NeonHostedStateProvider implements HostedStateProvider
+- constructor · method · L114-L116 — constructor(private readonly tenantId: string)
+- read · method · L118-L181 — async read(): Promise<HostedState>
+- write · method · L182-L250 — async write(state: HostedState): Promise<void>
+- readDeploymentState · method · L251-L313 — async readDeploymentState(): Promise<HostedDeploymentState>
+- writeDeploymentState · method · L314-L397 — async writeDeploymentState(state: HostedDeploymentState): Promise<void>
+- rotateVercelWebhookSecret · method · L398-L412 — async rotateVercelWebhookSecret(input: { projectId: string; activeReference: string; }): Promise<void>
+- withMutationLock · method · L413-L430 — async withMutationLock<T>(operation: () => Promise<T>): Promise<T>
+- close · method · L431-L433 — async close(): Promise<void>
+- ensureSchema · method · L434-L446 — private ensureSchema(): Promise<void>
+- tenantDatabaseId · method · L447-L449 — private async tenantDatabaseId(client: Pool | PoolClient): Promise<string>
+- ensureDeploymentSchema · method · L450-L462 — private ensureDeploymentSchema(): Promise<void>
+- NeonHostedWorkspaceStateProvider · class · L465-L631 — class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStateProvider
+- constructor · method · L470-L472 — constructor(private readonly tenantId: string)
+- read · method · L474-L526 — async read(): Promise<HostedWorkspaceState>
+- write · method · L527-L592 — async write(state: HostedWorkspaceState): Promise<void>
+- withMutationLock · method · L593-L610 — async withMutationLock<T>(operation: () => Promise<T>): Promise<T>
+- close · method · L611-L613 — async close(): Promise<void>
+- ensureSchema · method · L614-L626 — private ensureSchema(): Promise<void>
+- tenantDatabaseId · method · L628-L630 — private async tenantDatabaseId(client: Pool | PoolClient): Promise<string>
+- EncryptedProtectedSecretStore · class · L633-L664 — class EncryptedProtectedSecretStore implements ProtectedSecretStore
+- put · method · L636-L642 — async put(secret: string): Promise<string>
+- decrypt · method · L644-L654 — decrypt(reference: string): string
+- loadKey · method · L656-L663 — private loadKey(): Buffer
+- isHostedNeonConfigured · function · L666-L673 — function isHostedNeonConfigured(): boolean
+- isHostedJsonFixtureMode · function · L675-L680 — function isHostedJsonFixtureMode(): boolean

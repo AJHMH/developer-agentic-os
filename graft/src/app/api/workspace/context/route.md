@@ -1,6 +1,6 @@
 # src/app/api/workspace/context/route.ts
 
-- GET · function · L5-L7 — async function GET()
-- PUT · function · L9-L11 — async function PUT(request: Request)
-- POST · function · L13-L15 — async function POST(request: Request)
-- setContext · function · L17-L28 — async function setContext(request: Request)
+- GET · function · L6-L15 — async function GET(request?: Request)
+- PUT · function · L17-L19 — async function PUT(request: Request)
+- POST · function · L21-L23 — async function POST(request: Request)
+- setContext · function · L25-L56 — async function setContext(request: Request)

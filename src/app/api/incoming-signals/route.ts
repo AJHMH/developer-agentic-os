@@ -4,11 +4,36 @@ import { IncomingSignalError } from "@/server/incoming-signals/incoming-signal-s
 import { repositoryContextForRequest } from "@/server/workspace/request-context";
 import { createWorkspaceContext } from "@/server/workspace/workspace-context";
 import { WorkspaceError } from "@/server/workspace/workspace-store";
-import type { IncomingSignalSource, IncomingSignalStatus } from "@/types/incoming-signal";
+import { isHostedMode, resolveHostedWorkspaceContext } from "@/server/workspace/hosted-mode";
+import type {
+  IncomingSignal,
+  IncomingSignalSource,
+  IncomingSignalStatus,
+} from "@/types/incoming-signal";
 
 export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const source = asSource(searchParams.get("source"));
+  const status = asStatus(searchParams.get("status"));
+
+  if (isHostedMode(request)) {
+    const hosted = await resolveHostedWorkspaceContext(
+      request,
+      searchParams.get("repositoryId") ?? searchParams.get("contextId")
+    );
+    if (hosted instanceof NextResponse) return hosted;
+
+    const records = await hosted.domainStore.listAllRecords(
+      hosted.userId,
+      hosted.activeWorkspace.id
+    );
+    let signals = (records.incomingSignals ?? []) as IncomingSignal[];
+    if (source) signals = signals.filter((s) => s.source === source);
+    if (status) signals = signals.filter((s) => s.status === status);
+    return NextResponse.json({ signals });
+  }
+
   try {
-    const { searchParams } = new URL(request.url);
     const context = await repositoryContextForRequest(request, {
       repositoryId: searchParams.get("repositoryId") ?? undefined,
     });
@@ -16,8 +41,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       signals: await workspace.incomingSignalStore.list({
         repositoryId: context.id,
-        source: asSource(searchParams.get("source")),
-        status: asStatus(searchParams.get("status")),
+        source,
+        status,
       }),
     });
   } catch (error) {
@@ -30,6 +55,34 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    if (isHostedMode(request)) {
+      const hosted = await resolveHostedWorkspaceContext(
+        request,
+        body?.repositoryId ?? body?.contextId
+      );
+      if (hosted instanceof NextResponse) return hosted;
+
+      if (!body?.title || !String(body.title).trim()) {
+        return NextResponse.json({ error: "title is required" }, { status: 400 });
+      }
+
+      const signal = await hosted.domainStore.putRecord(
+        hosted.userId,
+        hosted.activeWorkspace.id,
+        "incomingSignals",
+        {
+          title: String(body.title).trim(),
+          body: typeof body.body === "string" ? body.body.trim() : "",
+          source: body.source ?? "manual",
+          status: body.status ?? "new",
+          repositoryId: hosted.activeWorkspace.id,
+          createdAt: new Date().toISOString(),
+        }
+      );
+      return NextResponse.json(signal, { status: 201 });
+    }
+
     if (!body?.repositoryId && !body?.contextId && !body?.repositoryRoot && !body?.root)
       return NextResponse.json(
         { error: "repositoryId or repositoryRoot is required" },

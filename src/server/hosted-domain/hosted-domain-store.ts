@@ -300,6 +300,35 @@ export class HostedDomainStore {
     });
   }
 
+  async updateRecord(
+    userId: string,
+    workspaceId: string,
+    kind: HostedRecordKind,
+    recordId: string,
+    updates: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      await this.assertWorkspace(userId, workspaceId);
+      const records = state.records[workspaceId] ?? (state.records[workspaceId] = {});
+      const list = records[kind] ?? (records[kind] = []);
+      const index = list.findIndex((item) => item.id === recordId);
+      if (index === -1) throw new HostedDomainError("NOT_FOUND", `${kind} record not found.`);
+      const existing = list[index];
+      const updated = {
+        ...existing,
+        ...updates,
+        id: recordId,
+        workspaceId,
+        updatedAt: new Date().toISOString(),
+      };
+      list[index] = updated;
+      await this.auditEvent(state, userId, workspaceId, `${kind}.updated`, recordId);
+      await this.write(state);
+      return updated;
+    });
+  }
+
   async listRecords(
     userId: string,
     workspaceId: string,

@@ -1,32 +1,32 @@
 # src/server/operational/operational-store.ts
 
-- OperationalState · type · L8-L8 — type OperationalState = { events: OperationalEvent[]; incidents: OperationalIncident[]; policies: AutomationPolicy[]; runs: AutomationRun[]; audits: OperationalAuditRecord[]; globalPaused: boolean; pausedPolicies: string[] };
-- OperationalStoreError · class · L11-L13 — class OperationalStoreError extends Error
-- constructor · method · L12-L12 — constructor(readonly code: "INVALID_INPUT" | "NOT_FOUND" | "CONFLICT", message: string)
-- OperationalStore · class · L15-L166 — class OperationalStore
-- constructor · method · L17-L17 — constructor(private readonly root = process.cwd(), private readonly workspaceRoot = root)
-- ingestEvent · method · L19-L29 — async ingestEvent(input: CreateOperationalEventInput): Promise<{ event: OperationalEvent; created: boolean }>
-- listEvents · method · L31-L31 — async listEvents(options: { repositoryId?: string } = {}): Promise<OperationalEvent[]>
-- groupEvent · method · L33-L47 — async groupEvent(event: OperationalEvent): Promise<OperationalIncident>
-- listIncidents · method · L49-L52 — async listIncidents(options: { repositoryId?: string } = {}): Promise<Array<OperationalIncident & { events: OperationalEvent[] }>>
-- attachSignal · method · L53-L61 — async attachSignal(incidentId: string, repositoryId: string, signalId: string): Promise<OperationalIncident>
-- savePolicy · method · L63-L72 — async savePolicy(input: SaveAutomationPolicyInput): Promise<AutomationPolicy>
-- listPolicies · method · L74-L74 — async listPolicies(options: { repositoryId?: string } = {}): Promise<AutomationPolicy[]>
-- createRun · method · L76-L81 — async createRun(input: Omit<AutomationRun, "id" | "createdAt" | "updatedAt" | "retryCount" | "retryHistory" | "approval">): Promise<AutomationRun>
-- listRuns · method · L83-L83 — async listRuns(options: { repositoryId?: string } = {}): Promise<AutomationRun[]>
-- updateRun · method · L84-L92 — async updateRun(id: string, repositoryId: string, patch: Partial<Pick<AutomationRun, "status" | "steps" | "outputs" | "error" | "input">>): Promise<AutomationRun>
-- transitionRun · method · L93-L103 — async transitionRun(id: string, repositoryId: string, status: AutomationRun["status"]): Promise<AutomationRun>
-- retryRun · method · L104-L116 — async retryRun(id: string, repositoryId: string, error: string, backoffMs: number): Promise<AutomationRun>
-- setGlobalPause · method · L117-L128 — async setGlobalPause(paused: boolean): Promise<boolean>
-- isGlobalPaused · method · L129-L129 — async isGlobalPaused(): Promise<boolean>
-- setPolicyPause · method · L130-L130 — async setPolicyPause(policyId: string, paused: boolean): Promise<boolean>
-- isPolicyPaused · method · L131-L131 — async isPolicyPaused(policyId: string): Promise<boolean>
-- approveRun · method · L132-L141 — async approveRun(id: string, repositoryId: string, approval: AutomationApproval): Promise<AutomationRun>
-- recordAudit · method · L142-L144 — async recordAudit(record: Omit<OperationalAuditRecord, "id" | "recordedAt">): Promise<OperationalAuditRecord>
-- listAudits · method · L145-L145 — async listAudits(options: { repositoryId?: string; runId?: string } = {}): Promise<OperationalAuditRecord[]>
-- read · method · L146-L146 — private async read(): Promise<OperationalState>
-- write · method · L147-L147 — private async write(state: OperationalState): Promise<void>
-- mutate · method · L148-L165 — private async mutate<T>(operation: (state: OperationalState) => Promise<T> | T): Promise<T>
-- validateEvent · function · L168-L175 — function validateEvent(input: CreateOperationalEventInput): void
-- validatePolicy · function · L177-L185 — function validatePolicy(input: SaveAutomationPolicyInput): void
-- inputFingerprint · function · L187-L187 — function inputFingerprint(input: Record<string, unknown>): string
+- OperationalState · type · L17-L25 — type OperationalState = { events: OperationalEvent[]; incidents: OperationalIncident[]; policies: AutomationPolicy[]; runs: AutomationRun[]; audits: OperationalAuditRecord[]; globalPaused: boolean; pausedPolicies: string[]; };
+- OperationalStoreError · class · L36-L44 — class OperationalStoreError extends Error
+- constructor · method · L37-L43 — constructor( readonly code: "INVALID_INPUT" | "NOT_FOUND" | "CONFLICT", message: string )
+- OperationalStore · class · L46-L443 — class OperationalStore
+- constructor · method · L48-L51 — constructor( private readonly root = process.cwd(), private readonly workspaceRoot = root )
+- ingestEvent · method · L53-L79 — async ingestEvent( input: CreateOperationalEventInput ): Promise<{ event: OperationalEvent; created: boolean }>
+- listEvents · method · L81-L85 — async listEvents(options: { repositoryId?: string } = {}): Promise<OperationalEvent[]>
+- groupEvent · method · L87-L123 — async groupEvent(event: OperationalEvent): Promise<OperationalIncident>
+- listIncidents · method · L125-L137 — async listIncidents( options: { repositoryId?: string } = {} ): Promise<Array<OperationalIncident & { events: OperationalEvent[] }>>
+- attachSignal · method · L138-L153 — async attachSignal( incidentId: string, repositoryId: string, signalId: string ): Promise<OperationalIncident>
+- savePolicy · method · L155-L173 — async savePolicy(input: SaveAutomationPolicyInput): Promise<AutomationPolicy>
+- listPolicies · method · L175-L179 — async listPolicies(options: { repositoryId?: string } = {}): Promise<AutomationPolicy[]>
+- createRun · method · L181-L208 — async createRun( input: Omit< AutomationRun, "id" | "createdAt" | "updatedAt" | "retryCount" | "retryHistory" | "approval" > ): Promise<AutomationRun>
+- listRuns · method · L210-L214 — async listRuns(options: { repositoryId?: string } = {}): Promise<AutomationRun[]>
+- updateRun · method · L215-L242 — async updateRun( id: string, repositoryId: string, patch: Partial<Pick<AutomationRun, "status" | "steps" | "outputs" | "error" | "input">> ): Promise<AutomationRun>
+- transitionRun · method · L243-L279 — async transitionRun( id: string, repositoryId: string, status: AutomationRun["status"] ): Promise<AutomationRun>
+- retryRun · method · L280-L320 — async retryRun( id: string, repositoryId: string, error: string, backoffMs: number ): Promise<AutomationRun>
+- setGlobalPause · method · L321-L340 — async setGlobalPause(paused: boolean): Promise<boolean>
+- isGlobalPaused · method · L341-L347 — async isGlobalPaused(): Promise<boolean>
+- setPolicyPause · method · L348-L356 — async setPolicyPause(policyId: string, paused: boolean): Promise<boolean>
+- isPolicyPaused · method · L357-L359 — async isPolicyPaused(policyId: string): Promise<boolean>
+- approveRun · method · L360-L387 — async approveRun( id: string, repositoryId: string, approval: AutomationApproval ): Promise<AutomationRun>
+- recordAudit · method · L388-L396 — async recordAudit( record: Omit<OperationalAuditRecord, "id" | "recordedAt"> ): Promise<OperationalAuditRecord>
+- listAudits · method · L397-L405 — async listAudits( options: { repositoryId?: string; runId?: string } = {} ): Promise<OperationalAuditRecord[]>
+- read · method · L406-L419 — private async read(): Promise<OperationalState>
+- write · method · L420-L422 — private async write(state: OperationalState): Promise<void>
+- mutate · method · L423-L442 — private async mutate<T>(operation: (state: OperationalState) => Promise<T> | T): Promise<T>
+- validateEvent · function · L445-L458 — function validateEvent(input: CreateOperationalEventInput): void
+- validatePolicy · function · L460-L485 — function validatePolicy(input: SaveAutomationPolicyInput): void
+- inputFingerprint · function · L487-L491 — function inputFingerprint(input: Record<string, unknown>): string

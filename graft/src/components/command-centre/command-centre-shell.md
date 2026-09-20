@@ -1,26 +1,3 @@
 # src/components/command-centre/command-centre-shell.tsx
 
-- DashboardData · type · L58-L65 — type DashboardData = { artifacts: ArtifactIndexEntry[]; skills: SkillCommand[]; routines: RoutineDefinition[]; executor: RoutineExecutorStatus; integrations: IntegrationAdapterStatus[]; focusBoard: FocusBoard | null; };
-- providerActionForRun · function · L67-L71 — function providerActionForRun(run: AutomationRun): "github-rerun" | "vercel-redeploy" | null
-- WorkspaceData · type · L73-L76 — type WorkspaceData = { context: RepositoryContext; repositories: RepositorySwitcherEntry[]; };
-- LayoutState · type · L78-L82 — type LayoutState = { pageWidth: number; orbitSize: number; widgetSizes: Record<string, { width: number; height: number }>; };
-- ClientGraphNode · type · L84-L90 — type ClientGraphNode = { id: string; type: "repo" | "repo_context" | "area" | "file" | "artifact" | "skill" | "work_item" | "incoming_signal" | "handoff" | "routine"; label: string; path?: string; metadata?: Record<string, string | number | boolean | null>; };
-- ClientGraphLink · type · L92-L96 — type ClientGraphLink = { source: string; target: string; type: "contains" | "references" | "produced" | "used_context" | "triggers" | "scoped_to" | "includes" | "finalized_as"; };
-- ClientGraph · type · L98-L101 — type ClientGraph = { nodes: ClientGraphNode[]; links: ClientGraphLink[]; };
-- usePersistedLayout · function · L106-L141 — function usePersistedLayout()
-- useResizePersistence · function · L143-L171 — function useResizePersistence( setWidgetSize: (id: string, size: { width: number; height: number }) => void, activeResizeIds: { current: Set<string> }, initialResizeSizes: { current: Map<string, { width: number; height: number }> }, )
-- resizableStyle · function · L173-L176 — function resizableStyle(id: string, layout: LayoutState): CSSProperties | undefined
-- ModuleHeading · function · L207-L217 — function ModuleHeading({ icon: Icon, title, action }: { icon: LucideIcon; title: string; action?: React.ReactNode })
-- OutlineButton · function · L219-L225 — function OutlineButton({ children }: { children: React.ReactNode })
-- Constellation · function · L227-L263 — function Constellation()
-- GraphLinks · function · L265-L278 — function GraphLinks({ graph, nodes }: { graph: ClientGraph; nodes: ClientGraphNode[] })
-- polarPosition · function · L280-L284 — function polarPosition(index: number, count: number): { x: number; y: number }
-- requireOk · function · L286-L289 — async function requireOk<T>(response: Response): Promise<T>
-- CommandCentreShell · function · L291-L1247 — function CommandCentreShell()
-- update · function · L361-L361 — update = ()
-- clearActiveResize · function · L369-L372 — clearActiveResize = ()
-- loadWorkspace · function · L450-L466 — async function loadWorkspace()
-- iconForNode · function · L1249-L1257 — function iconForNode(type: ClientGraphNode["type"]): LucideIcon
-- iconForSkill · function · L1259-L1264 — function iconForSkill(id: string): LucideIcon
-- formatRoutineTime · function · L1266-L1268 — function formatRoutineTime(value: string): string
-- formatFocusDate · function · L1270-L1272 — function formatFocusDate(value: string): string
+- CommandCentreShell · function · L18-L256 — function CommandCentreShell()

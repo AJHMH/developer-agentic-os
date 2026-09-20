@@ -1,4 +1,4 @@
 # src/app/api/workspace/repositories/route.ts
 
-- GET · function · L6-L13 — async function GET()
-- POST · function · L15-L24 — async function POST(request: Request)
+- GET · function · L7-L38 — async function GET(request?: Request)
+- POST · function · L40-L77 — async function POST(request: Request)

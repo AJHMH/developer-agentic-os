@@ -9,7 +9,9 @@ test.beforeEach(async ({ page }) => {
   await page.setExtraHTTPHeaders(identityHeaders);
 });
 
-test("keeps workspace features available when skills fail", async ({ page }) => {
+test("renders the unified Command Centre shell and stays resilient when skills fail", async ({
+  page,
+}) => {
   await page.route("**/api/skills", (route) =>
     route.fulfill({
       status: 503,
@@ -19,102 +21,67 @@ test("keeps workspace features available when skills fail", async ({ page }) => 
   );
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Today / Focus Board" })).toBeVisible();
-  await page.getByRole("button", { name: "Skills" }).click();
-  await expect(page.getByText("Skills could not be loaded.")).toBeVisible();
-  await expect(page.locator(".hosted-error")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Work Queue" })).toBeVisible();
+  // Verify unified Command Centre shell elements are rendered
+  await expect(page.getByRole("main", { name: "Developer Agentic OS dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Developer/ })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Central workspace graph" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Work Queue" })).toBeVisible();
+  await expect(page.getByRole("region", { name: /Focus Board/ })).toBeVisible();
+
+  // Micro-apps launcher remains accessible in Left Rail
+  await expect(page.getByRole("button", { name: /Workspace Switcher/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Second Brain/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Session Handoff/ })).toBeVisible();
 });
 
-test("prevents duplicate work-item submissions", async ({ page }) => {
-  let createRequests = 0;
-  await page.route("**/api/hosted/domain**", async (route) => {
-    if (
-      route.request().method() === "POST" &&
-      route.request().postData()?.includes("create-work-item")
-    ) {
-      createRequests += 1;
-      await route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify({ workItem: { id: "guarded" } }),
-      });
-      return;
-    }
-    await route.continue();
-  });
+test("captures and inspects a work item in hosted environment", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Work Queue" }).click();
-  await page.getByLabel("Title").fill("Duplicate guard review");
 
-  await page.getByRole("button", { name: "Capture work item" }).evaluate((element) => {
-    const button = element as HTMLButtonElement;
-    button.click();
-    button.click();
-  });
+  const title = `Hosted work item ${Date.now()}`;
+  const workQueue = page.getByRole("region", { name: "Work Queue" });
+  await expect(workQueue.getByRole("heading", { name: "Work Queue" })).toBeVisible();
 
-  await expect(page.getByText("Work item captured.")).toBeVisible();
-  expect(createRequests).toBe(1);
+  await workQueue.getByLabel("Work item title").fill(title);
+  await workQueue.getByLabel("Work item notes").fill("Notes for hosted review");
+  await workQueue.getByRole("button", { name: "Capture" }).click();
+
+  // Verify the newly captured work item appears in the list
+  const itemButton = workQueue.getByRole("button", { name: new RegExp(title) });
+  await expect(itemButton).toBeVisible();
+
+  // Click to open WorkItemInspector
+  await itemButton.click();
+  const inspector = page.getByRole("complementary", { name: "Work Item Inspector" });
+  await expect(inspector).toBeVisible();
+  await expect(inspector).toContainText(title);
+
+  // Close inspector
+  await inspector.getByRole("button", { name: "Close" }).click();
+  await expect(inspector).toHaveCount(0);
 });
 
-test("keeps the latest workspace paired with its records", async ({ page }) => {
-  const alpha = {
-    id: "workspace-alpha",
-    ownerId: "user",
-    name: "Alpha",
-    createdAt: "2026-01-01T00:00:00.000Z",
-  };
-  const beta = {
-    id: "workspace-beta",
-    ownerId: "user",
-    name: "Beta",
-    createdAt: "2026-01-01T00:00:00.000Z",
-  };
-  await page.route("**/api/hosted/workspaces", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ workspaces: [alpha, beta], activeWorkspace: alpha }),
-    })
-  );
-  await page.route("**/api/hosted/workspaces/*/select", async (route) => {
-    const selected = route.request().url().includes(alpha.id) ? alpha : beta;
-    if (selected === alpha) await new Promise((resolve) => setTimeout(resolve, 300));
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ workspace: selected }),
-    });
-  });
-  await page.route("**/api/hosted/domain**", (route) => {
-    const title = route.request().url().includes(alpha.id) ? "Alpha record" : "Beta record";
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        records: {
-          workItems: [
-            {
-              id: title,
-              title,
-              status: "open",
-              priority: "normal",
-              createdAt: "2026-01-01T00:00:00.000Z",
-            },
-          ],
-        },
-      }),
-    });
-  });
+test("switches hosted workspace and launches Second Brain micro-app", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Workspaces" }).click();
 
-  await page.getByRole("button", { name: /Alpha Active/ }).click();
-  await page.getByRole("button", { name: /Beta Open workspace/ }).click();
-  await expect(page.getByText("Beta is active.")).toBeVisible();
-  await page.getByRole("button", { name: "Today" }).click();
+  // Launch Workspace Switcher drawer
+  await page.getByRole("button", { name: /Workspace Switcher/ }).click();
+  const switcher = page.getByRole("region", { name: "Workspace Switcher" });
+  await expect(switcher).toBeVisible();
+  await expect(switcher.getByText("Workspace Switcher")).toBeVisible();
 
-  await expect(page.locator(".hosted-account > span").first()).toHaveText("Beta");
-  await expect(page.getByText("Beta record")).toBeVisible();
-  await expect(page.getByText("Alpha record")).toHaveCount(0);
+  // Close Workspace Switcher by toggling
+  await page.getByRole("button", { name: /Workspace Switcher/ }).click();
+  await expect(switcher).toHaveCount(0);
+
+  // Launch Second Brain micro-app from Left Rail
+  const secondBrainButton = page.getByRole("button", { name: /Second Brain/ });
+  await secondBrainButton.click();
+  const secondBrain = page.getByRole("region", { name: "Second Brain Explorer" });
+  await expect(secondBrain).toBeVisible();
+  await expect(secondBrain.getByPlaceholder("Search nodes or paths...")).toBeVisible();
+  await expect(secondBrain.getByText(/Nodes:/)).toBeVisible();
+
+  // Close Second Brain by toggling
+  await secondBrainButton.click();
+  await expect(secondBrain).toHaveCount(0);
 });

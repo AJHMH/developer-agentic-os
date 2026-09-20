@@ -4,8 +4,8 @@
 - LocalWorkspace · type · L10-L10 — type LocalWorkspace = { repositories?: Array<{ id?: unknown; path?: unknown }> };
 - LocalOperationalState · type · L11-L11 — type LocalOperationalState = { incidents?: unknown[]; runs?: unknown[]; audits?: unknown[] };
 - ArtifactIndex · type · L12-L12 — type ArtifactIndex = { artifacts?: unknown[] };
-- LocalStoreExportAdapter · interface · L14-L14 — interface LocalStoreExportAdapter
-- DeterministicLocalStoreExportAdapter · class · L16-L41 — class DeterministicLocalStoreExportAdapter implements LocalStoreExportAdapter
-- constructor · method · L17-L17 — constructor(private readonly root = process.cwd())
-- export · method · L19-L40 — async export(): Promise<LocalStoreExport>
-- toRecords · function · L43-L45 — function toRecords(value: unknown[] | undefined): Array<Record<string, unknown>>
+- LocalStoreExportAdapter · interface · L14-L16 — interface LocalStoreExportAdapter
+- DeterministicLocalStoreExportAdapter · class · L18-L46 — class DeterministicLocalStoreExportAdapter implements LocalStoreExportAdapter
+- constructor · method · L19-L19 — constructor(private readonly root = process.cwd())
+- export · method · L21-L45 — async export(): Promise<LocalStoreExport>
+- toRecords · function · L48-L53 — function toRecords(value: unknown[] | undefined): Array<Record<string, unknown>>

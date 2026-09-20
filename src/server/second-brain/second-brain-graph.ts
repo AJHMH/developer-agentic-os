@@ -185,3 +185,66 @@ export async function buildSecondBrainGraph(
 
   return builder.build();
 }
+
+export async function buildHostedSecondBrainGraph(
+  workspaceId: string,
+  workspaceName: string,
+  records: Record<string, unknown[]> = {}
+): Promise<SecondBrainGraph> {
+  const builder = new GraphBuilder();
+  const contextNodeId = `repo_context:${workspaceId}`;
+  builder.addRepo("repo:root", workspaceName, `/workspaces/${workspaceName}`, {
+    repositoryId: workspaceId,
+  });
+  builder.addRepoContext(contextNodeId, workspaceName, `/workspaces/${workspaceName}`, workspaceId);
+  builder.addLink("repo:root", contextNodeId, "contains");
+
+  const skills = createSkillRegistry()
+    .listSkills()
+    .filter((skill) => skill.kind === "built-in");
+  for (const skill of skills) {
+    builder.addSkill(`skill:${skill.id}`, skill.command, {
+      model: skill.model,
+      effort: skill.effort,
+    });
+  }
+
+  const workItems = (records.workItems ?? []) as any[];
+  for (const workItem of workItems) {
+    builder.addWorkItem(`work_item:${workItem.id}`, workItem.title, contextNodeId, {
+      repositoryId: workspaceId,
+      status: workItem.status,
+      priority: workItem.priority,
+    });
+  }
+
+  const signals = (records.incomingSignals ?? []) as any[];
+  for (const signal of signals) {
+    builder.addSignal(`incoming_signal:${signal.id}`, signal.title, contextNodeId, {
+      repositoryId: workspaceId,
+      status: signal.status,
+      source: signal.source,
+    });
+  }
+
+  const artifacts = (records.artifacts ?? []) as any[];
+  for (const artifact of artifacts) {
+    builder.addArtifact(`artifact:${artifact.id}`, artifact.title || artifact.name || "Artifact", {
+      type: artifact.type,
+      repositoryId: workspaceId,
+    });
+    builder.addLink(`artifact:${artifact.id}`, contextNodeId, "scoped_to");
+  }
+
+  const routines = await createRoutineRegistry().listRoutines();
+  for (const routine of routines) {
+    const routineId = `routine:${routine.id}`;
+    const skillId = routine.skillId ? `skill:${routine.skillId}` : undefined;
+    builder.addRoutine(routineId, routine.name, skillId, {
+      schedule: routine.scheduleLabel,
+      status: routine.status,
+    });
+  }
+
+  return builder.build();
+}

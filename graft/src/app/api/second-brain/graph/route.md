@@ -1,3 +1,3 @@
 # src/app/api/second-brain/graph/route.ts
 
-- GET · function · L8-L17 — async function GET(request: Request = new Request("http://localhost"))
+- GET · function · L12-L39 — async function GET(request: Request = new Request("http://localhost"))

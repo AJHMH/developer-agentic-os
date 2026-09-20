@@ -775,12 +775,13 @@ export function useCommandCentreState() {
     );
   });
 
-  const graphNodes = graph?.nodes.length
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+  const graphNodes = nodes.length
     ? [
-        ...graph.nodes.filter((node) =>
+        ...nodes.filter((node) =>
           ["repo", "work_item", "routine", "skill", "artifact"].includes(node.type)
         ),
-        ...graph.nodes.filter(
+        ...nodes.filter(
           (node) => !["repo", "work_item", "routine", "skill", "artifact"].includes(node.type)
         ),
       ].slice(0, orbitIcons.length)
