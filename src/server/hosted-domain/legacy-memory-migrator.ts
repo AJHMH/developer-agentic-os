@@ -167,7 +167,12 @@ export async function preflight(
       if (!filePath.startsWith(memoryPath)) {
         throw new Error("Invalid path");
       }
-      rawFileCache.set(file, await readJsonFile(filePath, null));
+      try {
+        rawFileCache.set(file, await readJsonFile(filePath, null));
+      } catch {
+        rawFileCache.set(file, null);
+        warnings.push(`File ${file} contains malformed JSON and will be quarantined.`);
+      }
     }
   }
 
@@ -292,13 +297,12 @@ export async function executeMigration(
 
   const stats = await detectLegacyMemory(root);
   if (!stats.detected) {
-    // No legacy state — write marker and return
-    await store.setLegacyMigrationMarker(userId, workspaceId, correlationId);
+    // No legacy state — return early without marking so future syncs can trigger
     return {
       status: "completed",
       imported: 0,
       quarantined: [],
-      warnings: ["No .memory directory detected. Migration marker recorded."],
+      warnings: ["No .memory directory detected. Skipping migration."],
       correlationId,
     };
   }
@@ -318,8 +322,16 @@ export async function executeMigration(
       if (!filePath.startsWith(memoryPath)) {
         throw new Error("Invalid path");
       }
-      // lgtm [js/path-injection] Migrator reads from arbitrary local repository paths.
-      rawFileCache.set(file, await readJsonFile(filePath, null));
+      try {
+        rawFileCache.set(file, await readJsonFile(filePath, null));
+      } catch {
+        rawFileCache.set(file, null);
+        quarantined.push({
+          kind: "unknown",
+          reason: "File contains malformed JSON",
+          rawValue: file,
+        });
+      }
     }
   }
 

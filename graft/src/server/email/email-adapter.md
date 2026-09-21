@@ -8,5 +8,5 @@
 - parseConfiguredMessages · function · L75-L88 — function parseConfiguredMessages( env: Record<string, string | undefined> ): EmailProviderMessage[] | null
 - isEmailMessage · function · L90-L102 — function isEmailMessage(value: unknown): value is EmailProviderMessage
 - emailStatus · function · L104-L126 — function emailStatus( env: Record<string, string | undefined>, messages: EmailProviderMessage[] | null ): IntegrationAdapterStatus
-- baseStatus · function · L128-L143 — function baseStatus( status: IntegrationAdapterStatus["status"], message: string ): IntegrationAdapterStatus
-- formatBody · function · L145-L149 — function formatBody(message: EmailProviderMessage): string
+- baseStatus · function · L128-L145 — function baseStatus( status: IntegrationAdapterStatus["status"], message: string ): IntegrationAdapterStatus
+- formatBody · function · L147-L151 — function formatBody(message: EmailProviderMessage): string

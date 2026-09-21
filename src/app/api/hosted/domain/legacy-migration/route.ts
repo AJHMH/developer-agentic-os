@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { resolve } from "node:path";
 
 import { hostedError, hostedIdentity } from "@/app/api/hosted/_shared";
 import {
@@ -26,12 +25,6 @@ export async function GET(request: Request) {
 
   const view = url.searchParams.get("view");
   const workspaceId = url.searchParams.get("workspaceId");
-  const rawRoot = url.searchParams.get("root");
-  const root = typeof rawRoot === "string" && rawRoot ? rawRoot : process.cwd();
-  const safeRoot = resolve(root);
-  if (!safeRoot.startsWith(resolve("/"))) {
-    return NextResponse.json({ error: "Invalid path" }, { status: 400 });
-  }
 
   if (!views.includes(view as (typeof views)[number])) {
     return NextResponse.json(
@@ -41,7 +34,14 @@ export async function GET(request: Request) {
   }
 
   try {
+    let safeRoot = "";
+    if (workspaceId) {
+      const repos = await store.listRepositories(userId, workspaceId);
+      if (repos.length > 0) safeRoot = repos[0].localPath;
+    }
+
     if (view === "detect") {
+      if (!safeRoot) return NextResponse.json({ error: "Missing workspace context for detect" }, { status: 400 });
       const stats = await detectLegacyMemory(safeRoot);
       return NextResponse.json(stats);
     }
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { action, workspaceId, repositoryId, root } = body;
+  const { action, workspaceId, repositoryId } = body;
 
   if (action !== "execute-legacy-migration") {
     return NextResponse.json({ error: "action must be execute-legacy-migration" }, { status: 400 });
@@ -86,13 +86,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "repositoryId is required" }, { status: 400 });
   }
 
-  const resolvedRoot = typeof root === "string" && root ? root : process.cwd();
-  const safeRoot = resolve(resolvedRoot);
-  if (!safeRoot.startsWith(resolve("/"))) {
-    return NextResponse.json({ error: "Invalid path" }, { status: 400 });
-  }
-
   try {
+    const repos = await store.listRepositories(userId, workspaceId);
+    const repo = repos.find(r => r.id === repositoryId);
+    if (!repo) {
+      return NextResponse.json({ error: "Repository not found in workspace" }, { status: 404 });
+    }
+    const safeRoot = repo.localPath;
+
     const result = await executeMigration(safeRoot, workspaceId, repositoryId, store, userId);
     return NextResponse.json(result);
   } catch (error) {

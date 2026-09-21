@@ -729,22 +729,22 @@ export class HostedDomainStore {
     await this.withMutationLock(async () => {
       const state = await this.read();
       await this.assertWorkspace(userId, workspaceId);
-      const records = (state.records[workspaceId] ??= {});
-      records.legacyMigrations ??= [];
-      // Idempotent — only write if not already present
-      const existing = (records.legacyMigrations as Array<{ correlationId: string }>).find(
-        (m) => m.correlationId === correlationId
-      );
-      if (!existing) {
-        (records.legacyMigrations as Array<Record<string, unknown>>).push({
-          id: correlationId,
-          correlationId,
-          markedAt: new Date().toISOString(),
-          workspaceId,
-        });
-        await this.auditEvent(state, userId, workspaceId, "legacy.migration.marked");
-        await this.write(state);
+      if (workspaceId === "__proto__" || workspaceId === "constructor") {
+        throw new Error("Invalid workspaceId");
       }
+      const records = state.records[workspaceId] || (state.records[workspaceId] = {} as any);
+      records.legacyMigrations ??= [];
+      // Idempotent — only write if no marker exists for this workspace at all
+      if (records.legacyMigrations.length > 0) return;
+
+      (records.legacyMigrations as Array<Record<string, unknown>>).push({
+        id: correlationId,
+        correlationId,
+        markedAt: new Date().toISOString(),
+        workspaceId,
+      });
+      await this.auditEvent(state, userId, workspaceId, "legacy.migration.marked");
+      await this.write(state);
     });
   }
 
