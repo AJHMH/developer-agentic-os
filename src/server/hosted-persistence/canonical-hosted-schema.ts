@@ -10,6 +10,7 @@ type Queryable = {
 
 export const canonicalHostedSchemaMigrations = [
   "migrations/005-hosted-canonical-contract.sql",
+  "migrations/006-hosted-object-storage.sql",
 ] as const;
 
 export const canonicalHostedSchemaTables = [
@@ -33,6 +34,7 @@ export const canonicalHostedSchemaTables = [
   "hosted_connectors",
   "hosted_credentials",
   "hosted_audit",
+  "hosted_objects",
 ] as const;
 
 export const canonicalHostedStateTables = [
@@ -48,6 +50,7 @@ export const canonicalHostedStateTables = [
   "hosted_connectors",
   "hosted_credentials",
   "hosted_audit",
+  "hosted_objects",
 ] as const;
 
 export const canonicalHostedDeploymentTables = [

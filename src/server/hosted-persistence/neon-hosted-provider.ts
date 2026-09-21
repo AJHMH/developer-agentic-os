@@ -106,13 +106,17 @@ export async function findHostedTenantForGitHubRepository(
 }
 
 export class NeonHostedStateProvider implements HostedStateProvider {
-  private readonly pool = new Pool({ connectionString: hostedDatabaseUrl() });
+  private readonly pool: Pool;
   private readonly transactionClient = new AsyncLocalStorage<PoolClient>();
   private ready: Promise<void> | undefined;
   private deploymentReady: Promise<void> | undefined;
 
-  constructor(private readonly tenantId: string) {
+  constructor(
+    private readonly tenantId: string,
+    pool?: Pool
+  ) {
     if (!tenantId.trim()) throw new Error("Hosted persistence requires a tenant ID.");
+    this.pool = pool ?? new Pool({ connectionString: hostedDatabaseUrl() });
   }
 
   async read(): Promise<HostedState> {
@@ -429,7 +433,9 @@ export class NeonHostedStateProvider implements HostedStateProvider {
     }
   }
   async close(): Promise<void> {
-    await this.pool.end();
+    if ("end" in this.pool && typeof this.pool.end === "function") {
+      await this.pool.end();
+    }
   }
   private ensureSchema(): Promise<void> {
     const ready = this.ready;
@@ -463,12 +469,16 @@ export class NeonHostedStateProvider implements HostedStateProvider {
 }
 
 export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStateProvider {
-  private readonly pool = new Pool({ connectionString: hostedDatabaseUrl() });
+  private readonly pool: Pool;
   private readonly transactionClient = new AsyncLocalStorage<PoolClient>();
   private ready: Promise<void> | undefined;
 
-  constructor(private readonly tenantId: string) {
+  constructor(
+    private readonly tenantId: string,
+    pool?: Pool
+  ) {
     if (!tenantId.trim()) throw new Error("Hosted persistence requires a tenant ID.");
+    this.pool = pool ?? new Pool({ connectionString: hostedDatabaseUrl() });
   }
 
   async read(): Promise<HostedWorkspaceState> {
@@ -609,7 +619,9 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     }
   }
   async close(): Promise<void> {
-    await this.pool.end();
+    if ("end" in this.pool && typeof this.pool.end === "function") {
+      await this.pool.end();
+    }
   }
   private ensureSchema(): Promise<void> {
     const ready = this.ready;
