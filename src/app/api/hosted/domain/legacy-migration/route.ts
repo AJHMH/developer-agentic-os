@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolve } from "node:path";
 
 import { hostedError, hostedIdentity } from "@/app/api/hosted/_shared";
 import {
@@ -27,8 +28,8 @@ export async function GET(request: Request) {
   const workspaceId = url.searchParams.get("workspaceId");
   const rawRoot = url.searchParams.get("root");
   const root = typeof rawRoot === "string" && rawRoot ? rawRoot : process.cwd();
-  const safeRoot = require("node:path").resolve(root);
-  if (!safeRoot.startsWith(require("node:path").resolve("/"))) {
+  const safeRoot = resolve(root);
+  if (!safeRoot.startsWith(resolve("/"))) {
     return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   }
 
@@ -86,8 +87,8 @@ export async function POST(request: Request) {
   }
 
   const resolvedRoot = typeof root === "string" && root ? root : process.cwd();
-  const safeRoot = require("node:path").resolve(resolvedRoot);
-  if (!safeRoot.startsWith(require("node:path").resolve("/"))) {
+  const safeRoot = resolve(resolvedRoot);
+  if (!safeRoot.startsWith(resolve("/"))) {
     return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   }
 
