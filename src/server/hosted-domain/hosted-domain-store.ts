@@ -73,6 +73,21 @@ export type HostedConnector = {
   repositoryIds: string[];
   capabilities: Record<string, HostedCapabilityGrant[]>;
 };
+export type RetainedRecordVersion = {
+  version: number;
+  value: Record<string, unknown>;
+  supersededAt: string;
+  reason: "mutation" | "sync_replace" | "domain_merge" | "concurrent_conflict";
+  provenance: {
+    source: "hosted" | "local-connector" | "migration";
+    actorId?: string;
+    connectorId?: string;
+    clientTimestamp?: string;
+    serverSeq?: number;
+    at?: string;
+  };
+};
+
 export type HostedSnapshot = {
   id: string;
   connectorId: string;
@@ -82,6 +97,8 @@ export type HostedSnapshot = {
   publishedAt: string;
   sourceCommit: string | null;
   data: Record<string, unknown>;
+  version?: number;
+  serverSeq?: number;
 };
 export type HostedCredentialMetadata = {
   id: string;
@@ -150,6 +167,7 @@ export type HostedState = {
   vercelProject?: HostedVercelProjectMapping | null;
   vercelProjectHistory?: HostedVercelProjectMapping[];
   githubRepositories?: HostedGitHubRepositoryRegistration[];
+  sequences?: Record<string, number>;
 };
 
 const emptyState = (): HostedState => ({
@@ -163,6 +181,7 @@ const emptyState = (): HostedState => ({
   vercelProject: null,
   vercelProjectHistory: [],
   githubRepositories: [],
+  sequences: {},
 });
 
 export interface HostedStateProvider {
@@ -291,11 +310,109 @@ export class HostedDomainStore {
     });
   }
 
+  private nextServerSeq(state: HostedState, workspaceId: string): number {
+    state.sequences ??= {};
+    let max = state.sequences[workspaceId] ?? 0;
+    if (max === 0) {
+      const records = state.records[workspaceId] ?? {};
+      for (const list of Object.values(records)) {
+        if (!Array.isArray(list)) continue;
+        for (const item of list) {
+          if (typeof item.serverSeq === "number" && item.serverSeq > max) {
+            max = item.serverSeq;
+          }
+        }
+      }
+      const snapshots = state.snapshots[workspaceId] ?? [];
+      for (const item of snapshots) {
+        if (typeof item.serverSeq === "number" && item.serverSeq > max) {
+          max = item.serverSeq;
+        }
+      }
+    }
+    const next = max + 1;
+    state.sequences[workspaceId] = next;
+    return next;
+  }
+
+  private cloneRecordForHistory(record: Record<string, unknown>): Record<string, unknown> {
+    const { supersededVersions: _supersededVersions, ...rest } = record;
+    return JSON.parse(JSON.stringify(rest));
+  }
+
+  private attemptDomainMerge(
+    kind: HostedRecordKind,
+    existing: Record<string, unknown>,
+    incomingUpdates: Record<string, unknown>,
+    baseVersion: number
+  ): { merged: boolean; updates: Record<string, unknown> } {
+    if (kind !== "workItems") {
+      return { merged: false, updates: {} };
+    }
+
+    const superseded = Array.isArray(existing.supersededVersions)
+      ? (existing.supersededVersions as Array<{ version: number; value: Record<string, unknown> }>)
+      : [];
+    const baseSnapshot = superseded.find((v) => v.version === baseVersion)?.value;
+
+    const mergedUpdates: Record<string, unknown> = {};
+    const ignoredKeys = new Set([
+      "id",
+      "workspaceId",
+      "createdAt",
+      "updatedAt",
+      "version",
+      "baseVersion",
+      "serverSeq",
+      "serverCreatedAt",
+      "serverUpdatedAt",
+      "provenance",
+      "supersededVersions",
+    ]);
+
+    for (const [key, incomingVal] of Object.entries(incomingUpdates)) {
+      if (ignoredKeys.has(key)) continue;
+      const existingVal = existing[key];
+
+      if (JSON.stringify(incomingVal) === JSON.stringify(existingVal)) {
+        continue;
+      }
+
+      if (baseSnapshot) {
+        const baseVal = baseSnapshot[key];
+        if (JSON.stringify(existingVal) === JSON.stringify(baseVal)) {
+          mergedUpdates[key] = incomingVal;
+          continue;
+        }
+        if (JSON.stringify(incomingVal) === JSON.stringify(baseVal)) {
+          continue;
+        }
+        return { merged: false, updates: {} };
+      } else {
+        if (existingVal !== undefined && existingVal !== null) {
+          return { merged: false, updates: {} };
+        }
+        mergedUpdates[key] = incomingVal;
+      }
+    }
+
+    return { merged: true, updates: mergedUpdates };
+  }
+
   async putRecord(
     userId: string,
     workspaceId: string,
     kind: HostedRecordKind,
-    value: Record<string, unknown>
+    value: Record<string, unknown>,
+    options?: {
+      provenance?: {
+        source?: "hosted" | "local-connector" | "migration";
+        connectorId?: string;
+        clientTimestamp?: string;
+      };
+      status?: string;
+      syncStatus?: string;
+    }
   ): Promise<Record<string, unknown> & { id: string }> {
     return this.withMutationLock(async () => {
       const state = await this.read();
@@ -308,11 +425,35 @@ export class HostedDomainStore {
         return existing as Record<string, unknown> & { id: string };
       const storedValue =
         kind === "artifacts" && "content" in value ? await this.externalizeArtifact(value) : value;
+      const serverSeq = this.nextServerSeq(state, workspaceId);
+      const now = new Date().toISOString();
+      const version = typeof storedValue.version === "number" ? storedValue.version : 1;
       const record = {
         ...storedValue,
-        id: randomUUID(),
+        id:
+          typeof storedValue.id === "string" && isUuid(storedValue.id)
+            ? storedValue.id
+            : randomUUID(),
         workspaceId,
-        createdAt: new Date().toISOString(),
+        version,
+        serverSeq,
+        createdAt: typeof storedValue.createdAt === "string" ? storedValue.createdAt : now,
+        serverCreatedAt: now,
+        serverUpdatedAt: now,
+        provenance: {
+          source:
+            options?.provenance?.source ?? (storedValue.provenance as any)?.source ?? "hosted",
+          actorId: userId,
+          connectorId:
+            options?.provenance?.connectorId ?? (storedValue.provenance as any)?.connectorId,
+          clientTimestamp:
+            options?.provenance?.clientTimestamp ??
+            (typeof storedValue.updatedAt === "string" ? storedValue.updatedAt : undefined),
+          serverSeq,
+        },
+        supersededVersions: Array.isArray(storedValue.supersededVersions)
+          ? storedValue.supersededVersions
+          : [],
       };
       list.push(record);
       await this.auditEvent(state, userId, workspaceId, `${kind}.created`, record.id);
@@ -326,7 +467,15 @@ export class HostedDomainStore {
     workspaceId: string,
     kind: HostedRecordKind,
     recordId: string,
-    updates: Record<string, unknown>
+    updates: Record<string, unknown>,
+    options?: {
+      baseVersion?: number;
+      provenance?: {
+        source?: "hosted" | "local-connector" | "migration";
+        connectorId?: string;
+        clientTimestamp?: string;
+      };
+    }
   ): Promise<Record<string, unknown>> {
     return this.withMutationLock(async () => {
       const state = await this.read();
@@ -336,18 +485,108 @@ export class HostedDomainStore {
       const index = list.findIndex((item) => item.id === recordId);
       if (index === -1) throw new HostedDomainError("NOT_FOUND", `${kind} record not found.`);
       const existing = list[index];
+
+      const currentVersion = typeof existing.version === "number" ? existing.version : 1;
+      const baseVersion = options?.baseVersion;
+      const now = new Date().toISOString();
+      const serverSeq = this.nextServerSeq(state, workspaceId);
+
+      const previousSnapshot = this.cloneRecordForHistory(existing);
+      const supersededVersions = Array.isArray(existing.supersededVersions)
+        ? [...existing.supersededVersions]
+        : [];
+
+      let mergeReason: "mutation" | "domain_merge" | "concurrent_conflict" = "mutation";
+      let resolvedUpdates = { ...updates };
+
+      if (baseVersion !== undefined && baseVersion !== currentVersion) {
+        const mergeResult = this.attemptDomainMerge(kind, existing, updates, baseVersion);
+        if (mergeResult.merged) {
+          mergeReason = "domain_merge";
+          resolvedUpdates = mergeResult.updates;
+        } else {
+          supersededVersions.push({
+            version: baseVersion,
+            value: { ...updates, id: recordId, workspaceId },
+            supersededAt: now,
+            reason: "concurrent_conflict",
+            provenance: {
+              source: options?.provenance?.source ?? "local-connector",
+              actorId: userId,
+              connectorId: options?.provenance?.connectorId,
+              clientTimestamp: options?.provenance?.clientTimestamp,
+              serverSeq,
+            },
+          });
+          existing.supersededVersions = supersededVersions;
+          await this.auditEvent(state, userId, workspaceId, `${kind}.conflict_recorded`, recordId);
+          await this.write(state);
+          return existing;
+        }
+      }
+
+      supersededVersions.push({
+        version: currentVersion,
+        value: previousSnapshot,
+        supersededAt: now,
+        reason: mergeReason,
+        provenance: (existing.provenance as any) ?? {
+          source: "hosted",
+          actorId: userId,
+          serverSeq: existing.serverSeq ?? serverSeq,
+          at: existing.updatedAt ?? existing.createdAt ?? now,
+        },
+      });
+
+      const nextVersion = currentVersion + 1;
       const updated = {
         ...existing,
-        ...updates,
+        ...resolvedUpdates,
         id: recordId,
         workspaceId,
-        updatedAt: new Date().toISOString(),
+        version: nextVersion,
+        serverSeq,
+        updatedAt: now,
+        serverUpdatedAt: now,
+        provenance: {
+          source: options?.provenance?.source ?? "hosted",
+          actorId: userId,
+          connectorId: options?.provenance?.connectorId,
+          clientTimestamp: options?.provenance?.clientTimestamp,
+          serverSeq,
+        },
+        supersededVersions,
       };
       list[index] = updated;
       await this.auditEvent(state, userId, workspaceId, `${kind}.updated`, recordId);
       await this.write(state);
       return updated;
     });
+  }
+
+  async getRecordHistory(
+    userId: string,
+    workspaceId: string,
+    kind: HostedRecordKind,
+    recordId: string
+  ): Promise<{
+    current: Record<string, unknown>;
+    supersededVersions: RetainedRecordVersion[];
+  }> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    const records = state.records[workspaceId]?.[kind] ?? [];
+    const record = records.find((item) => item.id === recordId);
+    if (!record) {
+      throw new HostedDomainError("NOT_FOUND", `${kind} record not found.`);
+    }
+    const { supersededVersions = [], ...current } = record;
+    return {
+      current,
+      supersededVersions: Array.isArray(supersededVersions)
+        ? (supersededVersions as RetainedRecordVersion[])
+        : [],
+    };
   }
 
   async listRecords(
@@ -877,17 +1116,22 @@ export class HostedDomainStore {
         "git.read"
       );
       if (connector instanceof HostedDomainError) return { error: connector };
+      const serverSeq = this.nextServerSeq(state, workspaceId);
+      const snapshots = state.snapshots[workspaceId] ?? (state.snapshots[workspaceId] = []);
+      const repoSnapshots = snapshots.filter((item) => item.repositoryId === repositoryId);
+      const version = repoSnapshots.length + 1;
       const snapshot: HostedSnapshot = {
         id: randomUUID(),
         connectorId: connector.id,
         repositoryId,
         source: "local-connector",
         freshness: "fresh",
+        version,
+        serverSeq,
         publishedAt: new Date().toISOString(),
         sourceCommit: typeof data.commit === "string" ? data.commit : null,
         data,
       };
-      const snapshots = state.snapshots[workspaceId] ?? (state.snapshots[workspaceId] = []);
       snapshots
         .filter((item) => item.repositoryId === repositoryId)
         .forEach((item) => {
@@ -946,20 +1190,327 @@ export class HostedDomainStore {
       const connector = this.connector(state, connectorId);
       if (connector.workspaceId !== workspaceId || connector.state !== "connected")
         throw new HostedDomainError("FORBIDDEN", "Connector is not connected.");
-      const pending = (state.records[workspaceId]?.automationRuns ?? []).filter(
+
+      let resumedCount = 0;
+      const now = new Date().toISOString();
+
+      const pendingRuns = (state.records[workspaceId]?.automationRuns ?? []).filter(
         (record) =>
           record.status === "pending_offline" &&
-          typeof record.repositoryId === "string" &&
-          connector.repositoryIds.includes(record.repositoryId)
+          (typeof record.repositoryId !== "string" ||
+            connector.repositoryIds.includes(record.repositoryId))
       );
-      for (const record of pending) {
+      for (const record of pendingRuns) {
         record.status = "queued";
-        record.resumedAt = new Date().toISOString();
+        record.resumedAt = now;
+        resumedCount++;
       }
-      if (pending.length)
+
+      const records = state.records[workspaceId] ?? {};
+      for (const [kind, list] of Object.entries(records)) {
+        if (kind === "automationRuns" || !Array.isArray(list)) continue;
+        for (const item of list) {
+          if (
+            (item.status === "pending_offline" || item.syncStatus === "pending_offline") &&
+            (typeof item.repositoryId !== "string" ||
+              connector.repositoryIds.includes(item.repositoryId))
+          ) {
+            if (item.status === "pending_offline") {
+              item.status = "open";
+            }
+            item.syncStatus = "applied";
+            item.resumedAt = now;
+            item.serverUpdatedAt = now;
+            resumedCount++;
+          }
+        }
+      }
+
+      if (resumedCount > 0)
         await this.auditEvent(state, userId, workspaceId, "local-work.resumed", connectorId);
       await this.write(state);
-      return pending.length;
+      return resumedCount;
+    });
+  }
+
+  async syncRecords(
+    userId: string,
+    workspaceId: string,
+    connectorId: string,
+    input: {
+      repositoryId?: string;
+      isOffline?: boolean;
+      records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>;
+    }
+  ): Promise<{
+    synced: number;
+    pendingOffline: number;
+    conflicts: number;
+    records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>;
+  }> {
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      await this.assertWorkspace(userId, workspaceId);
+      const connector = this.connector(state, connectorId);
+      if (connector.workspaceId !== workspaceId) {
+        throw new HostedDomainError("FORBIDDEN", "Connector does not belong to workspace.");
+      }
+      if (input.repositoryId) {
+        this.assertRepositoryMembership(state, workspaceId, input.repositoryId);
+        if (!connector.repositoryIds.includes(input.repositoryId)) {
+          throw new HostedDomainError("FORBIDDEN", "Repository not granted to connector.");
+        }
+      }
+
+      const isOffline = Boolean(input.isOffline) || connector.state === "offline";
+      let syncedCount = 0;
+      let pendingOfflineCount = 0;
+      let conflictCount = 0;
+      const resultRecords: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>> = {};
+
+      const now = new Date().toISOString();
+      const recordsMap = state.records[workspaceId] ?? (state.records[workspaceId] = {});
+
+      for (const [kindKey, incomingList] of Object.entries(input.records ?? {})) {
+        const kind = kindKey as HostedRecordKind;
+        if (!Array.isArray(incomingList)) continue;
+        const list = recordsMap[kind] ?? (recordsMap[kind] = []);
+        resultRecords[kind] = [];
+
+        for (const item of incomingList) {
+          if (!isRecord(item)) continue;
+
+          if (isOffline) {
+            const serverSeq = this.nextServerSeq(state, workspaceId);
+            const pendingRecord = {
+              ...item,
+              id: typeof item.id === "string" && isUuid(item.id) ? item.id : randomUUID(),
+              workspaceId,
+              repositoryId: item.repositoryId ?? input.repositoryId,
+              status:
+                item.status === "pending_offline"
+                  ? "pending_offline"
+                  : (item.status ?? "pending_offline"),
+              syncStatus: "pending_offline",
+              version: typeof item.version === "number" ? item.version : 1,
+              serverSeq,
+              createdAt: typeof item.createdAt === "string" ? item.createdAt : now,
+              serverCreatedAt: now,
+              serverUpdatedAt: now,
+              provenance: {
+                source: "local-connector",
+                connectorId: connector.id,
+                offline: true,
+                clientTimestamp: typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                serverSeq,
+              },
+              supersededVersions: Array.isArray(item.supersededVersions)
+                ? item.supersededVersions
+                : [],
+            };
+            list.push(pendingRecord);
+            resultRecords[kind]!.push(pendingRecord);
+            pendingOfflineCount++;
+            continue;
+          }
+
+          const isAppendOnly =
+            kind === "incomingSignals" ||
+            kind === "artifacts" ||
+            kind === "skillRuns" ||
+            kind === "approvals";
+
+          const identity =
+            typeof item.externalId === "string" && item.externalId.trim()
+              ? item.externalId
+              : typeof item.id === "string" && item.id.trim()
+                ? item.id
+                : typeof item.sourceId === "string" && item.sourceId.trim()
+                  ? item.sourceId
+                  : null;
+
+          const existingIndex = identity
+            ? list.findIndex(
+                (existing) =>
+                  existing.id === identity ||
+                  existing.externalId === identity ||
+                  (kind === "incomingSignals" && existing.sourceId === identity)
+              )
+            : -1;
+
+          if (isAppendOnly) {
+            if (existingIndex !== -1) {
+              resultRecords[kind]!.push(list[existingIndex]);
+              syncedCount++;
+            } else {
+              const serverSeq = this.nextServerSeq(state, workspaceId);
+              const newRecord = {
+                ...item,
+                id: typeof item.id === "string" && isUuid(item.id) ? item.id : randomUUID(),
+                workspaceId,
+                version: 1,
+                serverSeq,
+                createdAt: typeof item.createdAt === "string" ? item.createdAt : now,
+                serverCreatedAt: now,
+                serverUpdatedAt: now,
+                provenance: {
+                  source: "local-connector",
+                  connectorId: connector.id,
+                  clientTimestamp: typeof item.createdAt === "string" ? item.createdAt : undefined,
+                  serverSeq,
+                },
+                supersededVersions: [],
+              };
+              list.push(newRecord);
+              resultRecords[kind]!.push(newRecord);
+              syncedCount++;
+            }
+          } else {
+            if (existingIndex === -1) {
+              const serverSeq = this.nextServerSeq(state, workspaceId);
+              const newRecord = {
+                ...item,
+                id: typeof item.id === "string" && isUuid(item.id) ? item.id : randomUUID(),
+                workspaceId,
+                version: 1,
+                serverSeq,
+                createdAt: typeof item.createdAt === "string" ? item.createdAt : now,
+                serverCreatedAt: now,
+                serverUpdatedAt: now,
+                provenance: {
+                  source: "local-connector",
+                  connectorId: connector.id,
+                  clientTimestamp: typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                  serverSeq,
+                },
+                supersededVersions: [],
+              };
+              list.push(newRecord);
+              resultRecords[kind]!.push(newRecord);
+              syncedCount++;
+            } else {
+              const existing = list[existingIndex];
+              const currentVersion = typeof existing.version === "number" ? existing.version : 1;
+              const baseVersion =
+                typeof item.baseVersion === "number"
+                  ? item.baseVersion
+                  : typeof item.version === "number"
+                    ? item.version
+                    : undefined;
+              const serverSeq = this.nextServerSeq(state, workspaceId);
+              const previousSnapshot = this.cloneRecordForHistory(existing);
+              const supersededVersions = Array.isArray(existing.supersededVersions)
+                ? [...existing.supersededVersions]
+                : [];
+
+              if (baseVersion !== undefined && baseVersion !== currentVersion) {
+                const mergeResult = this.attemptDomainMerge(kind, existing, item, baseVersion);
+                if (mergeResult.merged) {
+                  supersededVersions.push({
+                    version: currentVersion,
+                    value: previousSnapshot,
+                    supersededAt: now,
+                    reason: "domain_merge",
+                    provenance: (existing.provenance as any) ?? {
+                      source: "hosted",
+                      serverSeq,
+                      at: now,
+                    },
+                  });
+                  const updated = {
+                    ...existing,
+                    ...mergeResult.updates,
+                    version: currentVersion + 1,
+                    serverSeq,
+                    updatedAt: now,
+                    serverUpdatedAt: now,
+                    provenance: {
+                      source: "local-connector",
+                      connectorId: connector.id,
+                      clientTimestamp:
+                        typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                      serverSeq,
+                    },
+                    supersededVersions,
+                  };
+                  list[existingIndex] = updated;
+                  resultRecords[kind]!.push(updated);
+                  syncedCount++;
+                } else {
+                  supersededVersions.push({
+                    version: baseVersion,
+                    value: { ...item, id: existing.id, workspaceId },
+                    supersededAt: now,
+                    reason: "concurrent_conflict",
+                    provenance: {
+                      source: "local-connector",
+                      connectorId: connector.id,
+                      clientTimestamp:
+                        typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                      serverSeq,
+                    },
+                  });
+                  existing.supersededVersions = supersededVersions;
+                  resultRecords[kind]!.push(existing);
+                  conflictCount++;
+                }
+              } else {
+                supersededVersions.push({
+                  version: currentVersion,
+                  value: previousSnapshot,
+                  supersededAt: now,
+                  reason: "sync_replace",
+                  provenance: (existing.provenance as any) ?? {
+                    source: "hosted",
+                    serverSeq,
+                    at: now,
+                  },
+                });
+                const updated = {
+                  ...existing,
+                  ...item,
+                  id: existing.id,
+                  workspaceId,
+                  version: currentVersion + 1,
+                  serverSeq,
+                  updatedAt: now,
+                  serverUpdatedAt: now,
+                  provenance: {
+                    source: "local-connector",
+                    connectorId: connector.id,
+                    clientTimestamp:
+                      typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                    serverSeq,
+                  },
+                  supersededVersions,
+                };
+                list[existingIndex] = updated;
+                resultRecords[kind]!.push(updated);
+                syncedCount++;
+              }
+            }
+          }
+        }
+      }
+
+      await this.auditEvent(
+        state,
+        userId,
+        workspaceId,
+        "state.synced",
+        connectorId,
+        input.repositoryId,
+        undefined,
+        "allowed"
+      );
+      await this.write(state);
+
+      return {
+        synced: syncedCount,
+        pendingOffline: pendingOfflineCount,
+        conflicts: conflictCount,
+        records: resultRecords,
+      };
     });
   }
   async hostedSafeWork(
@@ -1761,4 +2312,11 @@ function mergeRelationships(
     seen.add(key);
     return true;
   });
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  );
 }
