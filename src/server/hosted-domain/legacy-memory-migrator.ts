@@ -310,6 +310,7 @@ export async function executeMigration(
   const rawFileCache = new Map<string, unknown>();
   for (const { file } of LEGACY_FILE_MAP) {
     if (!rawFileCache.has(file)) {
+      // lgtm [js/path-injection] Migrator reads from arbitrary local repository paths.
       rawFileCache.set(file, await readJsonFile(join(memoryPath, file), null));
     }
   }
