@@ -32,6 +32,7 @@ export async function GET(request: Request) {
       { status: 400 }
     );
   }
+  const selectedView = view as (typeof views)[number];
 
   try {
     if (!workspaceId || typeof workspaceId !== "string") {
@@ -47,12 +48,12 @@ export async function GET(request: Request) {
     }
     const safeRoot = repo.localPath;
 
-    if (view === "detect") {
+    if (selectedView === "detect") {
       const stats = await detectLegacyMemory(safeRoot);
       return NextResponse.json(stats);
     }
 
-    if (view === "preflight") {
+    if (selectedView === "preflight") {
       const report = await preflight(safeRoot, store, userId, workspaceId);
       return NextResponse.json(report);
     }
@@ -60,7 +61,8 @@ export async function GET(request: Request) {
     return hostedError(error);
   }
 
-  return NextResponse.json({ error: "Unhandled view" }, { status: 400 });
+  const unreachableView: never = selectedView;
+  throw new Error(`Unhandled legacy migration view: ${unreachableView}`);
 }
 
 export async function POST(request: Request) {

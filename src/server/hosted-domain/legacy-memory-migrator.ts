@@ -356,19 +356,26 @@ export async function executeMigration(
     const valid: Array<Record<string, unknown>> = [];
     for (const item of items) {
       if (isRecognizedRecord(item)) {
+        const {
+          provenance: legacyProvenance,
+          repositoryId: legacyRepositoryId,
+          ...legacyRecord
+        } = item as Record<string, unknown>;
         // Stamp provenance — set externalId for idempotency
         const externalId =
-          typeof (item as Record<string, unknown>).id === "string"
-            ? `legacy-memory:${kind}:${(item as Record<string, unknown>).id as string}`
+          typeof legacyRecord.id === "string"
+            ? `legacy-memory:${kind}:${legacyRecord.id}`
             : `legacy-memory:${kind}:${createHash("sha256").update(JSON.stringify(item)).digest("hex")}`;
         valid.push({
-          ...(item as Record<string, unknown>),
+          ...legacyRecord,
           externalId,
           provenance: {
             source: "migration",
             legacyPath: join(memoryPath, file),
             migratedAt: new Date().toISOString(),
             correlationId,
+            ...(legacyProvenance === undefined ? {} : { legacyProvenance }),
+            ...(legacyRepositoryId === undefined ? {} : { legacyRepositoryId }),
           },
           repositoryId,
         });
@@ -394,7 +401,7 @@ export async function executeMigration(
       {
         id: repositoryId,
         localPath: root,
-        pathIdentity: createHash("sha256").update(resolve(root)).digest("hex"),
+        pathIdentity: createHash("sha256").update(root).digest("hex"),
       },
     ],
     records,
@@ -452,9 +459,12 @@ function isRecognizedRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function readLegacyJsonFile(memoryPath: string, file: string): Promise<LegacyFileReadResult> {
+  if (!file) {
+    throw new Error("Invalid path");
+  }
   const filePath = resolve(memoryPath, file);
   const relativePath = relative(memoryPath, filePath);
-  if (relativePath === "" || relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
+  if (relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
     throw new Error("Invalid path");
   }
   try {
