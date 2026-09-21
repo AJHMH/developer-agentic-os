@@ -38,7 +38,9 @@ export type HostedRecordKind =
   | "artifacts"
   | "skillRuns"
   | "audit"
-  | "syncConflicts";
+  | "syncConflicts"
+  | "legacyMigrations";
+
 export type ConnectorCapability = "git.read" | "filesystem.read" | "filesystem.write";
 export type Freshness = "fresh" | "stale";
 
@@ -709,6 +711,48 @@ export class HostedDomainStore {
     await this.assertWorkspace(userId, workspaceId);
     return state.records[workspaceId] ?? {};
   }
+
+  async getLegacyMigrationMarker(userId: string, workspaceId: string): Promise<string | null> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    if (!isUuid(workspaceId)) {
+      throw new HostedDomainError("INVALID", "Invalid workspace id.");
+    }
+    const markers = (state.records[workspaceId]?.legacyMigrations ?? []) as Array<{
+      correlationId: string;
+    }>;
+    return markers.length > 0 ? markers[0].correlationId : null;
+  }
+
+  async setLegacyMigrationMarker(
+    userId: string,
+    workspaceId: string,
+    correlationId: string
+  ): Promise<void> {
+    await this.withMutationLock(async () => {
+      const state = await this.read();
+      await this.assertWorkspace(userId, workspaceId);
+      if (!isUuid(workspaceId)) {
+        throw new HostedDomainError("INVALID", "Invalid workspace id.");
+      }
+      const records =
+        state.records[workspaceId] ??
+        (state.records[workspaceId] = Object.create(null) as HostedRecordMap);
+      records.legacyMigrations ??= [];
+      // Idempotent — only write if no marker exists for this workspace at all
+      if (records.legacyMigrations.length > 0) return;
+
+      (records.legacyMigrations as Array<Record<string, unknown>>).push({
+        id: correlationId,
+        correlationId,
+        markedAt: new Date().toISOString(),
+        workspaceId,
+      });
+      await this.auditEvent(state, userId, workspaceId, "legacy.migration.marked");
+      await this.write(state);
+    });
+  }
+
   async listRepositories(userId: string, workspaceId: string): Promise<HostedRepository[]> {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
@@ -2062,6 +2106,9 @@ export class HostedDomainStore {
         };
         if (!existing) repositories.push(target);
         if (repository.id) repositoryIds.set(repository.id, target.id);
+      }
+      if (workspaceId === "__proto__" || workspaceId === "constructor") {
+        throw new HostedDomainError("INVALID", "Invalid workspace ID.");
       }
       let imported = 0;
       const recordIds = new Map<string, string>();

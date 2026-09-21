@@ -1,28 +1,53 @@
 # src/server/hosted-workspaces/hosted-workspace-store.ts
 
-- HostedUserState · type · L14-L17 — type HostedUserState = { workspaces: HostedWorkspace[]; activeWorkspaceId: string | null; };
-- HostedWorkspaceState · type · L19-L22 — type HostedWorkspaceState = { users: Record<string, HostedUserState>; audit: HostedAuditEvent[]; };
-- HostedWorkspaceStateProvider · interface · L24-L28 — interface HostedWorkspaceStateProvider
-- HostedWorkspaceError · class · L30-L38 — class HostedWorkspaceError extends Error
-- constructor · method · L31-L37 — constructor( readonly code: "INVALID_NAME" | "NOT_FOUND", message: string )
-- HostedWorkspaceStore · class · L40-L202 — class HostedWorkspaceStore
-- constructor · method · L44-L50 — constructor( root = process.cwd(), private readonly provider?: HostedWorkspaceStateProvider )
-- list · method · L52-L55 — async list(userId: string): Promise<HostedWorkspace[]>
-- create · method · L57-L73 — async create(userId: string, name: string): Promise<HostedWorkspace>
-- ensureDefault · method · L75-L97 — async ensureDefault(userId: string): Promise<HostedWorkspace>
-- select · method · L99-L107 — async select(userId: string, workspaceId: string): Promise<HostedWorkspace>
-- active · method · L109-L113 — async active(userId: string): Promise<HostedWorkspace | null>
-- owns · method · L115-L118 — async owns(userId: string, workspaceId: string): Promise<boolean>
-- owner · method · L120-L127 — async owner(workspaceId: string): Promise<string>
-- recordIdentity · method · L129-L134 — async recordIdentity(identity: HostedIdentity): Promise<void>
-- recordList · method · L136-L141 — async recordList(userId: string): Promise<void>
-- audit · method · L143-L146 — async audit(userId: string): Promise<HostedAuditEvent[]>
-- user · method · L148-L152 — private user(state: HostedWorkspaceState, userId: string): HostedUserState
-- event · method · L154-L166 — private event( action: HostedAuditEvent["action"], userId: string, workspaceId?: string ): HostedAuditEvent
-- read · method · L168-L172 — private read(): Promise<HostedWorkspaceState>
-- write · method · L174-L178 — private write(state: HostedWorkspaceState): Promise<void>
-- mutate · method · L180-L190 — private async mutate<T>(operation: (state: HostedWorkspaceState) => T | Promise<T>): Promise<T>
-- mutateState · function · L182-L187 — mutateState = async ()
-- assertFixtureOnly · method · L192-L201 — private assertFixtureOnly(): void
-- hostedWorkspaceStoreForTenant · function · L206-L227 — function hostedWorkspaceStoreForTenant(tenantId: string): HostedWorkspaceStore
-- get · method · L230-L234 — get(_target, property, receiver)
+- HostedUserState · type · L27-L30 — type HostedUserState = { workspaces: HostedWorkspace[]; activeWorkspaceId: string | null; };
+- HostedWorkspaceState · type · L32-L40 — type HostedWorkspaceState = { workspaces?: Record<string, HostedWorkspace>; members?: Record<string, WorkspaceMember[]>; invitations?: Record<string, WorkspaceInvitation[]>; approvals?: Record<string, WorkspaceApproval[]>; policies?: Record<string, WorkspacePolicy>; users: Record<string, HostedUserState>; audit: HostedAuditEvent[]; };
+- HostedWorkspaceStateProvider · interface · L42-L46 — interface HostedWorkspaceStateProvider
+- HostedWorkspaceError · class · L48-L56 — class HostedWorkspaceError extends Error
+- constructor · method · L49-L55 — constructor( readonly code: "INVALID_NAME" | "NOT_FOUND" | "FORBIDDEN" | "CONFLICT" | "EXPIRED" | "STALE", message: string )
+- roleSatisfies · function · L58-L65 — function roleSatisfies(actual: WorkspaceRole, required: WorkspaceRole): boolean
+- HostedWorkspaceStore · class · L67-L1286 — class HostedWorkspaceStore
+- constructor · method · L71-L77 — constructor( root = process.cwd(), private readonly provider?: HostedWorkspaceStateProvider )
+- list · method · L79-L82 — async list(userId: string): Promise<HostedWorkspace[]>
+- get · method · L84-L97 — async get( userId: string, workspaceId: string, options?: { includeTombstoned?: boolean } ): Promise<HostedWorkspace>
+- create · method · L99-L143 — async create(userId: string, name: string): Promise<HostedWorkspace>
+- ensureDefault · method · L145-L195 — async ensureDefault(userId: string): Promise<HostedWorkspace>
+- select · method · L197-L207 — async select(userId: string, workspaceId: string): Promise<HostedWorkspace>
+- active · method · L209-L217 — async active(userId: string): Promise<HostedWorkspace | null>
+- owns · method · L219-L226 — async owns(userId: string, workspaceId: string): Promise<boolean>
+- owner · method · L228-L246 — async owner(workspaceId: string): Promise<string>
+- getRole · method · L248-L257 — async getRole(userId: string, workspaceId: string): Promise<WorkspaceRole | null>
+- assertMember · method · L259-L293 — async assertMember( userId: string, workspaceId: string, minRole?: WorkspaceRole, options?: { includeTombstoned?: boolean } ): Promise<WorkspaceMember>
+- listMembers · method · L295-L299 — async listMembers(userId: string, workspaceId: string): Promise<WorkspaceMember[]>
+- listInvitations · method · L301-L312 — async listInvitations(userId: string, workspaceId: string): Promise<WorkspaceInvitation[]>
+- createInvitation · method · L314-L356 — async createInvitation( userId: string, workspaceId: string, input: { recipientEmail: string; role: "admin" | "member"; expiresInSeconds?: number; } ): Promise<WorkspaceInvitation>
+- revokeInvitation · method · L358-L393 — async revokeInvitation( userId: string, invitationId: string, workspaceId?: string ): Promise<WorkspaceInvitation>
+- acceptInvitation · method · L395-L479 — async acceptInvitation( userId: string, invitationId: string, userEmail?: string ): Promise<{ workspace: HostedWorkspace; member: WorkspaceMember }>
+- updateMemberRole · method · L481-L520 — async updateMemberRole( userId: string, workspaceId: string, targetUserId: string, newRole: "admin" | "member" ): Promise<WorkspaceMember>
+- removeMember · method · L522-L557 — async removeMember(userId: string, workspaceId: string, targetUserId: string): Promise<void>
+- transferOwnership · method · L559-L643 — async transferOwnership( userId: string, workspaceId: string, targetUserId: string, options?: { approvalId?: string; version?: string } ): Promise<{ workspace: HostedWorkspace; previousOwnerId: string; newOwnerId: string }>
+- softDeleteWorkspace · method · L645-L737 — async softDeleteWorkspace( userId: string, workspaceId: string, options?: { approvalId?: string; version?: string } ): Promise<WorkspaceRecoveryInfo>
+- getWorkspaceRecovery · method · L739-L747 — async getWorkspaceRecovery(userId: string, workspaceId: string): Promise<WorkspaceRecoveryInfo>
+- restoreWorkspace · method · L749-L820 — async restoreWorkspace( userId: string, workspaceId: string, options?: { approvalId?: string; version?: string } ): Promise<HostedWorkspace>
+- listApprovals · method · L822-L844 — async listApprovals(userId: string, workspaceId: string): Promise<WorkspaceApproval[]>
+- createApproval · method · L846-L925 — async createApproval( userId: string, workspaceId: string, input: { actorId: string; action: ProtectedAction; target: string; version: string; reason: string; expiresInSeconds?: number; } ): Promise<WorkspaceApproval>
+- revokeApproval · method · L927-L963 — async revokeApproval( userId: string, workspaceId: string, approvalId: string ): Promise<WorkspaceApproval>
+- consumeApproval · method · L965-L978 — async consumeApproval( callerUserId: string, workspaceId: string, approvalId: string, expected: { action: ProtectedAction; target: string; version: string; } ): Promise<WorkspaceApproval>
+- consumeApprovalInternal · method · L980-L1050 — consumeApprovalInternal( state: HostedWorkspaceState, callerUserId: string, workspaceId: string, approvalId: string, expected: { action: ProtectedAction; target: string; version: string; } ): WorkspaceApproval
+- getPolicyInternal · method · L1052-L1066 — private getPolicyInternal(state: HostedWorkspaceState, workspaceId: string): WorkspacePolicy
+- getPolicy · method · L1068-L1074 — async getPolicy(userId: string, workspaceId: string): Promise<WorkspacePolicy>
+- updatePolicy · method · L1076-L1166 — async updatePolicy( userId: string, workspaceId: string, updates: Partial< Pick< WorkspacePolicy, | "requireApprovalForDelete" | "requireApprovalForExport" | "requireApprovalForTransfer" | "approvalExpiryWindowSeconds" > >, options: { approvalId?: string; expectedVersion: number } ): Promise<WorkspacePolicy>
+- recordIdentity · method · L1168-L1173 — async recordIdentity(identity: HostedIdentity): Promise<void>
+- recordList · method · L1175-L1180 — async recordList(userId: string): Promise<void>
+- audit · method · L1182-L1185 — async audit(userId: string): Promise<HostedAuditEvent[]>
+- user · method · L1187-L1191 — private user(state: HostedWorkspaceState, userId: string): HostedUserState
+- event · method · L1193-L1208 — private event( action: HostedAuditEvent["action"], userId: string, workspaceId?: string, correlationId?: string ): HostedAuditEvent
+- normalizeState · method · L1210-L1246 — private normalizeState(state: HostedWorkspaceState): HostedWorkspaceState
+- read · method · L1248-L1256 — private async read(): Promise<HostedWorkspaceState>
+- write · method · L1258-L1262 — private write(state: HostedWorkspaceState): Promise<void>
+- mutate · method · L1264-L1274 — private async mutate<T>(operation: (state: HostedWorkspaceState) => T | Promise<T>): Promise<T>
+- mutateState · function · L1266-L1271 — mutateState = async ()
+- assertFixtureOnly · method · L1276-L1285 — private assertFixtureOnly(): void
+- setHostedWorkspaceStoreForTenant · function · L1290-L1299 — function setHostedWorkspaceStoreForTenant( tenantId: string, store: HostedWorkspaceStore | null ): void
+- hostedWorkspaceStoreForTenant · function · L1301-L1322 — function hostedWorkspaceStoreForTenant(tenantId: string): HostedWorkspaceStore
+- get · method · L1325-L1329 — get(_target, property, receiver)
