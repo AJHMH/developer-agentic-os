@@ -36,7 +36,9 @@ export type HostedRecordKind =
   | "automationRuns"
   | "approvals"
   | "artifacts"
-  | "skillRuns";
+  | "skillRuns"
+  | "audit"
+  | "syncConflicts";
 export type ConnectorCapability = "git.read" | "filesystem.read" | "filesystem.write";
 export type Freshness = "fresh" | "stale";
 
@@ -153,6 +155,35 @@ export type ProviderApproval = {
   reason?: string;
   action?: string;
   evidenceSnapshotId?: string;
+};
+
+export type HostedSyncConflict = {
+  id: string;
+  workspaceId: string;
+  targetKind: HostedRecordKind;
+  targetRecordId: string;
+  reason: string;
+  status: "pending" | "resolved";
+  hostedVersion: number;
+  hostedRecord: any;
+  localRecord: any;
+  resolution?: {
+    resolvedAt: string;
+    resolvedBy: string;
+    decision: "use_hosted" | "use_local";
+  };
+  createdAt: string;
+  version?: number;
+  serverSeq?: number;
+  serverCreatedAt?: string;
+  serverUpdatedAt?: string;
+  provenance?: any;
+};
+
+export type HostedMergedAuditEvent = HostedAudit & {
+  source: "hosted" | "local";
+  ingestedAt?: string;
+  orderingRationale: string;
 };
 
 type HostedRecordMap = Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>;
@@ -308,6 +339,44 @@ export class HostedDomainStore {
       await this.write(state);
       return repository;
     });
+  }
+
+  private recordSyncConflict(
+    state: HostedState,
+    workspaceId: string,
+    targetKind: HostedRecordKind,
+    targetRecordId: string,
+    hostedVersion: number,
+    hostedRecord: any,
+    localRecord: any,
+    provenance: any,
+    reason: string
+  ): void {
+    const conflicts = state.records[workspaceId] ?? {};
+    conflicts.syncConflicts ??= [];
+    state.records[workspaceId] = conflicts;
+
+    const serverSeq = this.nextServerSeq(state, workspaceId);
+    const now = new Date().toISOString();
+
+    const conflict: HostedSyncConflict = {
+      id: randomUUID(),
+      workspaceId,
+      targetKind,
+      targetRecordId,
+      reason,
+      status: "pending",
+      hostedVersion,
+      hostedRecord: this.cloneRecordForHistory(hostedRecord),
+      localRecord: { ...localRecord },
+      createdAt: now,
+      version: 1,
+      serverSeq,
+      serverCreatedAt: now,
+      serverUpdatedAt: now,
+      provenance,
+    };
+    conflicts.syncConflicts.push(conflict as any);
   }
 
   private nextServerSeq(state: HostedState, workspaceId: string): number {
@@ -505,20 +574,23 @@ export class HostedDomainStore {
           mergeReason = "domain_merge";
           resolvedUpdates = mergeResult.updates;
         } else {
-          supersededVersions.push({
-            version: baseVersion,
-            value: { ...updates, id: recordId, workspaceId },
-            supersededAt: now,
-            reason: "concurrent_conflict",
-            provenance: {
+          this.recordSyncConflict(
+            state,
+            workspaceId,
+            kind,
+            recordId,
+            currentVersion,
+            existing,
+            { ...updates, id: recordId, workspaceId },
+            {
               source: options?.provenance?.source ?? "local-connector",
               actorId: userId,
               connectorId: options?.provenance?.connectorId,
               clientTimestamp: options?.provenance?.clientTimestamp,
               serverSeq,
-            },
-          });
-          existing.supersededVersions = supersededVersions;
+            } as any,
+            "concurrent_conflict"
+          );
           await this.auditEvent(state, userId, workspaceId, `${kind}.conflict_recorded`, recordId);
           await this.write(state);
           return existing;
@@ -625,6 +697,13 @@ export class HostedDomainStore {
     }
     return record;
   }
+
+  async listSyncConflicts(userId: string, workspaceId: string): Promise<HostedSyncConflict[]> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    return (state.records[workspaceId]?.syncConflicts || []) as HostedSyncConflict[];
+  }
+
   async listAllRecords(userId: string, workspaceId: string): Promise<HostedRecordMap> {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
@@ -1233,6 +1312,114 @@ export class HostedDomainStore {
     });
   }
 
+  async resolveSyncConflict(
+    userId: string,
+    workspaceId: string,
+    conflictId: string,
+    decision: "use_hosted" | "use_local",
+    options?: { approvalId?: string; expectedVersion?: number }
+  ): Promise<HostedSyncConflict> {
+    return this.withMutationLock(async () => {
+      const _workspace = await this.assertWorkspace(userId, workspaceId, "admin");
+      const state = await this.read();
+      const conflicts = state.records[workspaceId]?.syncConflicts as
+        HostedSyncConflict[] | undefined;
+      if (!conflicts) throw new HostedDomainError("NOT_FOUND", "Conflict not found.");
+
+      const conflictIndex = conflicts.findIndex((c) => c.id === conflictId);
+      if (conflictIndex === -1) throw new HostedDomainError("NOT_FOUND", "Conflict not found.");
+
+      const conflict = conflicts[conflictIndex];
+      if (conflict.status === "resolved") {
+        throw new HostedDomainError("CONFLICT", "Conflict is already resolved.");
+      }
+
+      if (options?.expectedVersion !== undefined && conflict.version !== options.expectedVersion) {
+        throw new HostedDomainError("STALE", "Conflict version mismatch.");
+      }
+
+      // If the target record kind requires owner approval for mutation, we might need to consume an approval here.
+      // But updateRecord doesn't require owner approval directly, only specific things do.
+      // We will consume approval if provided, just to be safe, or leave it to standard action rules.
+      if (options?.approvalId) {
+        await await this.workspaceStore.consumeApproval(userId, workspaceId, options.approvalId, {
+          action: "sync.conflict.resolve" as any,
+          target: conflict.id,
+          version: String(conflict.version || 1),
+        });
+      }
+
+      const now = new Date().toISOString();
+      const serverSeq = this.nextServerSeq(state, workspaceId);
+
+      conflict.status = "resolved";
+      conflict.resolution = {
+        resolvedAt: now,
+        resolvedBy: userId,
+        decision,
+      };
+      conflict.version = (conflict.version || 1) + 1;
+      conflict.serverSeq = serverSeq;
+      conflict.serverUpdatedAt = now;
+
+      // If use_local, we need to update the actual record
+      if (decision === "use_local") {
+        const targetList = state.records[workspaceId]?.[conflict.targetKind];
+        if (targetList) {
+          const targetIndex = targetList.findIndex((r) => r.id === conflict.targetRecordId);
+          if (targetIndex !== -1) {
+            const existing = targetList[targetIndex];
+            const supersededVersions = Array.isArray(existing.supersededVersions)
+              ? [...existing.supersededVersions]
+              : [];
+            supersededVersions.push({
+              version: typeof existing.version === "number" ? existing.version : 1,
+              value: this.cloneRecordForHistory(existing),
+              supersededAt: now,
+              reason: "sync_replace",
+              provenance: existing.provenance ?? {
+                source: "hosted",
+                serverSeq,
+                at: now,
+              },
+            });
+            targetList[targetIndex] = {
+              ...existing,
+              ...conflict.localRecord,
+              id: existing.id,
+              workspaceId,
+              version: (typeof existing.version === "number" ? existing.version : 1) + 1,
+              serverSeq,
+              updatedAt: now,
+              serverUpdatedAt: now,
+              supersededVersions,
+              provenance: {
+                source: "local-connector",
+                actorId: userId,
+                serverSeq,
+                at: now,
+              },
+            };
+          }
+        }
+      }
+
+      await this.auditEvent(
+        state,
+        userId,
+        workspaceId,
+        "sync.conflict.resolved",
+        conflict.id,
+        undefined,
+        undefined,
+        "allowed"
+      );
+
+      await this.write(state);
+      return conflict;
+    });
+  }
+
   async syncRecords(
     userId: string,
     workspaceId: string,
@@ -1318,7 +1505,8 @@ export class HostedDomainStore {
             kind === "incomingSignals" ||
             kind === "artifacts" ||
             kind === "skillRuns" ||
-            kind === "approvals";
+            kind === "approvals" ||
+            kind === "audit";
 
           const identity =
             typeof item.externalId === "string" && item.externalId.trim()
@@ -1437,20 +1625,23 @@ export class HostedDomainStore {
                   resultRecords[kind]!.push(updated);
                   syncedCount++;
                 } else {
-                  supersededVersions.push({
-                    version: baseVersion,
-                    value: { ...item, id: existing.id, workspaceId },
-                    supersededAt: now,
-                    reason: "concurrent_conflict",
-                    provenance: {
+                  this.recordSyncConflict(
+                    state,
+                    workspaceId,
+                    kind,
+                    existing.id as string,
+                    currentVersion,
+                    existing,
+                    { ...item, id: existing.id, workspaceId },
+                    {
                       source: "local-connector",
                       connectorId: connector.id,
                       clientTimestamp:
                         typeof item.updatedAt === "string" ? item.updatedAt : undefined,
                       serverSeq,
-                    },
-                  });
-                  existing.supersededVersions = supersededVersions;
+                    } as any,
+                    "concurrent_conflict"
+                  );
                   resultRecords[kind]!.push(existing);
                   conflictCount++;
                 }
@@ -1939,6 +2130,45 @@ export class HostedDomainStore {
       return { imported, warnings };
     });
   }
+
+  async mergedAudit(userId: string, workspaceId: string): Promise<HostedMergedAuditEvent[]> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+
+    const hostedEvents: HostedMergedAuditEvent[] = state.audit
+      .filter((e) => e.workspaceId === workspaceId)
+      .map((e) => ({
+        ...e,
+        source: "hosted",
+        orderingRationale: "hosted_authoritative",
+      }));
+
+    const localAuditRecords = (state.records[workspaceId]?.["audit"] || []) as any[];
+    const localEvents: HostedMergedAuditEvent[] = localAuditRecords.map((r) => {
+      return {
+        id: r.id,
+        workspaceId: r.workspaceId,
+        userId: r.userId || r.actorId || "unknown",
+        action: r.action || "unknown",
+        occurredAt: r.occurredAt || r.createdAt || r.clientTimestamp || new Date(0).toISOString(),
+        subjectId: r.subjectId,
+        correlationId: r.correlationId,
+        source: "local",
+        ingestedAt: r.serverCreatedAt || r.serverUpdatedAt,
+        orderingRationale: "client_timestamp_best_effort",
+      };
+    });
+
+    return [...hostedEvents, ...localEvents].sort((a, b) => {
+      // Sort by occurredAt primarily, then ingestedAt if ties, then source
+      const timeA = a.occurredAt || a.ingestedAt || "";
+      const timeB = b.occurredAt || b.ingestedAt || "";
+      if (timeA !== timeB) return timeA.localeCompare(timeB);
+      if (a.source !== b.source) return a.source === "hosted" ? -1 : 1;
+      return a.id.localeCompare(b.id);
+    });
+  }
+
   async audit(userId: string, workspaceId: string): Promise<HostedAudit[]> {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);

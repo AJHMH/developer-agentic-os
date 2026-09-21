@@ -320,20 +320,20 @@ test("Issue #11 Acceptance Criteria 4 & 5: Concurrent conflicting updates with s
     assert.equal(activeItem.priority, "high"); // Server authority wins
     assert.equal(activeItem.version, 2);
 
-    // Losing version and source provenance remain available in supersededVersions
+    // Losing version and source provenance now trigger an explicit Sync Conflict
     const history = await store.getRecordHistory("alice", ws.id, "workItems", baseItem.id);
     assert.equal(history.current.priority, "high");
-    assert.ok(history.supersededVersions.length >= 2);
 
-    // Find the losing concurrent conflict version
-    const losingVersion = history.supersededVersions.find(
-      (v) => v.reason === "concurrent_conflict"
+    const conflicts = await store.listSyncConflicts("alice", ws.id);
+    const pendingConflict = conflicts.find(
+      (c) => c.targetRecordId === baseItem.id && c.status === "pending"
     );
-    assert.ok(losingVersion, "Losing version must be retained in history");
-    assert.equal(losingVersion?.value.priority, "low");
-    assert.equal(losingVersion?.provenance.source, "local-connector");
-    assert.equal(losingVersion?.provenance.clientTimestamp, "2033-05-01T12:00:00Z");
-    assert.ok(losingVersion?.supersededAt);
+    assert.ok(pendingConflict, "Pending sync conflict must be created");
+
+    assert.equal(pendingConflict.localRecord.priority, "low");
+    assert.equal(pendingConflict.provenance?.source, "local-connector");
+    assert.equal(pendingConflict.provenance?.clientTimestamp, "2033-05-01T12:00:00Z");
+    assert.ok(pendingConflict.createdAt);
   });
 });
 
