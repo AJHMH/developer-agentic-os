@@ -97,9 +97,9 @@ export async function POST(request: Request) {
     if (!repo) {
       return NextResponse.json({ error: "Repository not found in workspace" }, { status: 404 });
     }
-    const safeRoot = repo.localPath;
+    void repo;
 
-    const result = await executeMigration(safeRoot, workspaceId, repositoryId, store, userId);
+    const result = await executeMigration(workspaceId, repositoryId, store, userId);
     return NextResponse.json(result);
   } catch (error) {
     return hostedError(error);

@@ -184,6 +184,16 @@ test("Issue #13 AC2: preflight quarantines malformed legacy JSON without abortin
   });
 });
 
+test("Issue #13 AC2: preflight surfaces non-parse legacy read failures", async () => {
+  await withEnv(async ({ root, store }) => {
+    const ws = await store.createWorkspace("alice", "Unreadable Preflight WS");
+    const memDir = await seedLegacyMemory(root);
+    await mkdir(join(memDir, "work-items.json"), { recursive: true });
+
+    await assert.rejects(() => preflight(root, store, "alice", ws.id));
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AC3: Idempotency — second execute returns already_migrated, no duplicates
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,12 +208,12 @@ test("Issue #13 AC3: executeMigration is idempotent — second call returns alre
     });
 
     // First run
-    const first = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const first = await executeMigration(ws.id, repo.id, store, "alice");
     assert.equal(first.status, "completed");
     assert.equal(first.imported, 1);
 
     // Second run
-    const second = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const second = await executeMigration(ws.id, repo.id, store, "alice");
     assert.equal(second.status, "already_migrated");
     assert.equal(second.imported, 0);
 
@@ -243,7 +253,7 @@ test("Issue #13 AC4: every imported record has provenance.source=migration and c
       incomingSignals: [{ id: "sig-a", message: "Signal" }],
     });
 
-    await executeMigration(root, ws.id, repo.id, store, "alice");
+    await executeMigration(ws.id, repo.id, store, "alice");
 
     const workItems = await store.listRecords("alice", ws.id, "workItems");
     assert.equal(workItems.length, 2);
@@ -279,7 +289,7 @@ test("Issue #13 AC5: malformed and unknown-file records are quarantined; valid r
       extraFiles: [{ name: "unknown-data.json", content: '{"foo": "bar"}' }],
     });
 
-    const result = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const result = await executeMigration(ws.id, repo.id, store, "alice");
 
     // 1 valid work item must import
     assert.equal(result.imported, 1, "Only valid records should be imported");
@@ -318,7 +328,7 @@ test("Issue #13 AC6: successful migration records the marker after import comple
     });
 
     // First call — succeeds and writes marker
-    const result = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const result = await executeMigration(ws.id, repo.id, store, "alice");
     assert.ok(result.correlationId, "correlationId must be present");
     assert.equal(result.status, "completed");
 
@@ -327,7 +337,7 @@ test("Issue #13 AC6: successful migration records the marker after import comple
     assert.equal(marker, result.correlationId, "Marker must equal the correlationId");
 
     // Second call returns already_migrated — no double import
-    const retry = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const retry = await executeMigration(ws.id, repo.id, store, "alice");
     assert.equal(retry.status, "already_migrated");
     assert.equal(retry.imported, 0);
   });
@@ -352,7 +362,7 @@ test("Issue #13 AC6: failed import leaves the marker unset so a retry can resume
       return originalImportMigration(...args);
     }) as typeof store.importMigration;
 
-    const failed = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const failed = await executeMigration(ws.id, repo.id, store, "alice");
     assert.equal(failed.status, "partial");
     assert.equal(failed.imported, 0);
     assert.equal(failed.resumeFrom, failed.correlationId);
@@ -360,7 +370,7 @@ test("Issue #13 AC6: failed import leaves the marker unset so a retry can resume
     const markerAfterFailure = await store.getLegacyMigrationMarker("alice", ws.id);
     assert.equal(markerAfterFailure, null, "Failed imports must not record the marker");
 
-    const retried = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const retried = await executeMigration(ws.id, repo.id, store, "alice");
     assert.equal(retried.status, "completed");
     assert.equal(retried.imported, 1);
 
@@ -387,7 +397,7 @@ test("Issue #13 AC6: marker persistence failure returns partial after importing"
       throw new Error("simulated marker failure");
     }) as typeof store.setLegacyMigrationMarker;
 
-    const result = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const result = await executeMigration(ws.id, repo.id, store, "alice");
     assert.equal(result.status, "partial");
     assert.equal(result.imported, 1);
     assert.equal(result.resumeFrom, result.correlationId);
@@ -406,7 +416,7 @@ test("Issue #13 AC6: executeMigration does not write a marker when no legacy sta
     const ws = await store.createWorkspace("alice", "No Legacy State WS");
     const repo = await store.registerRepository("alice", ws.id, root);
 
-    const result = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const result = await executeMigration(ws.id, repo.id, store, "alice");
     assert.equal(result.status, "completed");
     assert.equal(result.imported, 0);
 
@@ -434,7 +444,7 @@ test("Issue #13 AC7: .memory directory is never deleted or modified after migrat
     const beforeMtime = beforeStat.mtimeMs;
 
     // Execute migration
-    await executeMigration(root, ws.id, repo.id, store, "alice");
+    await executeMigration(ws.id, repo.id, store, "alice");
 
     // Verify directory still exists and is unmodified
     const afterFiles = await readdir(memDir, { recursive: true });
@@ -481,7 +491,7 @@ test("Issue #13 AC8: full round-trip — preflight shows expected effects, execu
     );
 
     // Step 2: Execute migration
-    const result = await executeMigration(root, ws.id, repo.id, store, "alice");
+    const result = await executeMigration(ws.id, repo.id, store, "alice");
     assert.equal(result.status, "completed");
     assert.equal(result.imported, 3);
     assert.equal(result.quarantined.length, 0);

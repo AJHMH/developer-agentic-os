@@ -282,25 +282,17 @@ export async function preflight(
  * - NEVER modifies the source `.memory` directory.
  */
 export async function executeMigration(
-  root: string,
   workspaceId: string,
   repositoryId: string,
   store: HostedDomainStore,
   userId: string
 ): Promise<LegacyMigrationResult> {
   const correlationId = randomUUID();
-  void root;
   const repository = (await store.listRepositories(userId, workspaceId)).find(
     (candidate) => candidate.id === repositoryId
   );
   if (!repository) {
     throw new HostedDomainError("NOT_FOUND", "Repository not found in workspace.");
-  }
-  if (resolve(root) !== repository.localPath) {
-    throw new HostedDomainError(
-      "INVALID",
-      "Legacy migration root must match the selected repository."
-    );
   }
   const repositoryRoot = repository.localPath;
 
@@ -395,7 +387,7 @@ export async function executeMigration(
           externalId,
           provenance: {
             source: "migration",
-            legacyPath: join(memoryPath, file),
+            legacyPath: `${LEGACY_MEMORY_DIR}/${file.replace(/\\/g, "/")}`,
             migratedAt: new Date().toISOString(),
             correlationId,
             ...(legacyProvenance === undefined ? {} : { legacyProvenance }),
@@ -506,8 +498,10 @@ async function readLegacyJsonFile(memoryPath: string, file: string): Promise<Leg
   }
   try {
     return { status: "loaded", raw: await readJsonFile(filePath, undefined) };
-  } catch {
-    return { status: "malformed" };
+  } catch (error) {
+    if (isMissingPathError(error)) return { status: "missing" };
+    if (error instanceof SyntaxError) return { status: "malformed" };
+    throw error;
   }
 }
 
