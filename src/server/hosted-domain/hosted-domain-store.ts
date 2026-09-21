@@ -38,7 +38,9 @@ export type HostedRecordKind =
   | "artifacts"
   | "skillRuns"
   | "audit"
-  | "syncConflicts";
+  | "syncConflicts"
+  | "legacyMigrations";
+
 export type ConnectorCapability = "git.read" | "filesystem.read" | "filesystem.write";
 export type Freshness = "fresh" | "stale";
 
@@ -709,6 +711,43 @@ export class HostedDomainStore {
     await this.assertWorkspace(userId, workspaceId);
     return state.records[workspaceId] ?? {};
   }
+
+  async getLegacyMigrationMarker(userId: string, workspaceId: string): Promise<string | null> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    const markers = (state.records[workspaceId]?.legacyMigrations ?? []) as Array<{
+      correlationId: string;
+    }>;
+    return markers.length > 0 ? markers[0].correlationId : null;
+  }
+
+  async setLegacyMigrationMarker(
+    userId: string,
+    workspaceId: string,
+    correlationId: string
+  ): Promise<void> {
+    await this.withMutationLock(async () => {
+      const state = await this.read();
+      await this.assertWorkspace(userId, workspaceId);
+      const records = (state.records[workspaceId] ??= {});
+      records.legacyMigrations ??= [];
+      // Idempotent — only write if not already present
+      const existing = (records.legacyMigrations as Array<{ correlationId: string }>).find(
+        (m) => m.correlationId === correlationId
+      );
+      if (!existing) {
+        (records.legacyMigrations as Array<Record<string, unknown>>).push({
+          id: correlationId,
+          correlationId,
+          markedAt: new Date().toISOString(),
+          workspaceId,
+        });
+        await this.auditEvent(state, userId, workspaceId, "legacy.migration.marked");
+        await this.write(state);
+      }
+    });
+  }
+
   async listRepositories(userId: string, workspaceId: string): Promise<HostedRepository[]> {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
