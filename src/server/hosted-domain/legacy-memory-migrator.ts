@@ -163,7 +163,11 @@ export async function preflight(
   const rawFileCache = new Map<string, unknown>();
   for (const { file } of LEGACY_FILE_MAP) {
     if (!rawFileCache.has(file)) {
-      rawFileCache.set(file, await readJsonFile(join(memoryPath, file), null));
+      const filePath = resolve(memoryPath, file);
+      if (!filePath.startsWith(memoryPath)) {
+        throw new Error("Invalid path");
+      }
+      rawFileCache.set(file, await readJsonFile(filePath, null));
     }
   }
 
@@ -310,8 +314,12 @@ export async function executeMigration(
   const rawFileCache = new Map<string, unknown>();
   for (const { file } of LEGACY_FILE_MAP) {
     if (!rawFileCache.has(file)) {
+      const filePath = resolve(memoryPath, file);
+      if (!filePath.startsWith(memoryPath)) {
+        throw new Error("Invalid path");
+      }
       // lgtm [js/path-injection] Migrator reads from arbitrary local repository paths.
-      rawFileCache.set(file, await readJsonFile(join(memoryPath, file), null));
+      rawFileCache.set(file, await readJsonFile(filePath, null));
     }
   }
 
