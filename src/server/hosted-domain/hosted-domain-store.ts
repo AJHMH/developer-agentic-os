@@ -715,6 +715,9 @@ export class HostedDomainStore {
   async getLegacyMigrationMarker(userId: string, workspaceId: string): Promise<string | null> {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
+    if (!isUuid(workspaceId)) {
+      throw new HostedDomainError("INVALID", "Invalid workspace id.");
+    }
     const markers = (state.records[workspaceId]?.legacyMigrations ?? []) as Array<{
       correlationId: string;
     }>;

@@ -195,14 +195,7 @@ export async function preflight(
 
   // Scan unknown .json files
   const knownFiles = new Set(LEGACY_FILE_MAP.map((m) => m.file));
-  let allJsonFiles: string[] = [];
-  try {
-    allJsonFiles = (await readdir(memoryPath, { recursive: true }))
-      .filter((e) => typeof e === "string" && e.endsWith(".json"))
-      .map((e) => e.toString());
-  } catch {
-    // ignore
-  }
+  const allJsonFiles = await listLegacyJsonFiles(memoryPath);
   for (const f of allJsonFiles) {
     const norm = f.replace(/\\/g, "/");
     if (!knownFiles.has(norm)) {
@@ -343,14 +336,7 @@ export async function executeMigration(
   }
 
   // Collect unknown files as quarantined entries
-  let allJsonFiles: string[] = [];
-  try {
-    allJsonFiles = (await readdir(memoryPath, { recursive: true }))
-      .filter((e) => typeof e === "string" && e.endsWith(".json"))
-      .map((e) => e.toString());
-  } catch {
-    // ignore
-  }
+  const allJsonFiles = await listLegacyJsonFiles(memoryPath);
   const knownFiles = new Set(LEGACY_FILE_MAP.map((m) => m.file));
   for (const f of allJsonFiles) {
     const norm = f.replace(/\\/g, "/");
@@ -501,6 +487,17 @@ async function readLegacyJsonFile(memoryPath: string, file: string): Promise<Leg
   } catch (error) {
     if (isMissingPathError(error)) return { status: "missing" };
     if (error instanceof SyntaxError) return { status: "malformed" };
+    throw error;
+  }
+}
+
+export async function listLegacyJsonFiles(memoryPath: string): Promise<string[]> {
+  try {
+    return (await readdir(memoryPath, { recursive: true }))
+      .filter((entry) => typeof entry === "string" && entry.endsWith(".json"))
+      .map((entry) => entry.toString());
+  } catch (error) {
+    if (isMissingPathError(error)) return [];
     throw error;
   }
 }

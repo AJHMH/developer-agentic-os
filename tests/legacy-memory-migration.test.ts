@@ -21,6 +21,7 @@ import {
   LEGACY_MEMORY_DIR,
   detectLegacyMemory,
   executeMigration,
+  listLegacyJsonFiles,
   preflight,
 } from "../src/server/hosted-domain/legacy-memory-migrator";
 import {
@@ -191,6 +192,17 @@ test("Issue #13 AC2: preflight surfaces non-parse legacy read failures", async (
     await mkdir(join(memDir, "work-items.json"), { recursive: true });
 
     await assert.rejects(() => preflight(root, store, "alice", ws.id));
+  });
+});
+
+test("Issue #13 AC2: unknown-file scan surfaces non-missing directory failures", async () => {
+  await withEnv(async ({ root, store }) => {
+    void store;
+    const memoryPath = await seedLegacyMemory(root);
+    await rm(memoryPath, { recursive: true, force: true });
+    await writeFile(memoryPath, "not-a-directory");
+
+    await assert.rejects(() => listLegacyJsonFiles(memoryPath));
   });
 });
 
