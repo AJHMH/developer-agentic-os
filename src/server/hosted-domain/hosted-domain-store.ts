@@ -214,7 +214,8 @@ export class DeterministicJsonHostedStateProvider implements HostedStateProvider
 
 export class HostedDomainError extends Error {
   constructor(
-    readonly code: "FORBIDDEN" | "NOT_FOUND" | "INVALID" | "STALE" | "FEATURE_DISABLED",
+    readonly code:
+      "FORBIDDEN" | "NOT_FOUND" | "INVALID" | "STALE" | "FEATURE_DISABLED" | "CONFLICT",
     message: string
   ) {
     super(message);
@@ -1179,10 +1180,57 @@ export class HostedDomainStore {
     });
   }
 
-  async exportBackup(userId: string, workspaceId: string): Promise<HostedBackup> {
+  async exportBackup(
+    userId: string,
+    workspaceId: string,
+    options?: { approvalId?: string; version?: string }
+  ): Promise<HostedBackup> {
+    const workspace = await this.assertWorkspace(userId, workspaceId);
+    const member = await this.workspaceStore.assertMember(userId, workspaceId);
+    if (member.role !== "owner") {
+      if (member.role !== "admin") {
+        throw new HostedDomainError(
+          "FORBIDDEN",
+          "This operation requires owner role or admin with owner approval."
+        );
+      }
+      const policy = await this.workspaceStore.getPolicy(userId, workspaceId);
+      if (policy.requireApprovalForExport) {
+        if (!options?.approvalId) {
+          throw new HostedDomainError(
+            "FORBIDDEN",
+            "Admins require owner approval to export full backup."
+          );
+        }
+        try {
+          await this.workspaceStore.consumeApproval(userId, workspaceId, options.approvalId, {
+            action: "domain.export_full",
+            target: workspaceId,
+            version: options?.version ?? String(workspace.createdAt || "v1"),
+          });
+        } catch (error) {
+          if (error instanceof Error && error.name === "HostedWorkspaceError") {
+            const err = error as unknown as { code: string; message: string };
+            if (err.code === "FORBIDDEN") {
+              throw new HostedDomainError("FORBIDDEN", err.message);
+            }
+            if (err.code === "NOT_FOUND") {
+              throw new HostedDomainError("NOT_FOUND", err.message);
+            }
+            if (err.code === "CONFLICT") {
+              throw new HostedDomainError("CONFLICT", err.message);
+            }
+            if (err.code === "STALE") {
+              throw new HostedDomainError("STALE", err.message);
+            }
+          }
+          throw error;
+        }
+      }
+    }
+
     return this.withMutationLock(async () => {
       const state = await this.read();
-      const workspace = await this.assertWorkspace(userId, workspaceId, "owner");
       if (this.normalizeExpiredConnectors(state, workspaceId)) await this.write(state);
       const credentials = state.credentials
         .filter((item) => item.workspaceId === workspaceId)

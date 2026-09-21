@@ -35,7 +35,7 @@ test("triage actions create and link workflow records without losing the source 
   const root = await mkdtemp(join(tmpdir(), "developer-agentic-os-triage-"));
   let contextId = "";
   try {
-    const context = await workspaceStore.registerRepository(root);
+    const context = await workspaceStore.registerRepository(root, false);
     contextId = context.id;
     const signal = await new IncomingSignalStore(root).create({
       source: "integration",
@@ -138,8 +138,8 @@ test("triage rejects invalid actions and cross-repository signal access", async 
   let sourceContextId = "";
   let otherContextId = "";
   try {
-    const sourceContext = await workspaceStore.registerRepository(sourceRoot);
-    const otherContext = await workspaceStore.registerRepository(otherRoot);
+    const sourceContext = await workspaceStore.registerRepository(sourceRoot, false);
+    const otherContext = await workspaceStore.registerRepository(otherRoot, false);
     sourceContextId = sourceContext.id;
     otherContextId = otherContext.id;
     const signal = await new IncomingSignalStore(sourceRoot).create({

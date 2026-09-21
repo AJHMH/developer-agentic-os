@@ -68,7 +68,7 @@ test("handoff store captures editable context and finalizes an immutable artifac
 
 test("handoff routes create, edit, list, finalize, and reject finalized edits", async () => {
   const root = await mkdtemp(join(tmpdir(), "developer-agentic-os-handoff-route-"));
-  const repository = await workspaceStore.registerRepository(root);
+  const repository = await workspaceStore.registerRepository(root, false);
   try {
     const create = await createHandoff(
       new Request(`http://localhost/api/handoffs?repositoryRoot=${encodeURIComponent(root)}`, {

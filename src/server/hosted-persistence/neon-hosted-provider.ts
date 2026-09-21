@@ -17,12 +17,18 @@ import type {
   ProtectedSecretStore,
 } from "@/server/hosted-domain/hosted-domain-store";
 import type {
+  ApprovalStatus,
   HostedAuditEvent,
   HostedWorkspace,
   InvitationStatus,
+  ProtectedAction,
+  WorkspaceApproval,
   WorkspaceInvitation,
   WorkspaceMember,
+  WorkspacePolicy,
+  WorkspaceRecoveryInfo,
   WorkspaceRole,
+  WorkspaceStatus,
 } from "@/types/hosted-workspace";
 import type {
   HostedWorkspaceState,
@@ -508,9 +514,14 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
       owner_id: string;
       name: string;
       created_at: string;
-    }>("SELECT id, owner_id, name, created_at FROM hosted_workspaces WHERE tenant_id = $1", [
-      tenantId,
-    ]);
+      status: string | null;
+      deleted_at: string | null;
+      recovery_backup_id: string | null;
+      recovery_info: WorkspaceRecoveryInfo | null;
+    }>(
+      "SELECT id, owner_id, name, created_at, status, deleted_at, recovery_backup_id, recovery_info FROM hosted_workspaces WHERE tenant_id = $1",
+      [tenantId]
+    );
     const members = await client.query<{
       workspace_id: string;
       user_id: string;
@@ -538,11 +549,47 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
       "SELECT id, workspace_id, recipient_email, role, status, invited_by, created_at, expires_at, accepted_at, accepted_by, revoked_at, revoked_by FROM hosted_workspace_invitations WHERE tenant_id = $1",
       [tenantId]
     );
+    const approvals = await client.query<{
+      id: string;
+      workspace_id: string;
+      actor_id: string;
+      action: string;
+      target: string;
+      version: string;
+      reason: string;
+      correlation_id: string;
+      approved_by: string;
+      status: string;
+      created_at: string;
+      expires_at: string;
+      consumed_at: string | null;
+      consumed_by: string | null;
+      revoked_at: string | null;
+      revoked_by: string | null;
+    }>(
+      "SELECT id, workspace_id, actor_id, action, target, version, reason, correlation_id, approved_by, status, created_at, expires_at, consumed_at, consumed_by, revoked_at, revoked_by FROM hosted_workspace_approvals WHERE tenant_id = $1",
+      [tenantId]
+    );
+    const policies = await client.query<{
+      workspace_id: string;
+      require_approval_for_delete: boolean;
+      require_approval_for_export: boolean;
+      require_approval_for_transfer: boolean;
+      approval_expiry_window_seconds: number;
+      version: number;
+      updated_at: string;
+      updated_by: string;
+    }>(
+      "SELECT workspace_id, require_approval_for_delete, require_approval_for_export, require_approval_for_transfer, approval_expiry_window_seconds, version, updated_at, updated_by FROM hosted_workspace_policies WHERE tenant_id = $1",
+      [tenantId]
+    );
 
     const state: HostedWorkspaceState = {
       workspaces: {},
       members: {},
       invitations: {},
+      approvals: {},
+      policies: {},
       users: {},
       audit: [],
     };
@@ -552,9 +599,14 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
         ownerId: ws.owner_id,
         name: ws.name,
         createdAt: ws.created_at,
+        status: (ws.status as WorkspaceStatus) ?? "active",
+        ...(ws.deleted_at ? { deletedAt: toIsoDate(ws.deleted_at) } : {}),
+        ...(ws.recovery_backup_id ? { recoveryBackupId: ws.recovery_backup_id } : {}),
+        ...(ws.recovery_info ? { recoveryInfo: ws.recovery_info } : {}),
       };
       state.members![ws.id] = [];
       state.invitations![ws.id] = [];
+      state.approvals![ws.id] = [];
     }
     for (const user of users.rows) {
       state.users[user.user_id] = {
@@ -615,6 +667,39 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
         ...(inv.revoked_by ? { revokedBy: inv.revoked_by } : {}),
       });
     }
+    for (const app of approvals.rows) {
+      if (!state.workspaces![app.workspace_id]) continue;
+      (state.approvals![app.workspace_id] ??= []).push({
+        id: app.id,
+        workspaceId: app.workspace_id,
+        actorId: app.actor_id,
+        action: app.action as ProtectedAction,
+        target: app.target,
+        version: app.version,
+        reason: app.reason,
+        correlationId: app.correlation_id,
+        approvedBy: app.approved_by,
+        status: app.status as ApprovalStatus,
+        createdAt: toIsoDate(app.created_at),
+        expiresAt: toIsoDate(app.expires_at),
+        ...(app.consumed_at ? { consumedAt: toIsoDate(app.consumed_at) } : {}),
+        ...(app.consumed_by ? { consumedBy: app.consumed_by } : {}),
+        ...(app.revoked_at ? { revokedAt: toIsoDate(app.revoked_at) } : {}),
+        ...(app.revoked_by ? { revokedBy: app.revoked_by } : {}),
+      });
+    }
+    for (const pol of policies.rows) {
+      state.policies![pol.workspace_id] = {
+        workspaceId: pol.workspace_id,
+        requireApprovalForDelete: pol.require_approval_for_delete,
+        requireApprovalForExport: pol.require_approval_for_export,
+        requireApprovalForTransfer: pol.require_approval_for_transfer,
+        approvalExpiryWindowSeconds: pol.approval_expiry_window_seconds,
+        version: pol.version,
+        updatedAt: toIsoDate(pol.updated_at),
+        updatedBy: pol.updated_by,
+      };
+    }
 
     const audit = await client.query<{
       id: string;
@@ -661,13 +746,28 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
 
     for (const workspace of allWorkspaces) {
       await client.query(
-        `INSERT INTO hosted_workspaces (id, tenant_id, owner_id, name, created_at)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO hosted_workspaces (
+           id, tenant_id, owner_id, name, created_at, status, deleted_at, recovery_backup_id, recovery_info
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
          ON CONFLICT (tenant_id, id) DO UPDATE SET
            owner_id = EXCLUDED.owner_id,
            name = EXCLUDED.name,
-           created_at = EXCLUDED.created_at`,
-        [workspace.id, tenantId, workspace.ownerId, workspace.name, workspace.createdAt]
+           created_at = EXCLUDED.created_at,
+           status = EXCLUDED.status,
+           deleted_at = EXCLUDED.deleted_at,
+           recovery_backup_id = EXCLUDED.recovery_backup_id,
+           recovery_info = EXCLUDED.recovery_info`,
+        [
+          workspace.id,
+          tenantId,
+          workspace.ownerId,
+          workspace.name,
+          workspace.createdAt,
+          workspace.status ?? "active",
+          workspace.deletedAt ?? null,
+          workspace.recoveryBackupId ?? null,
+          workspace.recoveryInfo ? JSON.stringify(workspace.recoveryInfo) : null,
+        ]
       );
     }
 
@@ -761,6 +861,103 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
       await client.query("DELETE FROM hosted_workspace_invitations WHERE tenant_id = $1", [
         tenantId,
       ]);
+    }
+
+    const allApprovals: WorkspaceApproval[] = [];
+    if (state.approvals) {
+      for (const [wsId, appList] of Object.entries(state.approvals)) {
+        if (desiredWorkspaceIds.has(wsId)) {
+          allApprovals.push(...appList);
+        }
+      }
+    }
+    const desiredApprovalIds = allApprovals.map((a) => a.id);
+    for (const app of allApprovals) {
+      await client.query(
+        `INSERT INTO hosted_workspace_approvals (
+           id, tenant_id, workspace_id, actor_id, action, target, version, reason,
+           correlation_id, approved_by, status, created_at, expires_at,
+           consumed_at, consumed_by, revoked_at, revoked_by
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status,
+           consumed_at = EXCLUDED.consumed_at,
+           consumed_by = EXCLUDED.consumed_by,
+           revoked_at = EXCLUDED.revoked_at,
+           revoked_by = EXCLUDED.revoked_by`,
+        [
+          app.id,
+          tenantId,
+          app.workspaceId,
+          app.actorId,
+          app.action,
+          app.target,
+          app.version,
+          app.reason,
+          app.correlationId,
+          app.approvedBy,
+          app.status,
+          app.createdAt,
+          app.expiresAt,
+          app.consumedAt ?? null,
+          app.consumedBy ?? null,
+          app.revokedAt ?? null,
+          app.revokedBy ?? null,
+        ]
+      );
+    }
+    if (desiredApprovalIds.length > 0) {
+      await client.query(
+        "DELETE FROM hosted_workspace_approvals WHERE tenant_id = $1 AND id <> ALL($2::uuid[])",
+        [tenantId, desiredApprovalIds]
+      );
+    } else {
+      await client.query("DELETE FROM hosted_workspace_approvals WHERE tenant_id = $1", [tenantId]);
+    }
+
+    const allPolicies: WorkspacePolicy[] = [];
+    if (state.policies) {
+      for (const [wsId, pol] of Object.entries(state.policies)) {
+        if (desiredWorkspaceIds.has(wsId)) {
+          allPolicies.push(pol);
+        }
+      }
+    }
+    const desiredPolicyWorkspaceIds = allPolicies.map((p) => p.workspaceId);
+    for (const pol of allPolicies) {
+      await client.query(
+        `INSERT INTO hosted_workspace_policies (
+           tenant_id, workspace_id, require_approval_for_delete, require_approval_for_export,
+           require_approval_for_transfer, approval_expiry_window_seconds, version, updated_at, updated_by
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (tenant_id, workspace_id) DO UPDATE SET
+           require_approval_for_delete = EXCLUDED.require_approval_for_delete,
+           require_approval_for_export = EXCLUDED.require_approval_for_export,
+           require_approval_for_transfer = EXCLUDED.require_approval_for_transfer,
+           approval_expiry_window_seconds = EXCLUDED.approval_expiry_window_seconds,
+           version = EXCLUDED.version,
+           updated_at = EXCLUDED.updated_at,
+           updated_by = EXCLUDED.updated_by`,
+        [
+          tenantId,
+          pol.workspaceId,
+          pol.requireApprovalForDelete,
+          pol.requireApprovalForExport,
+          pol.requireApprovalForTransfer,
+          pol.approvalExpiryWindowSeconds,
+          pol.version,
+          pol.updatedAt,
+          pol.updatedBy,
+        ]
+      );
+    }
+    if (desiredPolicyWorkspaceIds.length > 0) {
+      await client.query(
+        "DELETE FROM hosted_workspace_policies WHERE tenant_id = $1 AND workspace_id <> ALL($2::uuid[])",
+        [tenantId, desiredPolicyWorkspaceIds]
+      );
+    } else {
+      await client.query("DELETE FROM hosted_workspace_policies WHERE tenant_id = $1", [tenantId]);
     }
 
     const desiredUserIds = Object.keys(state.users);

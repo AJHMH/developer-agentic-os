@@ -131,6 +131,7 @@ export function formatHostedError(
       CONFLICT: { status: 409, code: "CONFLICT", retryable: false },
       EXPIRED: { status: 410, code: "VALIDATION_ERROR", retryable: false },
       INVALID_NAME: { status: 400, code: "VALIDATION_ERROR", retryable: false },
+      STALE: { status: 409, code: "STALE_STATE", retryable: true },
     };
     const mapped = mapping[code] ?? { status: 400, code: "VALIDATION_ERROR", retryable: false };
     return createHostedErrorResponse({
@@ -234,6 +235,7 @@ export function hostedError(error: unknown): NextResponse {
       CONFLICT: 409,
       EXPIRED: 410,
       INVALID_NAME: 400,
+      STALE: 409,
     };
     return NextResponse.json({ error: error.message }, { status: statusByCode[code] ?? 400 });
   }

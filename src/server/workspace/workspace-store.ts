@@ -32,7 +32,14 @@ export class WorkspaceStore {
     const active = workspace.repositories.find(
       (repository) => repository.id === workspace.activeRepositoryId
     );
-    return active ?? defaultContext(this.root);
+    if (!active) return defaultContext(this.root);
+    try {
+      const s = await stat(active.path);
+      if (s.isDirectory()) return active;
+    } catch {
+      // Path does not exist on disk, fall back to defaultContext
+    }
+    return defaultContext(this.root);
   }
 
   async getContext(id: string): Promise<RepositoryContext> {
@@ -42,15 +49,20 @@ export class WorkspaceStore {
     return context;
   }
 
-  async registerRepository(inputPath: string): Promise<RepositoryContext> {
+  async registerRepository(inputPath: string, makeActive?: boolean): Promise<RepositoryContext> {
     const repository = await repositoryFromPath(inputPath);
     const workspace = await this.readWorkspace();
     const existing = workspace.repositories.find((item) => item.id === repository.id);
     if (existing) return existing;
 
+    const shouldActivate =
+      makeActive ??
+      (workspace.activeRepositoryId === null || workspace.activeRepositoryId === undefined);
     await this.writeWorkspace({
       repositories: [...workspace.repositories, repository],
-      activeRepositoryId: workspace.activeRepositoryId ?? repository.id,
+      activeRepositoryId: shouldActivate
+        ? (workspace.activeRepositoryId ?? repository.id)
+        : workspace.activeRepositoryId,
     });
     return repository;
   }
