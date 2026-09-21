@@ -8,11 +8,9 @@ import {
   HostedWorkspaceStore,
   hostedWorkspaceStoreForTenant,
 } from "../hosted-workspaces/hosted-workspace-store";
-import {
-  LocalHostedObjectStore,
-  RejectingHostedObjectStore,
-  type HostedObjectStore,
-} from "./hosted-object-store";
+import { LocalHostedObjectStore, type HostedObjectStore } from "./hosted-object-store";
+import { NeonHostedObjectStore } from "./neon-hosted-object-store";
+import { assertHostedInternalOwnerEnabled } from "../hosted-flags/feature-flags";
 import {
   DeterministicLocalStoreExportAdapter,
   type LocalStoreExportAdapter,
@@ -216,7 +214,7 @@ export class DeterministicJsonHostedStateProvider implements HostedStateProvider
 
 export class HostedDomainError extends Error {
   constructor(
-    readonly code: "FORBIDDEN" | "NOT_FOUND" | "INVALID" | "STALE",
+    readonly code: "FORBIDDEN" | "NOT_FOUND" | "INVALID" | "STALE" | "FEATURE_DISABLED",
     message: string
   ) {
     super(message);
@@ -237,9 +235,31 @@ export class HostedDomainStore {
     ),
     private readonly secretStore: ProtectedSecretStore = new DeterministicProtectedSecretStore(),
     private readonly tenantId = "legacy"
-  ) {}
+  ) {
+    if (process.env.NODE_ENV === "production" && !isHostedJsonFixtureMode()) {
+      if (provider instanceof DeterministicJsonHostedStateProvider) {
+        throw new HostedDomainError(
+          "INVALID",
+          "Production mode cannot select deterministic fixture persistence."
+        );
+      }
+      if (objectStore instanceof LocalHostedObjectStore) {
+        throw new HostedDomainError(
+          "INVALID",
+          "Production mode cannot select local object storage."
+        );
+      }
+      if (secretStore instanceof DeterministicProtectedSecretStore) {
+        throw new HostedDomainError(
+          "INVALID",
+          "Production mode cannot select deterministic secret storage."
+        );
+      }
+    }
+  }
 
   async createWorkspace(userId: string, name: string) {
+    assertHostedInternalOwnerEnabled();
     return this.workspaceStore.create(userId, name);
   }
 
@@ -337,6 +357,33 @@ export class HostedDomainStore {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
     return state.records[workspaceId]?.[kind] ?? [];
+  }
+
+  async getArtifact(
+    userId: string,
+    workspaceId: string,
+    artifactId: string
+  ): Promise<Record<string, unknown> | null> {
+    assertHostedInternalOwnerEnabled();
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    const artifacts = state.records[workspaceId]?.artifacts ?? [];
+    const record = artifacts.find((a) => a.id === artifactId);
+    if (!record) return null;
+    if (typeof record.objectReference === "string") {
+      const bytes = await this.objectStore.get(record.objectReference);
+      let content: unknown;
+      try {
+        content = JSON.parse(Buffer.from(bytes).toString("utf8"));
+      } catch {
+        content = Buffer.from(bytes).toString("utf8");
+      }
+      return {
+        ...record,
+        content,
+      };
+    }
+    return record;
   }
   async listAllRecords(userId: string, workspaceId: string): Promise<HostedRecordMap> {
     const state = await this.read();
@@ -1465,6 +1512,7 @@ export class HostedDomainStore {
   private async externalizeArtifact(
     value: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
+    assertHostedInternalOwnerEnabled();
     const content = value.content;
     const object = await this.objectStore.put(JSON.stringify(content), "application/json");
     const metadata = Object.fromEntries(Object.entries(value).filter(([key]) => key !== "content"));
@@ -1563,7 +1611,7 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
       process.cwd(),
       workspaceStore,
       new NeonHostedStateProvider(tenantId),
-      new RejectingHostedObjectStore(),
+      new NeonHostedObjectStore(tenantId),
       undefined,
       secretStore,
       tenantId

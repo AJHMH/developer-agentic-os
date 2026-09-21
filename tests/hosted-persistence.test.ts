@@ -41,10 +41,6 @@ const emptyDomainState = (): HostedState => ({
   audit: [],
 });
 const emptyWorkspaceState = (): HostedWorkspaceState => ({ users: {}, audit: [] });
-const canonicalHostedMigrationPath = resolve(
-  process.cwd(),
-  "migrations/005-hosted-canonical-contract.sql"
-);
 
 async function createPgLite(): Promise<PGlite> {
   const db = new PGlite();
@@ -248,11 +244,16 @@ test("hosted stores persist through injected deterministic providers", async () 
   assert.equal((await domainStore.listRepositories("alice", workspace.id))[0].id, repository.id);
 });
 
-test("fresh hosted provisioning uses one authoritative contract migration", async () => {
-  const sql = await readFile(canonicalHostedMigrationPath, "utf8");
+test("fresh hosted provisioning uses authoritative contract migrations", async () => {
   assert.deepEqual(canonicalHostedSchemaMigrations, [
     "migrations/005-hosted-canonical-contract.sql",
+    "migrations/006-hosted-object-storage.sql",
   ]);
+  const sql = (
+    await Promise.all(
+      canonicalHostedSchemaMigrations.map((m) => readFile(resolve(process.cwd(), m), "utf8"))
+    )
+  ).join("\n");
   for (const table of canonicalHostedSchemaTables)
     assert.match(sql, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`, "i"));
   assert.doesNotMatch(sql, /CREATE TABLE IF NOT EXISTS artifacts\b/i);
@@ -294,15 +295,24 @@ test("canonical hosted provisioning is versioned and idempotent across retries",
   const reads: string[] = [];
   const readMigration = async (path: string) => {
     reads.push(path);
-    return "-- canonical hosted schema";
+    return `-- canonical hosted schema: ${path}`;
   };
 
   await applyCanonicalHostedSchemaMigrations(client, readMigration);
   await applyCanonicalHostedSchemaMigrations(client, readMigration);
 
-  assert.deepEqual(reads, ["migrations/005-hosted-canonical-contract.sql"]);
-  assert.deepEqual([...client.versions], ["005-hosted-canonical-contract.sql"]);
-  assert.deepEqual(client.appliedSql, ["-- canonical hosted schema"]);
+  assert.deepEqual(reads, [
+    "migrations/005-hosted-canonical-contract.sql",
+    "migrations/006-hosted-object-storage.sql",
+  ]);
+  assert.deepEqual(
+    [...client.versions],
+    ["005-hosted-canonical-contract.sql", "006-hosted-object-storage.sql"]
+  );
+  assert.deepEqual(client.appliedSql, [
+    "-- canonical hosted schema: migrations/005-hosted-canonical-contract.sql",
+    "-- canonical hosted schema: migrations/006-hosted-object-storage.sql",
+  ]);
 });
 
 test("canonical hosted provisioning executes migration 005 against a database and retries cleanly", async () => {

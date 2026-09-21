@@ -11,6 +11,7 @@ import {
   isHostedNeonConfigured,
   NeonHostedWorkspaceStateProvider,
 } from "../hosted-persistence/neon-hosted-provider";
+import { assertHostedInternalOwnerEnabled } from "../hosted-flags/feature-flags";
 
 type HostedUserState = {
   workspaces: HostedWorkspace[];
@@ -56,6 +57,7 @@ export class HostedWorkspaceStore {
   }
 
   async create(userId: string, name: string): Promise<HostedWorkspace> {
+    assertHostedInternalOwnerEnabled();
     const trimmedName = name.trim();
     if (!trimmedName) throw new HostedWorkspaceError("INVALID_NAME", "Workspace name is required.");
     return this.mutate((state) => {

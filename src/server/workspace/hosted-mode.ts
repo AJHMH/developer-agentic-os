@@ -9,7 +9,9 @@ import type { RepositoryContext } from "@/types/workspace";
  */
 export function isHostedMode(request?: Request): boolean {
   if (process.env.VERCEL === "1") return true;
+  if (process.env.DEV_AGENTIC_OS_HOSTED_MODE === "true") return true;
   if (request?.headers.get("x-hosted-user-id")) return true;
+  if (request?.headers.get("authorization")?.startsWith("Bearer ")) return true;
   return false;
 }
 

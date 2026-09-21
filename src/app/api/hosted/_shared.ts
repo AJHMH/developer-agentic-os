@@ -106,6 +106,7 @@ export function formatHostedError(
     const code = (error as unknown as { code: string }).code;
     const mapping: Record<string, { status: number; code: HostedErrorCode; retryable: boolean }> = {
       FORBIDDEN: { status: 403, code: "FORBIDDEN", retryable: false },
+      FEATURE_DISABLED: { status: 403, code: "FEATURE_DISABLED", retryable: false },
       NOT_FOUND: { status: 404, code: "NOT_FOUND", retryable: false },
       INVALID: { status: 400, code: "VALIDATION_ERROR", retryable: false },
       STALE: { status: 409, code: "STALE_STATE", retryable: true },
