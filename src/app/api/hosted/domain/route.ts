@@ -26,6 +26,7 @@ const views = [
   "snapshots",
   "connectors",
   "audit",
+  "record-history",
 ] as const;
 
 type HostedDomainBody = {
@@ -58,6 +59,14 @@ type HostedDomainBody = {
   approvalId?: unknown;
   version?: unknown;
   providerAction?: unknown;
+  isOffline?: unknown;
+  records?: unknown;
+  kind?: unknown;
+  recordId?: unknown;
+  updates?: unknown;
+  baseVersion?: unknown;
+  source?: unknown;
+  clientTimestamp?: unknown;
 };
 
 export async function GET(request: Request) {
@@ -117,6 +126,17 @@ export async function GET(request: Request) {
       return NextResponse.json({
         connectors: await hostedDomainStore.listConnectorStatus(identity.userId, workspaceId),
       });
+    if (url.searchParams.get("view") === "record-history") {
+      const kind = url.searchParams.get("kind") as HostedRecordKind;
+      const recordId = url.searchParams.get("recordId");
+      if (!kind || !recordId)
+        return NextResponse.json({ error: "kind and recordId are required." }, { status: 400 });
+      if (!recordKinds.includes(kind as (typeof recordKinds)[number]))
+        return NextResponse.json({ error: "Unknown record kind." }, { status: 400 });
+      return NextResponse.json(
+        await hostedDomainStore.getRecordHistory(identity.userId, workspaceId, kind, recordId)
+      );
+    }
     if (url.searchParams.get("view") === "audit" || !url.searchParams.get("view"))
       return NextResponse.json({
         audit: await hostedDomainStore.audit(identity.userId, workspaceId),
@@ -380,6 +400,44 @@ export async function POST(request: Request) {
           { status: 200 }
         );
       }
+      case "sync":
+      case "sync-records":
+        return NextResponse.json(
+          await hostedDomainStore.syncRecords(
+            identity.userId,
+            body.workspaceId as string,
+            body.connectorId as string,
+            {
+              repositoryId: typeof body.repositoryId === "string" ? body.repositoryId : undefined,
+              isOffline: Boolean(body.isOffline),
+              records:
+                (body.records as Record<HostedRecordKind, Array<Record<string, unknown>>>) ?? {},
+            }
+          ),
+          { status: 200 }
+        );
+      case "update-record":
+        return NextResponse.json(
+          {
+            record: await hostedDomainStore.updateRecord(
+              identity.userId,
+              body.workspaceId as string,
+              body.kind as HostedRecordKind,
+              body.recordId as string,
+              (body.updates as Record<string, unknown>) ?? {},
+              {
+                baseVersion: typeof body.baseVersion === "number" ? body.baseVersion : undefined,
+                provenance: {
+                  source: (body.source as any) ?? "hosted",
+                  connectorId: typeof body.connectorId === "string" ? body.connectorId : undefined,
+                  clientTimestamp:
+                    typeof body.clientTimestamp === "string" ? body.clientTimestamp : undefined,
+                },
+              }
+            ),
+          },
+          { status: 200 }
+        );
       default:
         return NextResponse.json({ error: "Unknown hosted domain action." }, { status: 400 });
     }
@@ -426,6 +484,9 @@ function validateBody(body: HostedDomainBody): string | null {
         "save-credential",
         "revoke-credential",
         "import-migration",
+        "sync",
+        "sync-records",
+        "update-record",
       ] as const
     ).includes(action as never)
   )
@@ -448,6 +509,9 @@ function validateBody(body: HostedDomainBody): string | null {
     "save-credential",
     "revoke-credential",
     "import-migration",
+    "sync",
+    "sync-records",
+    "update-record",
   ].filter(
     (candidate) =>
       ![
@@ -456,6 +520,8 @@ function validateBody(body: HostedDomainBody): string | null {
         "import-migration",
         "hosted-safe-work",
         "queue-local-work",
+        "create-work-item",
+        "update-record",
       ].includes(candidate)
   );
   if (action === "register-repository" && !requiredString(body, "localPath"))
@@ -580,6 +646,23 @@ function validateBody(body: HostedDomainBody): string | null {
     !isStringArray(body.selectedRepositoryIds, true)
   )
     return "selectedRepositoryIds is invalid.";
+  if (
+    ["sync", "sync-records"].includes(action) &&
+    body.records !== undefined &&
+    !isRecord(body.records)
+  )
+    return "records must be an object.";
+  if (action === "update-record") {
+    if (
+      !requiredString(body, "kind") ||
+      !recordKinds.includes(body.kind as (typeof recordKinds)[number])
+    )
+      return "kind is invalid.";
+    if (!requiredString(body, "recordId")) return "recordId is required.";
+    if (!isRecord(body.updates)) return "updates must be an object.";
+    if (body.baseVersion !== undefined && typeof body.baseVersion !== "number")
+      return "baseVersion must be a number.";
+  }
   if (
     body.approval !== undefined &&
     (!isRecord(body.approval) ||
