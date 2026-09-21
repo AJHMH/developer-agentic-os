@@ -628,7 +628,7 @@ export class HostedDomainStore {
   ): Promise<HostedConnector> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector: HostedConnector = {
         id: randomUUID(),
         workspaceId,
@@ -653,7 +653,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       this.assertConnectorRepository(state, connector, workspaceId, repositoryId);
       if (!connector.repositoryIds.includes(repositoryId))
@@ -678,7 +678,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       this.assertConnectorRepository(state, connector, workspaceId, repositoryId);
       connector.repositoryIds = connector.repositoryIds.filter((id) => id !== repositoryId);
@@ -705,7 +705,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       this.assertConnectorRepository(state, connector, workspaceId, repositoryId);
       if (capability !== "git.read" && (!skillId?.trim() || !allowedPaths?.length))
@@ -744,7 +744,7 @@ export class HostedDomainStore {
   async revokeConnector(userId: string, workspaceId: string, connectorId: string): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       if (connector.workspaceId !== workspaceId)
         throw new HostedDomainError("FORBIDDEN", "Connector access denied.");
@@ -763,7 +763,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       this.assertConnectorRepository(state, connector, workspaceId, repositoryId);
       const grants = connector.capabilities[repositoryId] ?? [];
@@ -789,7 +789,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       if (connector.workspaceId !== workspaceId)
         throw new HostedDomainError("FORBIDDEN", "Connector access denied.");
@@ -807,7 +807,7 @@ export class HostedDomainStore {
   ): Promise<HostedConnector> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       if (connector.workspaceId !== workspaceId || connector.state === "revoked")
         throw new HostedDomainError("FORBIDDEN", "Connector cannot be reconnected.");
@@ -1089,7 +1089,7 @@ export class HostedDomainStore {
   async listConnectorStatus(userId: string, workspaceId: string): Promise<HostedConnector[]> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       let changed = false;
       for (const connector of state.connectors.filter((item) => item.workspaceId === workspaceId))
         if (connector.state === "connected" && Date.parse(connector.expiresAt) <= Date.now()) {
@@ -1138,7 +1138,7 @@ export class HostedDomainStore {
   ): Promise<HostedCredentialMetadata> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const secretReference = await this.secretStore.put(input.secret);
       const credential: HostedCredentialRecord = {
         id: randomUUID(),
@@ -1160,7 +1160,7 @@ export class HostedDomainStore {
   }
   async listCredentials(userId: string, workspaceId: string): Promise<HostedCredentialMetadata[]> {
     const state = await this.read();
-    await this.assertWorkspace(userId, workspaceId);
+    await this.assertWorkspace(userId, workspaceId, "admin");
     return state.credentials
       .filter((item) => item.workspaceId === workspaceId)
       .map((item) => this.publicCredential(item));
@@ -1168,7 +1168,7 @@ export class HostedDomainStore {
   async revokeCredential(userId: string, workspaceId: string, credentialId: string): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const credential = state.credentials.find(
         (item) => item.id === credentialId && item.workspaceId === workspaceId
       );
@@ -1182,7 +1182,7 @@ export class HostedDomainStore {
   async exportBackup(userId: string, workspaceId: string): Promise<HostedBackup> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      const workspace = await this.assertWorkspace(userId, workspaceId);
+      const workspace = await this.assertWorkspace(userId, workspaceId, "owner");
       if (this.normalizeExpiredConnectors(state, workspaceId)) await this.write(state);
       const credentials = state.credentials
         .filter((item) => item.workspaceId === workspaceId)
@@ -1423,11 +1423,28 @@ export class HostedDomainStore {
   }
   private async assertWorkspace(
     userId: string,
-    workspaceId: string
+    workspaceId: string,
+    requiredLevel?: "member" | "admin" | "owner"
   ): Promise<import("@/types/hosted-workspace").HostedWorkspace> {
     const workspaces = await this.workspaceStore.list(userId);
     const workspace = workspaces.find((item) => item.id === workspaceId);
     if (!workspace) throw new HostedDomainError("NOT_FOUND", "Workspace not found.");
+
+    if (requiredLevel && requiredLevel !== "member") {
+      let role: import("@/types/hosted-workspace").WorkspaceRole | null = null;
+      if (typeof this.workspaceStore.getRole === "function") {
+        role = await this.workspaceStore.getRole(userId, workspaceId);
+      }
+      if (!role) {
+        role = workspace.ownerId === userId ? "owner" : "member";
+      }
+      if (requiredLevel === "owner" && role !== "owner") {
+        throw new HostedDomainError("FORBIDDEN", "This operation requires workspace owner role.");
+      }
+      if (requiredLevel === "admin" && role !== "owner" && role !== "admin") {
+        throw new HostedDomainError("FORBIDDEN", "This operation requires admin or owner role.");
+      }
+    }
     return workspace;
   }
   private workspaceOwner(workspaceId: string): Promise<string> {
@@ -1591,6 +1608,17 @@ export class HostedDomainStore {
 }
 
 const tenantDomainStores = new Map<string, HostedDomainStore>();
+
+export function setHostedDomainStoreForTenant(
+  tenantId: string,
+  store: HostedDomainStore | null
+): void {
+  if (store) {
+    tenantDomainStores.set(tenantId, store);
+  } else {
+    tenantDomainStores.delete(tenantId);
+  }
+}
 
 export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore {
   const existing = tenantDomainStores.get(tenantId);

@@ -11,6 +11,7 @@ type Queryable = {
 export const canonicalHostedSchemaMigrations = [
   "migrations/005-hosted-canonical-contract.sql",
   "migrations/006-hosted-object-storage.sql",
+  "migrations/007-hosted-workspace-members-and-invitations.sql",
 ] as const;
 
 export const canonicalHostedSchemaTables = [
@@ -25,6 +26,7 @@ export const canonicalHostedSchemaTables = [
   "vercel_webhook_audit",
   "hosted_workspaces",
   "hosted_workspace_members",
+  "hosted_workspace_invitations",
   "hosted_workspace_users",
   "hosted_workspace_audit",
   "hosted_repositories",
@@ -41,6 +43,7 @@ export const canonicalHostedStateTables = [
   "organizations",
   "hosted_workspaces",
   "hosted_workspace_members",
+  "hosted_workspace_invitations",
   "hosted_workspace_users",
   "hosted_workspace_audit",
   "hosted_repositories",
