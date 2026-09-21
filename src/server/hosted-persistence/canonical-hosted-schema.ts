@@ -12,6 +12,7 @@ export const canonicalHostedSchemaMigrations = [
   "migrations/005-hosted-canonical-contract.sql",
   "migrations/006-hosted-object-storage.sql",
   "migrations/007-hosted-workspace-members-and-invitations.sql",
+  "migrations/008-hosted-workspace-approvals-and-tombstones.sql",
 ] as const;
 
 export const canonicalHostedSchemaTables = [
@@ -27,6 +28,8 @@ export const canonicalHostedSchemaTables = [
   "hosted_workspaces",
   "hosted_workspace_members",
   "hosted_workspace_invitations",
+  "hosted_workspace_approvals",
+  "hosted_workspace_policies",
   "hosted_workspace_users",
   "hosted_workspace_audit",
   "hosted_repositories",
@@ -44,6 +47,8 @@ export const canonicalHostedStateTables = [
   "hosted_workspaces",
   "hosted_workspace_members",
   "hosted_workspace_invitations",
+  "hosted_workspace_approvals",
+  "hosted_workspace_policies",
   "hosted_workspace_users",
   "hosted_workspace_audit",
   "hosted_repositories",

@@ -249,6 +249,7 @@ test("fresh hosted provisioning uses authoritative contract migrations", async (
     "migrations/005-hosted-canonical-contract.sql",
     "migrations/006-hosted-object-storage.sql",
     "migrations/007-hosted-workspace-members-and-invitations.sql",
+    "migrations/008-hosted-workspace-approvals-and-tombstones.sql",
   ]);
   const sql = (
     await Promise.all(
@@ -306,6 +307,7 @@ test("canonical hosted provisioning is versioned and idempotent across retries",
     "migrations/005-hosted-canonical-contract.sql",
     "migrations/006-hosted-object-storage.sql",
     "migrations/007-hosted-workspace-members-and-invitations.sql",
+    "migrations/008-hosted-workspace-approvals-and-tombstones.sql",
   ]);
   assert.deepEqual(
     [...client.versions],
@@ -313,12 +315,14 @@ test("canonical hosted provisioning is versioned and idempotent across retries",
       "005-hosted-canonical-contract.sql",
       "006-hosted-object-storage.sql",
       "007-hosted-workspace-members-and-invitations.sql",
+      "008-hosted-workspace-approvals-and-tombstones.sql",
     ]
   );
   assert.deepEqual(client.appliedSql, [
     "-- canonical hosted schema: migrations/005-hosted-canonical-contract.sql",
     "-- canonical hosted schema: migrations/006-hosted-object-storage.sql",
     "-- canonical hosted schema: migrations/007-hosted-workspace-members-and-invitations.sql",
+    "-- canonical hosted schema: migrations/008-hosted-workspace-approvals-and-tombstones.sql",
   ]);
 });
 

@@ -5,8 +5,12 @@ import type {
   HostedAuditEvent,
   HostedIdentity,
   HostedWorkspace,
+  ProtectedAction,
+  WorkspaceApproval,
   WorkspaceInvitation,
   WorkspaceMember,
+  WorkspacePolicy,
+  WorkspaceRecoveryInfo,
   WorkspaceRole,
 } from "@/types/hosted-workspace";
 import { currentCorrelationId } from "../hosted-api/context";
@@ -29,6 +33,8 @@ export type HostedWorkspaceState = {
   workspaces?: Record<string, HostedWorkspace>;
   members?: Record<string, WorkspaceMember[]>;
   invitations?: Record<string, WorkspaceInvitation[]>;
+  approvals?: Record<string, WorkspaceApproval[]>;
+  policies?: Record<string, WorkspacePolicy>;
   users: Record<string, HostedUserState>;
   audit: HostedAuditEvent[];
 };
@@ -41,7 +47,7 @@ export interface HostedWorkspaceStateProvider {
 
 export class HostedWorkspaceError extends Error {
   constructor(
-    readonly code: "INVALID_NAME" | "NOT_FOUND" | "FORBIDDEN" | "CONFLICT" | "EXPIRED",
+    readonly code: "INVALID_NAME" | "NOT_FOUND" | "FORBIDDEN" | "CONFLICT" | "EXPIRED" | "STALE",
     message: string
   ) {
     super(message);
@@ -72,14 +78,21 @@ export class HostedWorkspaceStore {
 
   async list(userId: string): Promise<HostedWorkspace[]> {
     const state = await this.read();
-    return this.user(state, userId).workspaces;
+    return this.user(state, userId).workspaces.filter((ws) => ws.status !== "tombstoned");
   }
 
-  async get(userId: string, workspaceId: string): Promise<HostedWorkspace> {
+  async get(
+    userId: string,
+    workspaceId: string,
+    options?: { includeTombstoned?: boolean }
+  ): Promise<HostedWorkspace> {
     const state = await this.read();
     const user = this.user(state, userId);
     const workspace = user.workspaces.find((ws) => ws.id === workspaceId);
     if (!workspace) throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+    if (workspace.status === "tombstoned" && !options?.includeTombstoned) {
+      throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+    }
     return workspace;
   }
 
@@ -94,6 +107,7 @@ export class HostedWorkspaceStore {
         ownerId: userId,
         name: trimmedName,
         createdAt: now,
+        status: "active",
       };
       state.workspaces ??= {};
       state.workspaces[workspace.id] = workspace;
@@ -106,6 +120,18 @@ export class HostedWorkspaceStore {
         role: "owner",
         joinedAt: now,
       });
+
+      const policies = (state.policies ??= {});
+      policies[workspace.id] = {
+        workspaceId: workspace.id,
+        requireApprovalForDelete: true,
+        requireApprovalForExport: true,
+        requireApprovalForTransfer: true,
+        approvalExpiryWindowSeconds: 3600,
+        version: 1,
+        updatedAt: now,
+        updatedBy: userId,
+      };
 
       const user = this.user(state, userId);
       user.workspaces.push(workspace);
@@ -120,12 +146,13 @@ export class HostedWorkspaceStore {
     return this.mutate((state) => {
       const user = this.user(state, userId);
       const activeWorkspace = user.workspaces.find(
-        (workspace) => workspace.id === user.activeWorkspaceId
+        (workspace) => workspace.id === user.activeWorkspaceId && workspace.status !== "tombstoned"
       );
       if (activeWorkspace) return activeWorkspace;
-      if (user.workspaces[0]) {
-        user.activeWorkspaceId = user.workspaces[0].id;
-        return user.workspaces[0];
+      const firstActive = user.workspaces.find((ws) => ws.status !== "tombstoned");
+      if (firstActive) {
+        user.activeWorkspaceId = firstActive.id;
+        return firstActive;
       }
       const now = new Date().toISOString();
       const workspace: HostedWorkspace = {
@@ -133,6 +160,7 @@ export class HostedWorkspaceStore {
         ownerId: userId,
         name: "Personal",
         createdAt: now,
+        status: "active",
       };
       state.workspaces ??= {};
       state.workspaces[workspace.id] = workspace;
@@ -146,6 +174,18 @@ export class HostedWorkspaceStore {
         joinedAt: now,
       });
 
+      const policies = (state.policies ??= {});
+      policies[workspace.id] = {
+        workspaceId: workspace.id,
+        requireApprovalForDelete: true,
+        requireApprovalForExport: true,
+        requireApprovalForTransfer: true,
+        approvalExpiryWindowSeconds: 3600,
+        version: 1,
+        updatedAt: now,
+        updatedBy: userId,
+      };
+
       user.workspaces.push(workspace);
       user.activeWorkspaceId = workspace.id;
 
@@ -156,7 +196,9 @@ export class HostedWorkspaceStore {
 
   async select(userId: string, workspaceId: string): Promise<HostedWorkspace> {
     return this.mutate((state) => {
-      const workspace = this.user(state, userId).workspaces.find((item) => item.id === workspaceId);
+      const workspace = this.user(state, userId).workspaces.find(
+        (item) => item.id === workspaceId && item.status !== "tombstoned"
+      );
       if (!workspace) throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
       state.users[userId].activeWorkspaceId = workspaceId;
       state.audit.push(this.event("workspace.selected", userId, workspaceId));
@@ -167,26 +209,38 @@ export class HostedWorkspaceStore {
   async active(userId: string): Promise<HostedWorkspace | null> {
     const state = await this.read();
     const user = this.user(state, userId);
-    return user.workspaces.find((workspace) => workspace.id === user.activeWorkspaceId) ?? null;
+    const active = user.workspaces.find(
+      (workspace) => workspace.id === user.activeWorkspaceId && workspace.status !== "tombstoned"
+    );
+    if (active) return active;
+    return user.workspaces.find((ws) => ws.status !== "tombstoned") ?? null;
   }
 
   async owns(userId: string, workspaceId: string): Promise<boolean> {
     const state = await this.read();
     const workspace = state.workspaces?.[workspaceId];
-    if (workspace) return workspace.ownerId === userId;
+    if (workspace) return workspace.ownerId === userId && workspace.status !== "tombstoned";
     return this.user(state, userId).workspaces.some(
-      (ws) => ws.id === workspaceId && ws.ownerId === userId
+      (ws) => ws.id === workspaceId && ws.ownerId === userId && ws.status !== "tombstoned"
     );
   }
 
   async owner(workspaceId: string): Promise<string> {
     const state = await this.read();
     if (state.workspaces?.[workspaceId]) {
+      if (state.workspaces[workspaceId].status === "tombstoned") {
+        throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+      }
       return state.workspaces[workspaceId].ownerId;
     }
     for (const user of Object.values(state.users)) {
       const match = user.workspaces.find((workspace) => workspace.id === workspaceId);
-      if (match) return match.ownerId;
+      if (match) {
+        if (match.status === "tombstoned") {
+          throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+        }
+        return match.ownerId;
+      }
     }
     throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
   }
@@ -205,20 +259,25 @@ export class HostedWorkspaceStore {
   async assertMember(
     userId: string,
     workspaceId: string,
-    minRole?: WorkspaceRole
+    minRole?: WorkspaceRole,
+    options?: { includeTombstoned?: boolean }
   ): Promise<WorkspaceMember> {
     const state = await this.read();
+    const ws = state.workspaces?.[workspaceId];
+    if (ws && ws.status === "tombstoned" && !options?.includeTombstoned) {
+      throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+    }
     const members = state.members?.[workspaceId] ?? [];
     let member = members.find((m) => m.userId === userId);
     if (!member) {
       const user = this.user(state, userId);
-      const ws = user.workspaces.find((w) => w.id === workspaceId);
-      if (ws && ws.ownerId === userId) {
+      const userWs = user.workspaces.find((w) => w.id === workspaceId);
+      if (userWs && userWs.ownerId === userId) {
         member = {
           workspaceId,
           userId,
           role: "owner",
-          joinedAt: ws.createdAt,
+          joinedAt: userWs.createdAt,
         };
       }
     }
@@ -497,6 +556,615 @@ export class HostedWorkspaceStore {
     });
   }
 
+  async transferOwnership(
+    userId: string,
+    workspaceId: string,
+    targetUserId: string,
+    options?: { approvalId?: string; version?: string }
+  ): Promise<{ workspace: HostedWorkspace; previousOwnerId: string; newOwnerId: string }> {
+    await this.assertMember(userId, workspaceId, "admin");
+    return this.mutate((state) => {
+      const workspace = state.workspaces?.[workspaceId];
+      if (!workspace || workspace.status === "tombstoned") {
+        throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+      }
+
+      const members = state.members?.[workspaceId] ?? [];
+      const liveCaller = members.find((m) => m.userId === userId);
+      if (!liveCaller || (liveCaller.role !== "owner" && liveCaller.role !== "admin")) {
+        throw new HostedWorkspaceError(
+          "FORBIDDEN",
+          "Only workspace owners or admins can transfer ownership."
+        );
+      }
+
+      const policy = this.getPolicyInternal(state, workspaceId);
+      if (liveCaller.role !== "owner") {
+        if (policy.requireApprovalForTransfer) {
+          if (!options?.approvalId) {
+            throw new HostedWorkspaceError(
+              "FORBIDDEN",
+              "Admins require owner approval to transfer workspace ownership."
+            );
+          }
+          this.consumeApprovalInternal(state, userId, workspaceId, options.approvalId, {
+            action: "ownership.transfer",
+            target: targetUserId,
+            version: options?.version ?? String(workspace.createdAt || "v1"),
+          });
+        }
+      }
+
+      const targetMember = members.find((m) => m.userId === targetUserId);
+      if (!targetMember) {
+        throw new HostedWorkspaceError(
+          "NOT_FOUND",
+          "Target user must be a member of the workspace before receiving ownership."
+        );
+      }
+
+      if (workspace.ownerId === targetUserId) {
+        return {
+          workspace,
+          previousOwnerId: targetUserId,
+          newOwnerId: targetUserId,
+        };
+      }
+
+      const previousOwnerId = workspace.ownerId;
+      // Normalize all non-target owners to admin to enforce single-owner invariant
+      for (const m of members) {
+        if (m.userId !== targetUserId && m.role === "owner") {
+          m.role = "admin";
+        }
+      }
+
+      targetMember.role = "owner";
+      workspace.ownerId = targetUserId;
+
+      // Update user.workspaces denormalized copies
+      if (state.users) {
+        for (const user of Object.values(state.users)) {
+          const userWs = user.workspaces?.find((w) => w.id === workspaceId);
+          if (userWs) {
+            userWs.ownerId = targetUserId;
+          }
+        }
+      }
+
+      state.audit.push(this.event("workspace.ownership_transferred", userId, workspaceId));
+
+      return {
+        workspace,
+        previousOwnerId,
+        newOwnerId: targetUserId,
+      };
+    });
+  }
+
+  async softDeleteWorkspace(
+    userId: string,
+    workspaceId: string,
+    options?: { approvalId?: string; version?: string }
+  ): Promise<WorkspaceRecoveryInfo> {
+    await this.assertMember(userId, workspaceId, "admin");
+    return this.mutate((state) => {
+      const workspace = state.workspaces?.[workspaceId];
+      if (!workspace || workspace.status === "tombstoned") {
+        throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+      }
+
+      const members = state.members?.[workspaceId] ?? [];
+      const liveCaller = members.find((m) => m.userId === userId);
+      if (!liveCaller || (liveCaller.role !== "owner" && liveCaller.role !== "admin")) {
+        throw new HostedWorkspaceError(
+          "FORBIDDEN",
+          "Only workspace owners or admins can delete the workspace."
+        );
+      }
+
+      const policy = this.getPolicyInternal(state, workspaceId);
+      if (liveCaller.role !== "owner") {
+        if (policy.requireApprovalForDelete) {
+          if (!options?.approvalId) {
+            throw new HostedWorkspaceError(
+              "FORBIDDEN",
+              "Admins require owner approval to delete the workspace."
+            );
+          }
+          this.consumeApprovalInternal(state, userId, workspaceId, options.approvalId, {
+            action: "workspace.delete",
+            target: workspaceId,
+            version: options?.version ?? String(workspace.createdAt || "v1"),
+          });
+        }
+      }
+
+      const recoveryBackupId = randomUUID();
+      const now = new Date().toISOString();
+      const approvals = state.approvals?.[workspaceId] ?? [];
+      const retainedSnapshot = JSON.stringify({
+        workspace: {
+          id: workspace.id,
+          name: workspace.name,
+          ownerId: workspace.ownerId,
+          createdAt: workspace.createdAt,
+          deletedAt: now,
+          deletedBy: userId,
+        },
+        members,
+        approvals,
+        policy,
+      });
+      const backupChecksum = createHash("sha256").update(retainedSnapshot).digest("hex");
+
+      const recoveryInfo: WorkspaceRecoveryInfo = {
+        recoveryBackupId,
+        backupChecksum,
+        deletedAt: now,
+        deletedBy: userId,
+        retentionWindowDays: 30,
+        runbook: "docs/runbooks/workspace-recovery.md",
+        restoreSeam: `/api/hosted/workspaces/${workspaceId}/recovery`,
+        retainedSnapshot,
+      };
+
+      workspace.status = "tombstoned";
+      workspace.deletedAt = now;
+      workspace.recoveryBackupId = recoveryBackupId;
+      workspace.recoveryInfo = recoveryInfo;
+
+      if (state.users) {
+        for (const user of Object.values(state.users)) {
+          const userWs = user.workspaces?.find((w) => w.id === workspaceId);
+          if (userWs) {
+            userWs.status = "tombstoned";
+            userWs.deletedAt = now;
+          }
+          if (user.activeWorkspaceId === workspaceId) {
+            const alternate = user.workspaces?.find(
+              (w) => w.id !== workspaceId && w.status !== "tombstoned"
+            );
+            user.activeWorkspaceId = alternate?.id ?? null;
+          }
+        }
+      }
+
+      state.audit.push(this.event("workspace.deleted", userId, workspaceId));
+
+      return recoveryInfo;
+    });
+  }
+
+  async getWorkspaceRecovery(userId: string, workspaceId: string): Promise<WorkspaceRecoveryInfo> {
+    await this.assertMember(userId, workspaceId, "admin", { includeTombstoned: true });
+    const state = await this.read();
+    const workspace = state.workspaces?.[workspaceId];
+    if (!workspace || workspace.status !== "tombstoned" || !workspace.recoveryInfo) {
+      throw new HostedWorkspaceError("NOT_FOUND", "Workspace recovery information not found.");
+    }
+    return workspace.recoveryInfo;
+  }
+
+  async restoreWorkspace(
+    userId: string,
+    workspaceId: string,
+    options?: { approvalId?: string; version?: string }
+  ): Promise<HostedWorkspace> {
+    await this.assertMember(userId, workspaceId, "admin", {
+      includeTombstoned: true,
+    });
+    return this.mutate((state) => {
+      const workspace = state.workspaces?.[workspaceId];
+      if (!workspace || workspace.status !== "tombstoned") {
+        throw new HostedWorkspaceError("NOT_FOUND", "Tombstoned workspace not found.");
+      }
+
+      const members = state.members?.[workspaceId] ?? [];
+      const liveCaller = members.find((m) => m.userId === userId);
+      if (!liveCaller || (liveCaller.role !== "owner" && liveCaller.role !== "admin")) {
+        throw new HostedWorkspaceError(
+          "FORBIDDEN",
+          "Only workspace owners or admins can restore a tombstoned workspace."
+        );
+      }
+
+      // Check retention window
+      const retentionDays = workspace.recoveryInfo?.retentionWindowDays ?? 30;
+      const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
+      const deletedAtMs = new Date(
+        workspace.deletedAt ?? workspace.recoveryInfo?.deletedAt ?? 0
+      ).getTime();
+      if (Date.now() - deletedAtMs > retentionMs) {
+        throw new HostedWorkspaceError(
+          "CONFLICT",
+          "Workspace tombstone retention window has expired and cannot be restored."
+        );
+      }
+
+      if (liveCaller.role !== "owner") {
+        if (!options?.approvalId) {
+          throw new HostedWorkspaceError(
+            "FORBIDDEN",
+            "Admins require owner approval to restore a tombstoned workspace."
+          );
+        }
+        this.consumeApprovalInternal(state, userId, workspaceId, options.approvalId, {
+          action: "workspace.restore",
+          target: workspaceId,
+          version: options?.version ?? String(workspace.createdAt || "v1"),
+        });
+      }
+
+      workspace.status = "active";
+      workspace.deletedAt = undefined;
+      workspace.recoveryBackupId = undefined;
+      workspace.recoveryInfo = undefined;
+
+      if (state.users) {
+        for (const user of Object.values(state.users)) {
+          const userWs = user.workspaces?.find((w) => w.id === workspaceId);
+          if (userWs) {
+            userWs.status = "active";
+            userWs.deletedAt = undefined;
+          }
+        }
+      }
+
+      const user = this.user(state, userId);
+      user.activeWorkspaceId ??= workspace.id;
+
+      state.audit.push(this.event("workspace.restored", userId, workspaceId));
+      return workspace;
+    });
+  }
+
+  async listApprovals(userId: string, workspaceId: string): Promise<WorkspaceApproval[]> {
+    await this.assertMember(userId, workspaceId, "admin", { includeTombstoned: true });
+    const state = await this.read();
+    const approvals = state.approvals?.[workspaceId] ?? [];
+    const now = Date.now();
+    const hasExpired = approvals.some(
+      (app) => app.status === "pending" && Date.parse(app.expiresAt) <= now
+    );
+    if (!hasExpired) {
+      return approvals;
+    }
+    return this.mutate((s) => {
+      const list = s.approvals?.[workspaceId] ?? [];
+      const currentNow = Date.now();
+      for (const app of list) {
+        if (app.status === "pending" && Date.parse(app.expiresAt) <= currentNow) {
+          app.status = "expired";
+          s.audit.push(this.event("approval.expired", app.approvedBy, workspaceId));
+        }
+      }
+      return list;
+    });
+  }
+
+  async createApproval(
+    userId: string,
+    workspaceId: string,
+    input: {
+      actorId: string;
+      action: ProtectedAction;
+      target: string;
+      version: string;
+      reason: string;
+      expiresInSeconds?: number;
+    }
+  ): Promise<WorkspaceApproval> {
+    const caller = await this.assertMember(userId, workspaceId, undefined, {
+      includeTombstoned: true,
+    });
+    if (caller.role !== "owner") {
+      throw new HostedWorkspaceError("FORBIDDEN", "Only the workspace owner can create approvals.");
+    }
+    const reason = input.reason?.trim();
+    if (!reason) {
+      throw new HostedWorkspaceError("INVALID_NAME", "Approval reason is required.");
+    }
+    const validActions: ProtectedAction[] = [
+      "ownership.transfer",
+      "workspace.delete",
+      "workspace.restore",
+      "domain.export_full",
+      "policy.update",
+    ];
+    if (!validActions.includes(input.action)) {
+      throw new HostedWorkspaceError("INVALID_NAME", "Invalid protected action.");
+    }
+    if (!input.target?.trim() || !input.version?.trim()) {
+      throw new HostedWorkspaceError("INVALID_NAME", "Target and version are required.");
+    }
+
+    return this.mutate((s) => {
+      const members = s.members?.[workspaceId] ?? [];
+      const liveCaller = members.find((m) => m.userId === userId);
+      if (!liveCaller || liveCaller.role !== "owner") {
+        throw new HostedWorkspaceError(
+          "FORBIDDEN",
+          "Only the workspace owner can create approvals."
+        );
+      }
+      const liveActor = members.find((m) => m.userId === input.actorId);
+      if (!liveActor || liveActor.role !== "admin") {
+        throw new HostedWorkspaceError(
+          "FORBIDDEN",
+          "Approvals can only be granted to active workspace admins."
+        );
+      }
+
+      const now = new Date();
+      const policy = s.policies?.[workspaceId];
+      const expirySec = input.expiresInSeconds ?? policy?.approvalExpiryWindowSeconds ?? 3600;
+      const expiresAt = new Date(now.getTime() + expirySec * 1000).toISOString();
+      const approval: WorkspaceApproval = {
+        id: randomUUID(),
+        workspaceId,
+        actorId: input.actorId,
+        action: input.action,
+        target: input.target.trim(),
+        version: input.version.trim(),
+        reason,
+        correlationId: currentCorrelationId() ?? randomUUID(),
+        approvedBy: userId,
+        status: "pending",
+        createdAt: now.toISOString(),
+        expiresAt,
+      };
+
+      const approvals = (s.approvals ??= {});
+      const list = (approvals[workspaceId] ??= []);
+      list.push(approval);
+
+      s.audit.push(this.event("approval.created", userId, workspaceId));
+      return approval;
+    });
+  }
+
+  async revokeApproval(
+    userId: string,
+    workspaceId: string,
+    approvalId: string
+  ): Promise<WorkspaceApproval> {
+    await this.assertMember(userId, workspaceId, undefined, { includeTombstoned: true });
+    return this.mutate((s) => {
+      const members = s.members?.[workspaceId] ?? [];
+      const liveCaller = members.find((m) => m.userId === userId);
+      if (!liveCaller || liveCaller.role !== "owner") {
+        throw new HostedWorkspaceError(
+          "FORBIDDEN",
+          "Only the workspace owner can revoke approvals."
+        );
+      }
+
+      const list = s.approvals?.[workspaceId] ?? [];
+      const approval = list.find((a) => a.id === approvalId);
+      if (!approval) {
+        throw new HostedWorkspaceError("NOT_FOUND", "Approval not found.");
+      }
+      if (approval.status === "consumed") {
+        throw new HostedWorkspaceError(
+          "CONFLICT",
+          "Cannot revoke an approval that has already been consumed."
+        );
+      }
+      if (approval.status === "revoked") return approval;
+
+      approval.status = "revoked";
+      approval.revokedAt = new Date().toISOString();
+      approval.revokedBy = userId;
+
+      s.audit.push(this.event("approval.revoked", userId, workspaceId));
+      return approval;
+    });
+  }
+
+  async consumeApproval(
+    callerUserId: string,
+    workspaceId: string,
+    approvalId: string,
+    expected: {
+      action: ProtectedAction;
+      target: string;
+      version: string;
+    }
+  ): Promise<WorkspaceApproval> {
+    return this.mutate((s) => {
+      return this.consumeApprovalInternal(s, callerUserId, workspaceId, approvalId, expected);
+    });
+  }
+
+  consumeApprovalInternal(
+    state: HostedWorkspaceState,
+    callerUserId: string,
+    workspaceId: string,
+    approvalId: string,
+    expected: {
+      action: ProtectedAction;
+      target: string;
+      version: string;
+    }
+  ): WorkspaceApproval {
+    const list = state.approvals?.[workspaceId] ?? [];
+    const approval = list.find((a) => a.id === approvalId);
+    if (!approval) {
+      throw new HostedWorkspaceError("NOT_FOUND", "Approval not found.");
+    }
+
+    if (approval.actorId !== callerUserId) {
+      throw new HostedWorkspaceError("FORBIDDEN", "Approval was granted to a different actor.");
+    }
+
+    if (approval.action !== expected.action) {
+      throw new HostedWorkspaceError(
+        "FORBIDDEN",
+        `Approval action mismatch: cannot replay ${approval.action} approval for ${expected.action}.`
+      );
+    }
+
+    if (approval.target !== expected.target) {
+      throw new HostedWorkspaceError("FORBIDDEN", "Approval target mismatch.");
+    }
+
+    if (approval.status === "revoked" || approval.revokedAt) {
+      throw new HostedWorkspaceError("CONFLICT", "Approval has been revoked.");
+    }
+
+    if (approval.status === "consumed" || approval.consumedAt) {
+      throw new HostedWorkspaceError(
+        "CONFLICT",
+        "Approval has already been consumed and cannot be replayed."
+      );
+    }
+
+    if (Date.now() >= Date.parse(approval.expiresAt)) {
+      approval.status = "expired";
+      state.audit.push(this.event("approval.expired", callerUserId, workspaceId));
+      throw new HostedWorkspaceError("EXPIRED", "Approval has expired.");
+    }
+
+    if (!expected.version || approval.version !== expected.version) {
+      throw new HostedWorkspaceError(
+        "STALE",
+        "Approval version mismatch. Resource state has changed."
+      );
+    }
+
+    const currentOwner = state.workspaces?.[workspaceId]?.ownerId;
+    if (currentOwner && currentOwner !== approval.approvedBy) {
+      throw new HostedWorkspaceError(
+        "FORBIDDEN",
+        "Approval is stale because workspace ownership changed."
+      );
+    }
+
+    approval.status = "consumed";
+    approval.consumedAt = new Date().toISOString();
+    approval.consumedBy = callerUserId;
+
+    state.audit.push(this.event("approval.consumed", callerUserId, workspaceId));
+    return approval;
+  }
+
+  private getPolicyInternal(state: HostedWorkspaceState, workspaceId: string): WorkspacePolicy {
+    const workspace = state.workspaces?.[workspaceId];
+    return (
+      state.policies?.[workspaceId] ?? {
+        workspaceId,
+        requireApprovalForDelete: true,
+        requireApprovalForExport: true,
+        requireApprovalForTransfer: true,
+        approvalExpiryWindowSeconds: 3600,
+        version: 1,
+        updatedAt: workspace?.createdAt ?? new Date().toISOString(),
+        updatedBy: workspace?.ownerId ?? "system",
+      }
+    );
+  }
+
+  async getPolicy(userId: string, workspaceId: string): Promise<WorkspacePolicy> {
+    await this.assertMember(userId, workspaceId);
+    const state = await this.read();
+    const workspace = state.workspaces?.[workspaceId];
+    if (!workspace) throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+    return this.getPolicyInternal(state, workspaceId);
+  }
+
+  async updatePolicy(
+    userId: string,
+    workspaceId: string,
+    updates: Partial<
+      Pick<
+        WorkspacePolicy,
+        | "requireApprovalForDelete"
+        | "requireApprovalForExport"
+        | "requireApprovalForTransfer"
+        | "approvalExpiryWindowSeconds"
+      >
+    >,
+    options: { approvalId?: string; expectedVersion: number }
+  ): Promise<WorkspacePolicy> {
+    await this.assertMember(userId, workspaceId, "admin");
+    return this.mutate((s) => {
+      const workspace = s.workspaces?.[workspaceId];
+      if (!workspace) throw new HostedWorkspaceError("NOT_FOUND", "Workspace not found.");
+
+      const members = s.members?.[workspaceId] ?? [];
+      const liveCaller = members.find((m) => m.userId === userId);
+      if (!liveCaller || (liveCaller.role !== "owner" && liveCaller.role !== "admin")) {
+        throw new HostedWorkspaceError(
+          "FORBIDDEN",
+          "Only workspace owners or admins can update workspace policy."
+        );
+      }
+
+      const policies = (s.policies ??= {});
+      const current = policies[workspaceId] ?? {
+        workspaceId,
+        requireApprovalForDelete: true,
+        requireApprovalForExport: true,
+        requireApprovalForTransfer: true,
+        approvalExpiryWindowSeconds: 3600,
+        version: 1,
+        updatedAt: workspace.createdAt,
+        updatedBy: workspace.ownerId,
+      };
+
+      if (options.expectedVersion === undefined || current.version !== options.expectedVersion) {
+        throw new HostedWorkspaceError("STALE", "Policy version mismatch. Reload and retry.");
+      }
+
+      if (liveCaller.role !== "owner") {
+        if (!options?.approvalId) {
+          throw new HostedWorkspaceError(
+            "FORBIDDEN",
+            "Admins require owner approval to change audit/approval policy."
+          );
+        }
+        this.consumeApprovalInternal(s, userId, workspaceId, options.approvalId, {
+          action: "policy.update",
+          target: workspaceId,
+          version: String(options.expectedVersion),
+        });
+      }
+
+      if (updates.approvalExpiryWindowSeconds !== undefined) {
+        if (
+          typeof updates.approvalExpiryWindowSeconds !== "number" ||
+          updates.approvalExpiryWindowSeconds < 60 ||
+          updates.approvalExpiryWindowSeconds > 7 * 24 * 3600
+        ) {
+          throw new HostedWorkspaceError(
+            "INVALID_NAME",
+            "approvalExpiryWindowSeconds must be between 60 and 604800 seconds."
+          );
+        }
+      }
+
+      const updated: WorkspacePolicy = {
+        workspaceId,
+        requireApprovalForDelete:
+          updates.requireApprovalForDelete ?? current.requireApprovalForDelete,
+        requireApprovalForExport:
+          updates.requireApprovalForExport ?? current.requireApprovalForExport,
+        requireApprovalForTransfer:
+          updates.requireApprovalForTransfer ?? current.requireApprovalForTransfer,
+        approvalExpiryWindowSeconds:
+          updates.approvalExpiryWindowSeconds ?? current.approvalExpiryWindowSeconds,
+        version: current.version + 1,
+        updatedAt: new Date().toISOString(),
+        updatedBy: userId,
+      };
+
+      policies[workspaceId] = updated;
+      s.audit.push(this.event("policy.updated", userId, workspaceId));
+      return updated;
+    });
+  }
+
   async recordIdentity(identity: HostedIdentity): Promise<void> {
     await this.mutate((state) => {
       this.user(state, identity.userId);
@@ -543,6 +1211,8 @@ export class HostedWorkspaceStore {
     state.workspaces ??= {};
     state.members ??= {};
     state.invitations ??= {};
+    state.approvals ??= {};
+    state.policies ??= {};
     state.users ??= {};
     state.audit ??= [];
 

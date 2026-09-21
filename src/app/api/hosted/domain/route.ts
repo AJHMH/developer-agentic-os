@@ -55,6 +55,8 @@ type HostedDomainBody = {
   grantId?: unknown;
   requestedPath?: unknown;
   approval?: unknown;
+  approvalId?: unknown;
+  version?: unknown;
   providerAction?: unknown;
 };
 
@@ -70,10 +72,15 @@ export async function GET(request: Request) {
   if (view && !views.includes(view as (typeof views)[number]))
     return NextResponse.json({ error: "Unknown hosted domain view." }, { status: 400 });
   try {
-    if (url.searchParams.get("view") === "backup")
+    if (url.searchParams.get("view") === "backup") {
+      const approvalId =
+        url.searchParams.get("approvalId") ?? request.headers.get("x-approval-id") ?? undefined;
       return NextResponse.json({
-        backup: await hostedDomainStore.exportBackup(identity.userId, workspaceId),
+        backup: await hostedDomainStore.exportBackup(identity.userId, workspaceId, {
+          approvalId: approvalId ?? undefined,
+        }),
       });
+    }
     if (url.searchParams.get("view") === "migration")
       return NextResponse.json({
         package: await hostedDomainStore.exportMigration(identity.userId, workspaceId),
@@ -352,6 +359,27 @@ export async function POST(request: Request) {
             body.selectedRepositoryIds as string[] | undefined
           ),
         });
+      case "export-backup":
+      case "export_backup": {
+        const approvalId =
+          (typeof body.approval === "string"
+            ? body.approval
+            : typeof body.approvalId === "string"
+              ? body.approvalId
+              : undefined) ??
+          request.headers.get("x-approval-id") ??
+          undefined;
+        return NextResponse.json(
+          {
+            backup: await hostedDomainStore.exportBackup(
+              identity.userId,
+              body.workspaceId as string,
+              { approvalId }
+            ),
+          },
+          { status: 200 }
+        );
+      }
       default:
         return NextResponse.json({ error: "Unknown hosted domain action." }, { status: 400 });
     }
