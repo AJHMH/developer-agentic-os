@@ -17,6 +17,14 @@ import type {
   ProtectedSecretStore,
 } from "@/server/hosted-domain/hosted-domain-store";
 import type {
+  HostedAuditEvent,
+  HostedWorkspace,
+  InvitationStatus,
+  WorkspaceInvitation,
+  WorkspaceMember,
+  WorkspaceRole,
+} from "@/types/hosted-workspace";
+import type {
   HostedWorkspaceState,
   HostedWorkspaceStateProvider,
 } from "@/server/hosted-workspaces/hosted-workspace-store";
@@ -468,6 +476,12 @@ export class NeonHostedStateProvider implements HostedStateProvider {
   }
 }
 
+function toIsoDate(val: unknown): string {
+  if (val instanceof Date) return val.toISOString();
+  if (typeof val === "string") return val;
+  return new Date(String(val)).toISOString();
+}
+
 export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStateProvider {
   private readonly pool: Pool;
   private readonly transactionClient = new AsyncLocalStorage<PoolClient>();
@@ -497,63 +511,258 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
     }>("SELECT id, owner_id, name, created_at FROM hosted_workspaces WHERE tenant_id = $1", [
       tenantId,
     ]);
-    const state: HostedWorkspaceState = { users: {}, audit: [] };
-    for (const user of users.rows)
+    const members = await client.query<{
+      workspace_id: string;
+      user_id: string;
+      role: string;
+      joined_at: string;
+      active_workspace: boolean;
+    }>(
+      "SELECT workspace_id, user_id, role, joined_at, active_workspace FROM hosted_workspace_members WHERE tenant_id = $1",
+      [tenantId]
+    );
+    const invitations = await client.query<{
+      id: string;
+      workspace_id: string;
+      recipient_email: string;
+      role: string;
+      status: string;
+      invited_by: string;
+      created_at: string;
+      expires_at: string;
+      accepted_at: string | null;
+      accepted_by: string | null;
+      revoked_at: string | null;
+      revoked_by: string | null;
+    }>(
+      "SELECT id, workspace_id, recipient_email, role, status, invited_by, created_at, expires_at, accepted_at, accepted_by, revoked_at, revoked_by FROM hosted_workspace_invitations WHERE tenant_id = $1",
+      [tenantId]
+    );
+
+    const state: HostedWorkspaceState = {
+      workspaces: {},
+      members: {},
+      invitations: {},
+      users: {},
+      audit: [],
+    };
+    for (const ws of workspaces.rows) {
+      state.workspaces![ws.id] = {
+        id: ws.id,
+        ownerId: ws.owner_id,
+        name: ws.name,
+        createdAt: ws.created_at,
+      };
+      state.members![ws.id] = [];
+      state.invitations![ws.id] = [];
+    }
+    for (const user of users.rows) {
       state.users[user.user_id] = {
         workspaces: [],
         activeWorkspaceId: user.active_workspace_id,
       };
-    for (const workspace of workspaces.rows) {
-      const user = (state.users[workspace.owner_id] ??= {
+    }
+    for (const m of members.rows) {
+      const ws = state.workspaces![m.workspace_id];
+      if (!ws) continue;
+      const memberRecord: WorkspaceMember = {
+        workspaceId: m.workspace_id,
+        userId: m.user_id,
+        role: (m.role as WorkspaceRole) ?? "member",
+        joinedAt: toIsoDate(m.joined_at),
+      };
+      (state.members![m.workspace_id] ??= []).push(memberRecord);
+      const user = (state.users[m.user_id] ??= {
         workspaces: [],
         activeWorkspaceId: null,
       });
-      user.workspaces.push({
-        id: workspace.id,
-        ownerId: workspace.owner_id,
-        name: workspace.name,
-        createdAt: workspace.created_at,
+      if (!user.workspaces.some((w) => w.id === ws.id)) {
+        user.workspaces.push(ws);
+      }
+    }
+    for (const ws of Object.values(state.workspaces!)) {
+      const wsMembers = (state.members![ws.id] ??= []);
+      if (!wsMembers.some((m) => m.userId === ws.ownerId)) {
+        wsMembers.push({
+          workspaceId: ws.id,
+          userId: ws.ownerId,
+          role: "owner",
+          joinedAt: toIsoDate(ws.createdAt),
+        });
+      }
+      const ownerUser = (state.users[ws.ownerId] ??= {
+        workspaces: [],
+        activeWorkspaceId: null,
+      });
+      if (!ownerUser.workspaces.some((w) => w.id === ws.id)) {
+        ownerUser.workspaces.push(ws);
+      }
+    }
+    for (const inv of invitations.rows) {
+      if (!state.workspaces![inv.workspace_id]) continue;
+      (state.invitations![inv.workspace_id] ??= []).push({
+        id: inv.id,
+        workspaceId: inv.workspace_id,
+        recipientEmail: inv.recipient_email,
+        role: inv.role as "admin" | "member",
+        status: inv.status as InvitationStatus,
+        invitedBy: inv.invited_by,
+        createdAt: toIsoDate(inv.created_at),
+        expiresAt: toIsoDate(inv.expires_at),
+        ...(inv.accepted_at ? { acceptedAt: toIsoDate(inv.accepted_at) } : {}),
+        ...(inv.accepted_by ? { acceptedBy: inv.accepted_by } : {}),
+        ...(inv.revoked_at ? { revokedAt: toIsoDate(inv.revoked_at) } : {}),
+        ...(inv.revoked_by ? { revokedBy: inv.revoked_by } : {}),
       });
     }
+
     const audit = await client.query<{
       id: string;
       user_id: string;
       workspace_id: string | null;
       action: string;
       occurred_at: string;
+      correlation_id: string | null;
     }>(
-      "SELECT id, user_id, workspace_id, action, occurred_at FROM hosted_workspace_audit WHERE tenant_id = $1",
+      "SELECT id, user_id, workspace_id, action, occurred_at, correlation_id FROM hosted_workspace_audit WHERE tenant_id = $1",
       [tenantId]
     );
     state.audit = audit.rows.map((event) => ({
       id: event.id,
       userId: event.user_id,
       ...(event.workspace_id ? { workspaceId: event.workspace_id } : {}),
-      action: event.action as HostedWorkspaceState["audit"][number]["action"],
-      occurredAt: event.occurred_at,
+      ...(event.correlation_id ? { correlationId: event.correlation_id } : {}),
+      action: event.action as HostedAuditEvent["action"],
+      occurredAt: toIsoDate(event.occurred_at),
     }));
     return state;
   }
+
   async write(state: HostedWorkspaceState): Promise<void> {
     await this.ensureSchema();
     const client = this.transactionClient.getStore();
     if (!client) return this.withMutationLock(() => this.write(state));
     const tenantId = await this.tenantDatabaseId(client);
+
     await client.query("DELETE FROM hosted_workspace_audit WHERE tenant_id = $1", [tenantId]);
-    const desiredWorkspaceIds = new Set<string>();
-    for (const user of Object.values(state.users))
-      for (const workspace of user.workspaces) desiredWorkspaceIds.add(workspace.id);
-    for (const user of Object.values(state.users))
-      for (const workspace of user.workspaces)
-        await client.query(
-          `INSERT INTO hosted_workspaces (id, tenant_id, owner_id, name, created_at)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (tenant_id, id) DO UPDATE SET
-             owner_id = EXCLUDED.owner_id,
-             name = EXCLUDED.name,
-             created_at = EXCLUDED.created_at`,
-          [workspace.id, tenantId, workspace.ownerId, workspace.name, workspace.createdAt]
-        );
+
+    const allWorkspaces: HostedWorkspace[] = [];
+    if (state.workspaces) {
+      allWorkspaces.push(...Object.values(state.workspaces));
+    }
+    for (const user of Object.values(state.users)) {
+      for (const ws of user.workspaces) {
+        if (!allWorkspaces.some((w) => w.id === ws.id)) {
+          allWorkspaces.push(ws);
+        }
+      }
+    }
+    const desiredWorkspaceIds = new Set(allWorkspaces.map((w) => w.id));
+
+    for (const workspace of allWorkspaces) {
+      await client.query(
+        `INSERT INTO hosted_workspaces (id, tenant_id, owner_id, name, created_at)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (tenant_id, id) DO UPDATE SET
+           owner_id = EXCLUDED.owner_id,
+           name = EXCLUDED.name,
+           created_at = EXCLUDED.created_at`,
+        [workspace.id, tenantId, workspace.ownerId, workspace.name, workspace.createdAt]
+      );
+    }
+
+    if (desiredWorkspaceIds.size > 0) {
+      await client.query(
+        "DELETE FROM hosted_workspaces WHERE tenant_id = $1 AND id <> ALL($2::uuid[])",
+        [tenantId, Array.from(desiredWorkspaceIds)]
+      );
+    } else {
+      await client.query("DELETE FROM hosted_workspaces WHERE tenant_id = $1", [tenantId]);
+    }
+
+    const allMembers: WorkspaceMember[] = [];
+    if (state.members) {
+      for (const [wsId, mList] of Object.entries(state.members)) {
+        if (desiredWorkspaceIds.has(wsId)) {
+          allMembers.push(...mList);
+        }
+      }
+    }
+    for (const ws of allWorkspaces) {
+      if (!allMembers.some((m) => m.workspaceId === ws.id && m.userId === ws.ownerId)) {
+        allMembers.push({
+          workspaceId: ws.id,
+          userId: ws.ownerId,
+          role: "owner",
+          joinedAt: ws.createdAt,
+        });
+      }
+    }
+
+    await client.query("DELETE FROM hosted_workspace_members WHERE tenant_id = $1", [tenantId]);
+    for (const member of allMembers) {
+      const user = state.users[member.userId];
+      const isActive = user?.activeWorkspaceId === member.workspaceId;
+      await client.query(
+        `INSERT INTO hosted_workspace_members (tenant_id, workspace_id, user_id, role, joined_at, active_workspace)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (tenant_id, workspace_id, user_id) DO UPDATE SET
+           role = EXCLUDED.role,
+           joined_at = EXCLUDED.joined_at,
+           active_workspace = EXCLUDED.active_workspace`,
+        [tenantId, member.workspaceId, member.userId, member.role, member.joinedAt, isActive]
+      );
+    }
+
+    const allInvitations: WorkspaceInvitation[] = [];
+    if (state.invitations) {
+      for (const [wsId, invList] of Object.entries(state.invitations)) {
+        if (desiredWorkspaceIds.has(wsId)) {
+          allInvitations.push(...invList);
+        }
+      }
+    }
+    const desiredInvitationIds = allInvitations.map((i) => i.id);
+    for (const inv of allInvitations) {
+      await client.query(
+        `INSERT INTO hosted_workspace_invitations (
+           id, tenant_id, workspace_id, recipient_email, role, status, invited_by,
+           created_at, expires_at, accepted_at, accepted_by, revoked_at, revoked_by
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status,
+           accepted_at = EXCLUDED.accepted_at,
+           accepted_by = EXCLUDED.accepted_by,
+           revoked_at = EXCLUDED.revoked_at,
+           revoked_by = EXCLUDED.revoked_by`,
+        [
+          inv.id,
+          tenantId,
+          inv.workspaceId,
+          inv.recipientEmail,
+          inv.role,
+          inv.status,
+          inv.invitedBy,
+          inv.createdAt,
+          inv.expiresAt,
+          inv.acceptedAt ?? null,
+          inv.acceptedBy ?? null,
+          inv.revokedAt ?? null,
+          inv.revokedBy ?? null,
+        ]
+      );
+    }
+    if (desiredInvitationIds.length > 0) {
+      await client.query(
+        "DELETE FROM hosted_workspace_invitations WHERE tenant_id = $1 AND id <> ALL($2::uuid[])",
+        [tenantId, desiredInvitationIds]
+      );
+    } else {
+      await client.query("DELETE FROM hosted_workspace_invitations WHERE tenant_id = $1", [
+        tenantId,
+      ]);
+    }
+
     const desiredUserIds = Object.keys(state.users);
     for (const [userId, user] of Object.entries(state.users)) {
       const activeWorkspaceId =
@@ -566,30 +775,19 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
          ON CONFLICT (tenant_id, user_id) DO UPDATE SET active_workspace_id = EXCLUDED.active_workspace_id`,
         [tenantId, userId, activeWorkspaceId]
       );
-      for (const workspace of user.workspaces)
-        await client.query(
-          `INSERT INTO hosted_workspace_members (tenant_id, workspace_id, user_id, active_workspace)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (tenant_id, workspace_id, user_id) DO UPDATE SET
-             active_workspace = EXCLUDED.active_workspace`,
-          [tenantId, workspace.id, userId, workspace.id === activeWorkspaceId]
-        );
     }
-    if (desiredUserIds.length > 0)
+    if (desiredUserIds.length > 0) {
       await client.query(
         "DELETE FROM hosted_workspace_users WHERE tenant_id = $1 AND user_id <> ALL($2::text[])",
         [tenantId, desiredUserIds]
       );
-    else await client.query("DELETE FROM hosted_workspace_users WHERE tenant_id = $1", [tenantId]);
-    if (desiredWorkspaceIds.size > 0)
+    } else {
+      await client.query("DELETE FROM hosted_workspace_users WHERE tenant_id = $1", [tenantId]);
+    }
+
+    for (const event of state.audit) {
       await client.query(
-        "DELETE FROM hosted_workspaces WHERE tenant_id = $1 AND id <> ALL($2::uuid[])",
-        [tenantId, Array.from(desiredWorkspaceIds)]
-      );
-    else await client.query("DELETE FROM hosted_workspaces WHERE tenant_id = $1", [tenantId]);
-    for (const event of state.audit)
-      await client.query(
-        "INSERT INTO hosted_workspace_audit (id, tenant_id, user_id, workspace_id, action, occurred_at) VALUES ($1, $2, $3, $4, $5, $6)",
+        "INSERT INTO hosted_workspace_audit (id, tenant_id, user_id, workspace_id, action, occurred_at, correlation_id) VALUES ($1, $2, $3, $4, $5, $6, $7)",
         [
           event.id,
           tenantId,
@@ -597,8 +795,10 @@ export class NeonHostedWorkspaceStateProvider implements HostedWorkspaceStatePro
           event.workspaceId ?? null,
           event.action,
           event.occurredAt,
+          event.correlationId ?? null,
         ]
       );
+    }
   }
   async withMutationLock<T>(operation: () => Promise<T>): Promise<T> {
     await this.ensureSchema();
