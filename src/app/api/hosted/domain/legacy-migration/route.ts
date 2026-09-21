@@ -41,7 +41,11 @@ export async function GET(request: Request) {
     }
 
     if (view === "detect") {
-      if (!safeRoot) return NextResponse.json({ error: "Missing workspace context for detect" }, { status: 400 });
+      if (!safeRoot)
+        return NextResponse.json(
+          { error: "Missing workspace context for detect" },
+          { status: 400 }
+        );
       const stats = await detectLegacyMemory(safeRoot);
       return NextResponse.json(stats);
     }
@@ -88,7 +92,7 @@ export async function POST(request: Request) {
 
   try {
     const repos = await store.listRepositories(userId, workspaceId);
-    const repo = repos.find(r => r.id === repositoryId);
+    const repo = repos.find((r) => r.id === repositoryId);
     if (!repo) {
       return NextResponse.json({ error: "Repository not found in workspace" }, { status: 404 });
     }

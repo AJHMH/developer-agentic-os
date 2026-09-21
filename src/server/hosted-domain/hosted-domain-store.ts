@@ -2102,6 +2102,9 @@ export class HostedDomainStore {
         if (!existing) repositories.push(target);
         if (repository.id) repositoryIds.set(repository.id, target.id);
       }
+      if (workspaceId === "__proto__" || workspaceId === "constructor") {
+        throw new HostedDomainError("INVALID", "Invalid workspace ID.");
+      }
       let imported = 0;
       const recordIds = new Map<string, string>();
       for (const [kind, records] of Object.entries(packageData.records)) {
