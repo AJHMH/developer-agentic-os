@@ -9,13 +9,21 @@ process.env.HOSTED_AUTH_FIXTURE_MODE = "true";
 process.env.HOSTED_JSON_FIXTURE_MODE = "true";
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
 
-import { HostedDomainStore } from "../src/server/hosted-domain/hosted-domain-store";
+import { GET as getLegacyMigrationRoute } from "../src/app/api/hosted/domain/legacy-migration/route";
+import {
+  HostedDomainStore,
+  setHostedDomainStoreForTenant,
+} from "../src/server/hosted-domain/hosted-domain-store";
 import {
   LEGACY_MEMORY_DIR,
   detectLegacyMemory,
   executeMigration,
   preflight,
 } from "../src/server/hosted-domain/legacy-memory-migrator";
+import {
+  HostedWorkspaceStore,
+  setHostedWorkspaceStoreForTenant,
+} from "../src/server/hosted-workspaces/hosted-workspace-store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -458,4 +466,68 @@ test("Issue #13 AC8: full round-trip — preflight shows expected effects, execu
     const signals = await store.listRecords("alice", ws.id, "incomingSignals");
     assert.equal(signals.length, 1);
   });
+});
+
+test("Issue #13 AC8: legacy migration GET route requires repositoryId and resolves the selected repository", async (t) => {
+  const tenantId = `tenant-legacy-route-${Date.now()}`;
+  const userId = `legacy-route-${Date.now()}`;
+  const root = await mkdtemp(join(tmpdir(), "developer-agentic-os-legacy-route-"));
+  const repositoryRootA = join(root, "repo-a");
+  const repositoryRootB = join(root, "repo-b");
+  await mkdir(repositoryRootA, { recursive: true });
+  await mkdir(repositoryRootB, { recursive: true });
+
+  const workspaceStore = new HostedWorkspaceStore(root);
+  const domainStore = new HostedDomainStore(root, workspaceStore);
+  setHostedWorkspaceStoreForTenant(tenantId, workspaceStore);
+  setHostedDomainStoreForTenant(tenantId, domainStore);
+
+  t.after(async () => {
+    setHostedWorkspaceStoreForTenant(tenantId, null);
+    setHostedDomainStoreForTenant(tenantId, null);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const headers = new Headers({
+    "x-hosted-user-id": userId,
+    "x-hosted-tenant-id": tenantId,
+  });
+
+  const ws = await domainStore.createWorkspace(userId, "Route WS");
+  const repoA = await domainStore.registerRepository(userId, ws.id, repositoryRootA);
+  const repoB = await domainStore.registerRepository(userId, ws.id, repositoryRootB);
+
+  await seedLegacyMemory(repositoryRootB, {
+    workItems: [{ id: "wi-route", title: "Selected repo" }],
+  });
+
+  const missingRepository = await getLegacyMigrationRoute(
+    new Request(
+      `http://localhost/api/hosted/domain/legacy-migration?view=detect&workspaceId=${ws.id}`,
+      { headers }
+    )
+  );
+  assert.equal(missingRepository.status, 400);
+  assert.equal((await missingRepository.json()).error, "repositoryId is required");
+
+  const detectFirstRepo = await getLegacyMigrationRoute(
+    new Request(
+      `http://localhost/api/hosted/domain/legacy-migration?view=detect&workspaceId=${ws.id}&repositoryId=${repoA.id}`,
+      { headers }
+    )
+  );
+  assert.equal(detectFirstRepo.status, 200);
+  assert.equal((await detectFirstRepo.json()).detected, false);
+
+  const preflightSelectedRepo = await getLegacyMigrationRoute(
+    new Request(
+      `http://localhost/api/hosted/domain/legacy-migration?view=preflight&workspaceId=${ws.id}&repositoryId=${repoB.id}`,
+      { headers }
+    )
+  );
+  assert.equal(preflightSelectedRepo.status, 200);
+  const report = await preflightSelectedRepo.json();
+  assert.equal(report.detected, true);
+  assert.equal(report.recognizedCount, 1);
+  assert.equal(report.legacyMemoryPath, join(repositoryRootB, LEGACY_MEMORY_DIR));
 });

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { access, readdir, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 import { readJsonFile } from "../local-store/json-file";
 import type { HostedDomainStore, HostedRecordKind, MigrationPackage } from "./hosted-domain-store";
@@ -264,9 +264,9 @@ export async function preflight(
 
 /**
  * Executes the idempotent migration from `.memory` into the Hosted Workspace.
- * - Writes a durable idempotency marker before importing.
+ * - Writes a durable idempotency marker after a successful import.
  * - Quarantines malformed/unknown records without halting.
- * - Returns a resumable report on partial failure.
+ * - Returns a resumable report on partial failure without blocking retries.
  * - NEVER modifies the source `.memory` directory.
  */
 export async function executeMigration(
@@ -394,7 +394,7 @@ export async function executeMigration(
       {
         id: repositoryId,
         localPath: root,
-        pathIdentity: createHash("sha256").update(resolve(root).toLowerCase()).digest("hex"),
+        pathIdentity: createHash("sha256").update(resolve(root)).digest("hex"),
       },
     ],
     records,
@@ -453,7 +453,8 @@ function isRecognizedRecord(value: unknown): value is Record<string, unknown> {
 
 async function readLegacyJsonFile(memoryPath: string, file: string): Promise<LegacyFileReadResult> {
   const filePath = resolve(memoryPath, file);
-  if (!filePath.startsWith(memoryPath)) {
+  const relativePath = relative(memoryPath, filePath);
+  if (relativePath === "" || relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
     throw new Error("Invalid path");
   }
   try {

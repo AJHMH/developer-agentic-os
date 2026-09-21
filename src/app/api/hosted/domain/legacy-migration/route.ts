@@ -13,7 +13,6 @@ type LegacyMigrationBody = {
   action?: unknown;
   workspaceId?: unknown;
   repositoryId?: unknown;
-  root?: unknown;
 };
 
 export async function GET(request: Request) {
@@ -25,6 +24,7 @@ export async function GET(request: Request) {
 
   const view = url.searchParams.get("view");
   const workspaceId = url.searchParams.get("workspaceId");
+  const repositoryId = url.searchParams.get("repositoryId");
 
   if (!views.includes(view as (typeof views)[number])) {
     return NextResponse.json(
@@ -34,32 +34,25 @@ export async function GET(request: Request) {
   }
 
   try {
-    let safeRoot = "";
-    if (workspaceId) {
-      const repos = await store.listRepositories(userId, workspaceId);
-      if (repos.length > 0) safeRoot = repos[0].localPath;
+    if (!workspaceId || typeof workspaceId !== "string") {
+      return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
     }
+    if (!repositoryId || typeof repositoryId !== "string") {
+      return NextResponse.json({ error: "repositoryId is required" }, { status: 400 });
+    }
+    const repos = await store.listRepositories(userId, workspaceId);
+    const repo = repos.find((candidate) => candidate.id === repositoryId);
+    if (!repo) {
+      return NextResponse.json({ error: "Repository not found in workspace" }, { status: 404 });
+    }
+    const safeRoot = repo.localPath;
 
     if (view === "detect") {
-      if (!safeRoot)
-        return NextResponse.json(
-          { error: "Missing workspace context for detect" },
-          { status: 400 }
-        );
       const stats = await detectLegacyMemory(safeRoot);
       return NextResponse.json(stats);
     }
 
     if (view === "preflight") {
-      if (!workspaceId || typeof workspaceId !== "string") {
-        return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
-      }
-      if (!safeRoot) {
-        return NextResponse.json(
-          { error: "Missing workspace context for preflight" },
-          { status: 400 }
-        );
-      }
       const report = await preflight(safeRoot, store, userId, workspaceId);
       return NextResponse.json(report);
     }
