@@ -109,26 +109,36 @@ export async function detectLegacyMemory(root: string): Promise<LegacyMemoryStat
   assertPathWithinRoot(root, memoryPath);
   try {
     await access(memoryPath);
-    const entries = await readdir(memoryPath, { recursive: true });
-    const files = entries.filter((e) => typeof e === "string" && e.includes("."));
-    // Quick estimate: count likely JSON files and sum their rough record counts
-    let estimatedRecords = 0;
-    for (const file of files) {
-      if (file.endsWith(".json")) {
-        const s = await stat(join(memoryPath, file)).catch(() => null);
-        // Rough heuristic: ~200 bytes per record
-        if (s) estimatedRecords += Math.max(1, Math.floor(s.size / 200));
-      }
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return { detected: false, path: memoryPath, fileCount: 0, estimatedRecords: 0 };
     }
-    return {
-      detected: true,
-      path: memoryPath,
-      fileCount: files.length,
-      estimatedRecords,
-    };
-  } catch {
-    return { detected: false, path: memoryPath, fileCount: 0, estimatedRecords: 0 };
+    throw error;
   }
+
+  const entries = await readdir(memoryPath, { recursive: true });
+  const files = entries.filter((e) => typeof e === "string" && e.includes("."));
+  // Quick estimate: count likely JSON files and sum their rough record counts
+  let estimatedRecords = 0;
+  for (const file of files) {
+    if (file.endsWith(".json")) {
+      let fileStat;
+      try {
+        fileStat = await stat(join(memoryPath, file));
+      } catch (error) {
+        if (isMissingPathError(error)) continue;
+        throw error;
+      }
+      // Rough heuristic: ~200 bytes per record
+      estimatedRecords += Math.max(1, Math.floor(fileStat.size / 200));
+    }
+  }
+  return {
+    detected: true,
+    path: memoryPath,
+    fileCount: files.length,
+    estimatedRecords,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -145,6 +155,8 @@ export async function preflight(
   userId: string,
   workspaceId: string
 ): Promise<LegacyMigrationPreflight> {
+  const idempotencyMarkerPresent =
+    (await store.getLegacyMigrationMarker(userId, workspaceId)) !== null;
   const stats = await detectLegacyMemory(root);
   if (!stats.detected) {
     return {
@@ -157,7 +169,7 @@ export async function preflight(
       unknownKinds: [],
       warnings: [],
       expectedEffects: [],
-      idempotencyMarkerPresent: false,
+      idempotencyMarkerPresent,
     };
   }
 
@@ -223,10 +235,6 @@ export async function preflight(
     }
   }
 
-  // Check idempotency marker
-  const idempotencyMarkerPresent =
-    (await store.getLegacyMigrationMarker(userId, workspaceId)) !== null;
-
   const expectedEffects: string[] = [];
   if (recognizedCount > 0) {
     expectedEffects.push(
@@ -287,6 +295,12 @@ export async function executeMigration(
   );
   if (!repository) {
     throw new HostedDomainError("NOT_FOUND", "Repository not found in workspace.");
+  }
+  if (resolve(root) !== repository.localPath) {
+    throw new HostedDomainError(
+      "INVALID",
+      "Legacy migration root must match the selected repository."
+    );
   }
   const repositoryRoot = repository.localPath;
 
@@ -486,7 +500,8 @@ async function readLegacyJsonFile(memoryPath: string, file: string): Promise<Leg
   assertPathWithinRoot(memoryPath, filePath);
   try {
     await access(filePath);
-  } catch {
+  } catch (error) {
+    if (!isMissingPathError(error)) throw error;
     return { status: "missing" };
   }
   try {
@@ -501,4 +516,8 @@ function assertPathWithinRoot(root: string, targetPath: string): void {
   if (isAbsolute(relativePath) || relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
     throw new Error("Invalid path");
   }
+}
+
+function isMissingPathError(error: unknown): boolean {
+  return !!error && typeof error === "object" && "code" in error && error.code === "ENOENT";
 }
