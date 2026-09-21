@@ -25,7 +25,12 @@ export async function GET(request: Request) {
 
   const view = url.searchParams.get("view");
   const workspaceId = url.searchParams.get("workspaceId");
-  const root = url.searchParams.get("root") ?? process.cwd();
+  const rawRoot = url.searchParams.get("root");
+  const root = typeof rawRoot === "string" && rawRoot ? rawRoot : process.cwd();
+  const safeRoot = require("node:path").resolve(root);
+  if (!safeRoot.startsWith(require("node:path").resolve("/"))) {
+    return NextResponse.json({ error: "Invalid path" }, { status: 400 });
+  }
 
   if (!views.includes(view as (typeof views)[number])) {
     return NextResponse.json(
@@ -36,7 +41,7 @@ export async function GET(request: Request) {
 
   try {
     if (view === "detect") {
-      const stats = await detectLegacyMemory(root);
+      const stats = await detectLegacyMemory(safeRoot);
       return NextResponse.json(stats);
     }
 
@@ -44,7 +49,7 @@ export async function GET(request: Request) {
       if (!workspaceId || typeof workspaceId !== "string") {
         return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
       }
-      const report = await preflight(root, store, userId, workspaceId);
+      const report = await preflight(safeRoot, store, userId, workspaceId);
       return NextResponse.json(report);
     }
   } catch (error) {
@@ -81,9 +86,13 @@ export async function POST(request: Request) {
   }
 
   const resolvedRoot = typeof root === "string" && root ? root : process.cwd();
+  const safeRoot = require("node:path").resolve(resolvedRoot);
+  if (!safeRoot.startsWith(require("node:path").resolve("/"))) {
+    return NextResponse.json({ error: "Invalid path" }, { status: 400 });
+  }
 
   try {
-    const result = await executeMigration(resolvedRoot, workspaceId, repositoryId, store, userId);
+    const result = await executeMigration(safeRoot, workspaceId, repositoryId, store, userId);
     return NextResponse.json(result);
   } catch (error) {
     return hostedError(error);
