@@ -3,7 +3,12 @@ import { access, readdir, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
 import { readJsonFile } from "../local-store/json-file";
-import type { HostedDomainStore, HostedRecordKind, MigrationPackage } from "./hosted-domain-store";
+import {
+  HostedDomainError,
+  type HostedDomainStore,
+  type HostedRecordKind,
+  type MigrationPackage,
+} from "./hosted-domain-store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -101,6 +106,7 @@ const LEGACY_FILE_MAP: Array<{
  */
 export async function detectLegacyMemory(root: string): Promise<LegacyMemoryStats> {
   const memoryPath = resolve(root, LEGACY_MEMORY_DIR);
+  assertPathWithinRoot(root, memoryPath);
   try {
     await access(memoryPath);
     const entries = await readdir(memoryPath, { recursive: true });
@@ -218,10 +224,8 @@ export async function preflight(
   }
 
   // Check idempotency marker
-  const idempotencyMarkerPresent = await store.getLegacyMigrationMarker(userId, workspaceId).then(
-    (m) => m !== null,
-    () => false
-  );
+  const idempotencyMarkerPresent =
+    (await store.getLegacyMigrationMarker(userId, workspaceId)) !== null;
 
   const expectedEffects: string[] = [];
   if (recognizedCount > 0) {
@@ -277,11 +281,17 @@ export async function executeMigration(
   userId: string
 ): Promise<LegacyMigrationResult> {
   const correlationId = randomUUID();
+  void root;
+  const repository = (await store.listRepositories(userId, workspaceId)).find(
+    (candidate) => candidate.id === repositoryId
+  );
+  if (!repository) {
+    throw new HostedDomainError("NOT_FOUND", "Repository not found in workspace.");
+  }
+  const repositoryRoot = repository.localPath;
 
   // Check idempotency marker first
-  const existingMarker = await store
-    .getLegacyMigrationMarker(userId, workspaceId)
-    .catch(() => null);
+  const existingMarker = await store.getLegacyMigrationMarker(userId, workspaceId);
   if (existingMarker !== null) {
     return {
       status: "already_migrated",
@@ -294,7 +304,7 @@ export async function executeMigration(
     };
   }
 
-  const stats = await detectLegacyMemory(root);
+  const stats = await detectLegacyMemory(repositoryRoot);
   if (!stats.detected) {
     // No legacy state — return early without marking so future syncs can trigger
     return {
@@ -400,8 +410,8 @@ export async function executeMigration(
     repositories: [
       {
         id: repositoryId,
-        localPath: root,
-        pathIdentity: createHash("sha256").update(root).digest("hex"),
+        localPath: repository.localPath,
+        pathIdentity: repository.pathIdentity,
       },
     ],
     records,
@@ -417,7 +427,6 @@ export async function executeMigration(
     const result = await store.importMigration(userId, workspaceId, pkg);
     imported = result.imported;
     warnings.push(...result.warnings);
-    await store.setLegacyMigrationMarker(userId, workspaceId, correlationId);
   } catch (err: unknown) {
     // Partial failure — leave the marker unset so a follow-up call can retry
     // idempotently using the same externalId-based import behavior.
@@ -425,6 +434,15 @@ export async function executeMigration(
     warnings.push(`Partial failure during import: ${message}`);
     status = "partial";
     resumeFrom = correlationId; // correlationId IS the resume key
+  }
+
+  if (status === "completed") {
+    try {
+      await store.setLegacyMigrationMarker(userId, workspaceId, correlationId);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      warnings.push(`Import completed but failed to persist the migration marker: ${message}`);
+    }
   }
 
   return {
@@ -463,10 +481,7 @@ async function readLegacyJsonFile(memoryPath: string, file: string): Promise<Leg
     throw new Error("Invalid path");
   }
   const filePath = resolve(memoryPath, file);
-  const relativePath = relative(memoryPath, filePath);
-  if (relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
-    throw new Error("Invalid path");
-  }
+  assertPathWithinRoot(memoryPath, filePath);
   try {
     await access(filePath);
   } catch {
@@ -476,5 +491,12 @@ async function readLegacyJsonFile(memoryPath: string, file: string): Promise<Leg
     return { status: "loaded", raw: await readJsonFile(filePath, undefined) };
   } catch {
     return { status: "malformed" };
+  }
+}
+
+function assertPathWithinRoot(root: string, targetPath: string): void {
+  const relativePath = relative(root, targetPath);
+  if (relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
+    throw new Error("Invalid path");
   }
 }

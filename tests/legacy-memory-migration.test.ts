@@ -9,7 +9,10 @@ process.env.HOSTED_AUTH_FIXTURE_MODE = "true";
 process.env.HOSTED_JSON_FIXTURE_MODE = "true";
 (process.env as Record<string, string | undefined>).NODE_ENV = "test";
 
-import { GET as getLegacyMigrationRoute } from "../src/app/api/hosted/domain/legacy-migration/route";
+import {
+  GET as getLegacyMigrationRoute,
+  POST as postLegacyMigrationRoute,
+} from "../src/app/api/hosted/domain/legacy-migration/route";
 import {
   HostedDomainStore,
   setHostedDomainStoreForTenant,
@@ -530,4 +533,72 @@ test("Issue #13 AC8: legacy migration GET route requires repositoryId and resolv
   assert.equal(report.detected, true);
   assert.equal(report.recognizedCount, 1);
   assert.equal(report.legacyMemoryPath, join(repositoryRootB, LEGACY_MEMORY_DIR));
+});
+
+test("Issue #13 AC8: legacy migration POST route requires repositoryId and executes against the selected repository", async (t) => {
+  const tenantId = `tenant-legacy-post-${Date.now()}`;
+  const userId = `legacy-post-${Date.now()}`;
+  const root = await mkdtemp(join(tmpdir(), "developer-agentic-os-legacy-post-"));
+  const repositoryRootA = join(root, "repo-a");
+  const repositoryRootB = join(root, "repo-b");
+  await mkdir(repositoryRootA, { recursive: true });
+  await mkdir(repositoryRootB, { recursive: true });
+
+  const workspaceStore = new HostedWorkspaceStore(root);
+  const domainStore = new HostedDomainStore(root, workspaceStore);
+  setHostedWorkspaceStoreForTenant(tenantId, workspaceStore);
+  setHostedDomainStoreForTenant(tenantId, domainStore);
+
+  t.after(async () => {
+    setHostedWorkspaceStoreForTenant(tenantId, null);
+    setHostedDomainStoreForTenant(tenantId, null);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const headers = new Headers({
+    "content-type": "application/json",
+    "x-hosted-user-id": userId,
+    "x-hosted-tenant-id": tenantId,
+  });
+
+  const ws = await domainStore.createWorkspace(userId, "POST Route WS");
+  await domainStore.registerRepository(userId, ws.id, repositoryRootA);
+  const repoB = await domainStore.registerRepository(userId, ws.id, repositoryRootB);
+
+  await seedLegacyMemory(repositoryRootB, {
+    workItems: [{ id: "wi-post", title: "Execute selected repo" }],
+  });
+
+  const missingRepository = await postLegacyMigrationRoute(
+    new Request("http://localhost/api/hosted/domain/legacy-migration", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "execute-legacy-migration",
+        workspaceId: ws.id,
+      }),
+    })
+  );
+  assert.equal(missingRepository.status, 400);
+  assert.equal((await missingRepository.json()).error, "repositoryId is required");
+
+  const executed = await postLegacyMigrationRoute(
+    new Request("http://localhost/api/hosted/domain/legacy-migration", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        action: "execute-legacy-migration",
+        workspaceId: ws.id,
+        repositoryId: repoB.id,
+      }),
+    })
+  );
+  assert.equal(executed.status, 200);
+  const result = await executed.json();
+  assert.equal(result.status, "completed");
+  assert.equal(result.imported, 1);
+
+  const workItems = await domainStore.listRecords(userId, ws.id, "workItems");
+  assert.equal(workItems.length, 1);
+  assert.equal((workItems[0] as Record<string, unknown>).repositoryId, repoB.id);
 });
