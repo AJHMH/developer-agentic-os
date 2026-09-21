@@ -297,7 +297,7 @@ test("Issue #13 AC5: malformed and unknown-file records are quarantined; valid r
 // AC6: Partial failure — returns resumable report with correlationId
 // ─────────────────────────────────────────────────────────────────────────────
 
-test("Issue #13 AC6: idempotency marker is written before import so retry resumes from known state", async () => {
+test("Issue #13 AC6: successful migration records the marker after import completes", async () => {
   await withEnv(async ({ root, store }) => {
     const ws = await store.createWorkspace("alice", "Partial Failure WS");
     const repo = await store.registerRepository("alice", ws.id, root);
@@ -311,7 +311,7 @@ test("Issue #13 AC6: idempotency marker is written before import so retry resume
     assert.ok(result.correlationId, "correlationId must be present");
     assert.equal(result.status, "completed");
 
-    // Verify marker is durable
+    // Verify marker is durable after a successful import
     const marker = await store.getLegacyMigrationMarker("alice", ws.id);
     assert.equal(marker, result.correlationId, "Marker must equal the correlationId");
 
@@ -319,6 +319,46 @@ test("Issue #13 AC6: idempotency marker is written before import so retry resume
     const retry = await executeMigration(root, ws.id, repo.id, store, "alice");
     assert.equal(retry.status, "already_migrated");
     assert.equal(retry.imported, 0);
+  });
+});
+
+test("Issue #13 AC6: failed import leaves the marker unset so a retry can resume", async () => {
+  await withEnv(async ({ root, store }) => {
+    const ws = await store.createWorkspace("alice", "Retryable Failure WS");
+    const repo = await store.registerRepository("alice", ws.id, root);
+
+    await seedLegacyMemory(root, {
+      workItems: [{ id: "wi-1", title: "Task" }],
+    });
+
+    const originalImportMigration = store.importMigration.bind(store);
+    let attempts = 0;
+    store.importMigration = (async (...args) => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new Error("simulated import failure");
+      }
+      return originalImportMigration(...args);
+    }) as typeof store.importMigration;
+
+    const failed = await executeMigration(root, ws.id, repo.id, store, "alice");
+    assert.equal(failed.status, "partial");
+    assert.equal(failed.imported, 0);
+    assert.equal(failed.resumeFrom, failed.correlationId);
+
+    const markerAfterFailure = await store.getLegacyMigrationMarker("alice", ws.id);
+    assert.equal(markerAfterFailure, null, "Failed imports must not record the marker");
+
+    const retried = await executeMigration(root, ws.id, repo.id, store, "alice");
+    assert.equal(retried.status, "completed");
+    assert.equal(retried.imported, 1);
+
+    const markerAfterRetry = await store.getLegacyMigrationMarker("alice", ws.id);
+    assert.equal(
+      markerAfterRetry,
+      retried.correlationId,
+      "Successful retry must persist the marker"
+    );
   });
 });
 

@@ -406,16 +406,14 @@ export async function executeMigration(
   let resumeFrom: string | undefined;
   let status: LegacyMigrationResult["status"] = "completed";
 
-  // Record the marker only after the migration package is prepared so malformed
-  // legacy input cannot permanently block a retry.
-  await store.setLegacyMigrationMarker(userId, workspaceId, correlationId);
-
   try {
     const result = await store.importMigration(userId, workspaceId, pkg);
     imported = result.imported;
     warnings.push(...result.warnings);
+    await store.setLegacyMigrationMarker(userId, workspaceId, correlationId);
   } catch (err: unknown) {
-    // Partial failure — the marker is already written, so retry is safe
+    // Partial failure — leave the marker unset so a follow-up call can retry
+    // idempotently using the same externalId-based import behavior.
     const message = err instanceof Error ? err.message : String(err);
     warnings.push(`Partial failure during import: ${message}`);
     status = "partial";

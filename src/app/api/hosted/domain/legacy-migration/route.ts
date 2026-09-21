@@ -54,6 +54,12 @@ export async function GET(request: Request) {
       if (!workspaceId || typeof workspaceId !== "string") {
         return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
       }
+      if (!safeRoot) {
+        return NextResponse.json(
+          { error: "Missing workspace context for preflight" },
+          { status: 400 }
+        );
+      }
       const report = await preflight(safeRoot, store, userId, workspaceId);
       return NextResponse.json(report);
     }
