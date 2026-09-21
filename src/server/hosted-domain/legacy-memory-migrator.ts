@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { access, readdir, stat } from "node:fs/promises";
-import { join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { readJsonFile } from "../local-store/json-file";
 import {
@@ -442,6 +442,8 @@ export async function executeMigration(
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       warnings.push(`Import completed but failed to persist the migration marker: ${message}`);
+      status = "partial";
+      resumeFrom = correlationId;
     }
   }
 
@@ -496,7 +498,7 @@ async function readLegacyJsonFile(memoryPath: string, file: string): Promise<Leg
 
 function assertPathWithinRoot(root: string, targetPath: string): void {
   const relativePath = relative(root, targetPath);
-  if (relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
+  if (isAbsolute(relativePath) || relativePath === ".." || relativePath.startsWith(`..${sep}`)) {
     throw new Error("Invalid path");
   }
 }

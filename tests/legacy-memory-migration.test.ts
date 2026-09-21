@@ -373,6 +373,34 @@ test("Issue #13 AC6: failed import leaves the marker unset so a retry can resume
   });
 });
 
+test("Issue #13 AC6: marker persistence failure returns partial after importing", async () => {
+  await withEnv(async ({ root, store }) => {
+    const ws = await store.createWorkspace("alice", "Marker Failure WS");
+    const repo = await store.registerRepository("alice", ws.id, root);
+
+    await seedLegacyMemory(root, {
+      workItems: [{ id: "wi-1", title: "Task" }],
+    });
+
+    store.setLegacyMigrationMarker = (async (...args) => {
+      void args;
+      throw new Error("simulated marker failure");
+    }) as typeof store.setLegacyMigrationMarker;
+
+    const result = await executeMigration(root, ws.id, repo.id, store, "alice");
+    assert.equal(result.status, "partial");
+    assert.equal(result.imported, 1);
+    assert.equal(result.resumeFrom, result.correlationId);
+    assert.ok(
+      result.warnings.some((warning) => warning.includes("failed to persist the migration marker"))
+    );
+
+    const workItems = await store.listRecords("alice", ws.id, "workItems");
+    assert.equal(workItems.length, 1);
+    assert.equal(await store.getLegacyMigrationMarker("alice", ws.id), null);
+  });
+});
+
 test("Issue #13 AC6: executeMigration does not write a marker when no legacy state exists", async () => {
   await withEnv(async ({ root, store }) => {
     const ws = await store.createWorkspace("alice", "No Legacy State WS");
