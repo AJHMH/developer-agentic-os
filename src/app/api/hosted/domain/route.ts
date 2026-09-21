@@ -27,6 +27,7 @@ const views = [
   "connectors",
   "audit",
   "record-history",
+  "sync-conflicts",
 ] as const;
 
 type HostedDomainBody = {
@@ -48,6 +49,9 @@ type HostedDomainBody = {
   notes?: unknown;
   priority?: unknown;
   dueAt?: unknown;
+  conflictId?: unknown;
+  decision?: unknown;
+  expectedVersion?: unknown;
   provider?: unknown;
   scopes?: unknown;
   secret?: unknown;
@@ -125,6 +129,10 @@ export async function GET(request: Request) {
     if (url.searchParams.get("view") === "connectors")
       return NextResponse.json({
         connectors: await hostedDomainStore.listConnectorStatus(identity.userId, workspaceId),
+      });
+    if (url.searchParams.get("view") === "sync-conflicts")
+      return NextResponse.json({
+        conflicts: await hostedDomainStore.listSyncConflicts(identity.userId, workspaceId),
       });
     if (url.searchParams.get("view") === "record-history") {
       const kind = url.searchParams.get("kind") as HostedRecordKind;
@@ -438,6 +446,23 @@ export async function POST(request: Request) {
           },
           { status: 200 }
         );
+      case "resolve-sync-conflict":
+        return NextResponse.json(
+          {
+            conflict: await hostedDomainStore.resolveSyncConflict(
+              identity.userId,
+              body.workspaceId as string,
+              body.conflictId as string,
+              body.decision as "use_hosted" | "use_local",
+              {
+                approvalId: (body.approval as any)?.runId,
+                expectedVersion:
+                  typeof body.expectedVersion === "number" ? body.expectedVersion : undefined,
+              }
+            ),
+          },
+          { status: 200 }
+        );
       default:
         return NextResponse.json({ error: "Unknown hosted domain action." }, { status: 400 });
     }
@@ -487,6 +512,7 @@ function validateBody(body: HostedDomainBody): string | null {
         "sync",
         "sync-records",
         "update-record",
+        "resolve-sync-conflict",
       ] as const
     ).includes(action as never)
   )
@@ -522,6 +548,7 @@ function validateBody(body: HostedDomainBody): string | null {
         "queue-local-work",
         "create-work-item",
         "update-record",
+        "resolve-sync-conflict",
       ].includes(candidate)
   );
   if (action === "register-repository" && !requiredString(body, "localPath"))
@@ -652,6 +679,11 @@ function validateBody(body: HostedDomainBody): string | null {
     !isRecord(body.records)
   )
     return "records must be an object.";
+  if (action === "resolve-sync-conflict") {
+    if (!requiredString(body, "conflictId")) return "conflictId is required.";
+    if (body.decision !== "use_hosted" && body.decision !== "use_local")
+      return "decision must be use_hosted or use_local.";
+  }
   if (action === "update-record") {
     if (
       !requiredString(body, "kind") ||
