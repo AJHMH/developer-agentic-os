@@ -50,6 +50,9 @@ export type LegacyMigrationResult = {
 
 export const LEGACY_MEMORY_DIR = ".memory";
 
+type LegacyFileReadResult =
+  { status: "loaded"; raw: unknown } | { status: "missing" } | { status: "malformed" };
+
 // Mapping from legacy .memory filenames to HostedRecordKind
 const LEGACY_FILE_MAP: Array<{
   file: string;
@@ -160,17 +163,13 @@ export async function preflight(
   const recognizedKindSet = new Set<HostedRecordKind>();
 
   // Read raw files (deduplicate per unique file path)
-  const rawFileCache = new Map<string, unknown>();
+  const rawFileCache = new Map<string, LegacyFileReadResult>();
   for (const { file } of LEGACY_FILE_MAP) {
     if (!rawFileCache.has(file)) {
-      const filePath = resolve(memoryPath, file);
-      if (!filePath.startsWith(memoryPath)) {
-        throw new Error("Invalid path");
-      }
-      try {
-        rawFileCache.set(file, await readJsonFile(filePath, null));
-      } catch {
-        rawFileCache.set(file, null);
+      const fileResult = await readLegacyJsonFile(memoryPath, file);
+      rawFileCache.set(file, fileResult);
+      if (fileResult.status === "malformed") {
+        quarantinedCount += 1;
         warnings.push(`File ${file} contains malformed JSON and will be quarantined.`);
       }
     }
@@ -196,9 +195,9 @@ export async function preflight(
 
   // Count records per mapping
   for (const { file, kind, extractor } of LEGACY_FILE_MAP) {
-    const raw = rawFileCache.get(file);
-    if (raw === null || raw === undefined) continue;
-    const records = extractor(raw);
+    const fileResult = rawFileCache.get(file);
+    if (!fileResult || fileResult.status !== "loaded") continue;
+    const records = extractor(fileResult.raw);
     let valid = 0;
     let quarantined = 0;
     for (const r of records) {
@@ -307,25 +306,17 @@ export async function executeMigration(
     };
   }
 
-  // Write idempotency marker BEFORE importing — retry-safe
-  await store.setLegacyMigrationMarker(userId, workspaceId, correlationId);
-
   const memoryPath = stats.path;
   const quarantined: QuarantinedRecord[] = [];
   const warnings: string[] = [];
 
   // Build migration package from .memory
-  const rawFileCache = new Map<string, unknown>();
+  const rawFileCache = new Map<string, LegacyFileReadResult>();
   for (const { file } of LEGACY_FILE_MAP) {
     if (!rawFileCache.has(file)) {
-      const filePath = resolve(memoryPath, file);
-      if (!filePath.startsWith(memoryPath)) {
-        throw new Error("Invalid path");
-      }
-      try {
-        rawFileCache.set(file, await readJsonFile(filePath, null));
-      } catch {
-        rawFileCache.set(file, null);
+      const fileResult = await readLegacyJsonFile(memoryPath, file);
+      rawFileCache.set(file, fileResult);
+      if (fileResult.status === "malformed") {
         quarantined.push({
           kind: "unknown",
           reason: "File contains malformed JSON",
@@ -359,9 +350,9 @@ export async function executeMigration(
   // Build records map
   const records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>> = {};
   for (const { file, kind, extractor } of LEGACY_FILE_MAP) {
-    const raw = rawFileCache.get(file);
-    if (raw === null || raw === undefined) continue;
-    const items = extractor(raw);
+    const fileResult = rawFileCache.get(file);
+    if (!fileResult || fileResult.status !== "loaded") continue;
+    const items = extractor(fileResult.raw);
     const valid: Array<Record<string, unknown>> = [];
     for (const item of items) {
       if (isRecognizedRecord(item)) {
@@ -415,6 +406,10 @@ export async function executeMigration(
   let resumeFrom: string | undefined;
   let status: LegacyMigrationResult["status"] = "completed";
 
+  // Record the marker only after the migration package is prepared so malformed
+  // legacy input cannot permanently block a retry.
+  await store.setLegacyMigrationMarker(userId, workspaceId, correlationId);
+
   try {
     const result = await store.importMigration(userId, workspaceId, pkg);
     imported = result.imported;
@@ -456,4 +451,21 @@ function extractArrayFromField(raw: unknown, field: string): unknown[] {
 
 function isRecognizedRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readLegacyJsonFile(memoryPath: string, file: string): Promise<LegacyFileReadResult> {
+  const filePath = resolve(memoryPath, file);
+  if (!filePath.startsWith(memoryPath)) {
+    throw new Error("Invalid path");
+  }
+  try {
+    await access(filePath);
+  } catch {
+    return { status: "missing" };
+  }
+  try {
+    return { status: "loaded", raw: await readJsonFile(filePath, undefined) };
+  } catch {
+    return { status: "malformed" };
+  }
 }

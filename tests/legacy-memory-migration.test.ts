@@ -154,6 +154,25 @@ test("Issue #13 AC2: preflight on absent .memory returns detected=false cleanly"
   });
 });
 
+test("Issue #13 AC2: preflight quarantines malformed legacy JSON without aborting", async () => {
+  await withEnv(async ({ root, store }) => {
+    const ws = await store.createWorkspace("alice", "Malformed Preflight WS");
+
+    await seedLegacyMemory(root, {
+      extraFiles: [{ name: "work-items.json", content: "{not-json" }],
+    });
+
+    const report = await preflight(root, store, "alice", ws.id);
+    assert.equal(report.detected, true);
+    assert.equal(report.recognizedCount, 0);
+    assert.equal(report.quarantinedCount, 1);
+    assert.ok(
+      report.warnings.some((warning) => warning.includes("work-items.json")),
+      "Malformed known files must be reported in warnings"
+    );
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // AC3: Idempotency — second execute returns already_migrated, no duplicates
 // ─────────────────────────────────────────────────────────────────────────────
@@ -180,6 +199,19 @@ test("Issue #13 AC3: executeMigration is idempotent — second call returns alre
     // Verify no duplicates
     const records = await store.listRecords("alice", ws.id, "workItems");
     assert.equal(records.length, 1, "Only 1 record must exist after two migration calls");
+  });
+});
+
+test("Issue #13 AC3: setLegacyMigrationMarker only stores one marker per workspace", async () => {
+  await withEnv(async ({ store }) => {
+    const ws = await store.createWorkspace("alice", "Marker WS");
+
+    await store.setLegacyMigrationMarker("alice", ws.id, "corr-1");
+    await store.setLegacyMigrationMarker("alice", ws.id, "corr-2");
+
+    const markers = await store.listRecords("alice", ws.id, "legacyMigrations");
+    assert.equal(markers.length, 1, "Only one migration marker should be stored");
+    assert.equal((markers[0] as Record<string, unknown>).correlationId, "corr-1");
   });
 });
 
@@ -287,6 +319,20 @@ test("Issue #13 AC6: idempotency marker is written before import so retry resume
     const retry = await executeMigration(root, ws.id, repo.id, store, "alice");
     assert.equal(retry.status, "already_migrated");
     assert.equal(retry.imported, 0);
+  });
+});
+
+test("Issue #13 AC6: executeMigration does not write a marker when no legacy state exists", async () => {
+  await withEnv(async ({ root, store }) => {
+    const ws = await store.createWorkspace("alice", "No Legacy State WS");
+    const repo = await store.registerRepository("alice", ws.id, root);
+
+    const result = await executeMigration(root, ws.id, repo.id, store, "alice");
+    assert.equal(result.status, "completed");
+    assert.equal(result.imported, 0);
+
+    const marker = await store.getLegacyMigrationMarker("alice", ws.id);
+    assert.equal(marker, null, "No marker should be recorded when .memory is absent");
   });
 });
 
