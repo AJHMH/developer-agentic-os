@@ -583,8 +583,8 @@ test("Issue #13 AC8: legacy migration GET route requires repositoryId and resolv
   assert.equal(report.detected, true);
   assert.equal(report.recognizedCount, 1);
   assert.equal(
-    report.legacyMemoryPath.replace("/private", ""),
-    join(repositoryRootB, LEGACY_MEMORY_DIR).replace("/private", "")
+    report.legacyMemoryPath.replace(/^\/private/, ""),
+    join(repositoryRootB, LEGACY_MEMORY_DIR).replace(/^\/private/, "")
   );
 });
 
