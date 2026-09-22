@@ -11,7 +11,7 @@ This document defines the routing rules and thresholds for operational telemetry
 
 ## 2. Repeated Authorization Failures
 
-- **Metric:** `hosted_telemetry` with `event: "auth_failure"`.
+- **Metric:** `hosted_telemetry` with `event: "operational_failure"` and `code: "FORBIDDEN"`.
 - **Threshold:** > 50 occurrences in 10 minutes from a single `userId`.
 - **Routing:** Log to `#security-alerts` channel.
 - **Action:** Investigate potential brute-force or misconfigured automated bot. Consider rotating credentials or blocking IP via WAF.
