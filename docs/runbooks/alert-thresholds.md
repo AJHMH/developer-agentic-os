@@ -16,9 +16,9 @@ This document defines the routing rules and thresholds for operational telemetry
 - **Routing:** Log to `#security-alerts` channel.
 - **Action:** Investigate potential brute-force or misconfigured automated bot. Consider rotating credentials or blocking IP via WAF.
 
-## 3. Stuck Migrations
+## 3. Stuck or Quarantined Migrations
 
-- **Metric:** `hosted_telemetry` with `event: "migration_failure"` and `status: "partial"`.
+- **Metric:** `hosted_telemetry` with `event: "migration_failure"`.
 - **Threshold:** > 1 occurrence.
 - **Routing:** Log to `#ops-alerts`.
 - **Action:** Follow `docs/runbooks/migration-recovery.md` using the emitted `correlationId`.
