@@ -17,7 +17,9 @@ import {
   currentApiVersion,
   currentCorrelationId,
   runWithHostedContext,
+  hostedRequestContextStorage,
 } from "@/server/hosted-api/context";
+import { emitTelemetry } from "@/server/telemetry/logger";
 import { evaluateIdempotency, HostedIdempotencyStore } from "@/server/hosted-api/idempotency";
 
 export const migrationIncompleteResponse = {
@@ -81,6 +83,15 @@ export function formatHostedError(
   version: string = DEFAULT_API_VERSION,
   isVersioned: boolean = true
 ): NextResponse {
+  const createAndEmit = (options: Parameters<typeof createHostedErrorResponse>[0]) => {
+    emitTelemetry("operational_failure", {
+      code: options.code,
+      message: error instanceof Error ? error.message : options.message,
+      error,
+      correlationId,
+    });
+    return createHostedErrorResponse(options);
+  };
   if (!isVersioned) {
     let legacyResponse: NextResponse;
     if (error instanceof AuthError) {
@@ -92,7 +103,7 @@ export function formatHostedError(
   }
 
   if (error instanceof AuthError) {
-    return createHostedErrorResponse({
+    return createAndEmit({
       code: "UNAUTHENTICATED",
       message: error.message,
       status: 401,
@@ -113,7 +124,7 @@ export function formatHostedError(
       CONFLICT: { status: 409, code: "CONFLICT", retryable: false },
     };
     const mapped = mapping[code] ?? { status: 400, code: "VALIDATION_ERROR", retryable: false };
-    return createHostedErrorResponse({
+    return createAndEmit({
       code: mapped.code,
       message: error.message,
       status: mapped.status,
@@ -134,7 +145,7 @@ export function formatHostedError(
       STALE: { status: 409, code: "STALE_STATE", retryable: true },
     };
     const mapped = mapping[code] ?? { status: 400, code: "VALIDATION_ERROR", retryable: false };
-    return createHostedErrorResponse({
+    return createAndEmit({
       code: mapped.code,
       message: error.message,
       status: mapped.status,
@@ -146,7 +157,7 @@ export function formatHostedError(
 
   const messages = errorMessages(error);
   if (messages.some((message) => /^Canonical .+ schema is not installed\.$/.test(message))) {
-    return createHostedErrorResponse({
+    return createAndEmit({
       code: "MIGRATION_INCOMPLETE",
       message: migrationIncompleteResponse.error,
       status: 409,
@@ -157,7 +168,7 @@ export function formatHostedError(
   }
 
   if (messages.some((message) => /^Hosted persistence requires\b/i.test(message))) {
-    return createHostedErrorResponse({
+    return createAndEmit({
       code: "PERSISTENCE_UNCONFIGURED",
       message: persistenceUnconfiguredResponse.error,
       status: 503,
@@ -175,7 +186,7 @@ export function formatHostedError(
         /could not connect/i.test(message)
     )
   ) {
-    return createHostedErrorResponse({
+    return createAndEmit({
       code: "PERSISTENCE_UNAVAILABLE",
       message: persistenceUnavailableResponse.error,
       status: 503,
@@ -186,7 +197,7 @@ export function formatHostedError(
   }
 
   if (messages.some((message) => /does not allow deterministic credentials/i.test(message))) {
-    return createHostedErrorResponse({
+    return createAndEmit({
       code: "PERSISTENCE_UNCONFIGURED",
       message: error instanceof Error ? error.message : "Missing configuration.",
       status: 500,
@@ -196,7 +207,7 @@ export function formatHostedError(
     });
   }
 
-  return createHostedErrorResponse({
+  return createAndEmit({
     code: "INTERNAL_ERROR",
     message: "An internal server error occurred.",
     status: 500,
@@ -263,6 +274,13 @@ export async function executeHostedRoute(
   return runWithHostedContext({ correlationId, apiVersion: version }, async () => {
     try {
       const identity = await authAdapter.authenticate(request);
+
+      const contextStore = hostedRequestContextStorage.getStore();
+      if (contextStore) {
+        contextStore.tenantId = identity.tenantId;
+        contextStore.userId = identity.userId;
+      }
+
       const workspaceStore = hostedWorkspaceStoreForTenant(identity.tenantId);
       await workspaceStore.recordIdentity(identity);
       const domainStore = hostedDomainStoreForTenant(identity.tenantId);
@@ -327,7 +345,8 @@ export async function executeHostedRoute(
 
       return nextResponse;
     } catch (error) {
-      return formatHostedError(error, correlationId, version, isVersioned);
+      const response = formatHostedError(error, correlationId, version, isVersioned);
+      return response;
     }
   });
 }

@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { readJsonFile, writeJsonFile } from "../local-store/json-file";
+import { emitTelemetry } from "@/server/telemetry/logger";
 import { withStateLock } from "../local-store/state-lock";
 import {
   HostedWorkspaceStore,
@@ -379,6 +380,14 @@ export class HostedDomainStore {
       provenance,
     };
     conflicts.syncConflicts.push(conflict as any);
+    emitTelemetry("sync_conflict", {
+      workspaceId,
+      targetKind,
+      targetRecordId,
+      reason,
+      hostedVersion,
+      status: "pending",
+    });
   }
 
   private nextServerSeq(state: HostedState, workspaceId: string): number {
@@ -1458,6 +1467,14 @@ export class HostedDomainStore {
         undefined,
         "allowed"
       );
+
+      emitTelemetry("sync_conflict", {
+        workspaceId,
+        targetKind: conflict.targetKind,
+        targetRecordId: conflict.targetRecordId,
+        decision,
+        status: "resolved",
+      });
 
       await this.write(state);
       return conflict;

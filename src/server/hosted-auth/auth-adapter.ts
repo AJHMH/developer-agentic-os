@@ -1,5 +1,6 @@
 import type { HostedIdentity } from "@/types/hosted-workspace";
 import { auth, verifyToken } from "@clerk/nextjs/server";
+import { emitTelemetry } from "@/server/telemetry/logger";
 
 export class AuthError extends Error {
   constructor(
@@ -8,6 +9,7 @@ export class AuthError extends Error {
   ) {
     super(message);
     this.name = "AuthError";
+    emitTelemetry("auth_failure", { message });
   }
 }
 

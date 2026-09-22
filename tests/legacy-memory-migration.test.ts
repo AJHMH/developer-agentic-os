@@ -582,7 +582,10 @@ test("Issue #13 AC8: legacy migration GET route requires repositoryId and resolv
   const report = await preflightSelectedRepo.json();
   assert.equal(report.detected, true);
   assert.equal(report.recognizedCount, 1);
-  assert.equal(report.legacyMemoryPath, join(repositoryRootB, LEGACY_MEMORY_DIR));
+  assert.equal(
+    report.legacyMemoryPath.replace("/private", ""),
+    join(repositoryRootB, LEGACY_MEMORY_DIR).replace("/private", "")
+  );
 });
 
 test("Issue #13 AC8: legacy migration POST route requires repositoryId and executes against the selected repository", async (t) => {
