@@ -1,5 +1,6 @@
 import type { HostedIdentity } from "@/types/hosted-workspace";
-import { auth } from "@clerk/nextjs/server";
+import { auth, verifyToken } from "@clerk/nextjs/server";
+import { emitTelemetry } from "@/server/telemetry/logger";
 
 export class AuthError extends Error {
   constructor(
@@ -8,6 +9,7 @@ export class AuthError extends Error {
   ) {
     super(message);
     this.name = "AuthError";
+    emitTelemetry("auth_failure", { message });
   }
 }
 
@@ -26,6 +28,61 @@ export class UnconfiguredHostedTokenVerifier implements HostedTokenVerifier {
       "UNAUTHENTICATED",
       "No hosted token verifier is configured for this deployment."
     );
+  }
+}
+
+export class ClerkTokenVerifier implements HostedTokenVerifier {
+  constructor(
+    private readonly verifyFn: typeof verifyToken = verifyToken,
+    private readonly secretKey = process.env.CLERK_SECRET_KEY
+  ) {}
+
+  async verify(token: string): Promise<HostedIdentity | null> {
+    if (!this.secretKey) {
+      throw new AuthError(
+        "UNAUTHENTICATED",
+        "CLERK_SECRET_KEY is required to verify hosted authentication tokens."
+      );
+    }
+    try {
+      const claims = await this.verifyFn(token, { secretKey: this.secretKey });
+      if (!claims || typeof claims !== "object" || !claims.sub) {
+        return null;
+      }
+      const rawClaims = claims as Record<string, unknown>;
+      const orgId =
+        (typeof claims.org_id === "string" && claims.org_id) ||
+        (typeof rawClaims.orgId === "string" && rawClaims.orgId) ||
+        undefined;
+      if (!orgId) {
+        throw new AuthError(
+          "UNAUTHENTICATED",
+          "Select an organization before opening the hosted application."
+        );
+      }
+      const orgRole =
+        typeof claims.org_role === "string"
+          ? claims.org_role
+          : typeof rawClaims.orgRole === "string"
+            ? rawClaims.orgRole
+            : undefined;
+      const displayName =
+        typeof rawClaims.first_name === "string"
+          ? rawClaims.first_name
+          : typeof rawClaims.name === "string"
+            ? rawClaims.name
+            : claims.sub;
+
+      return {
+        userId: claims.sub,
+        tenantId: orgId,
+        displayName,
+        ...(orgRole === "org:admin" || orgRole === "org:member" ? { orgRole } : {}),
+      };
+    } catch (error) {
+      if (error instanceof AuthError) throw error;
+      throw new AuthError("UNAUTHENTICATED", "Invalid or expired authentication token.");
+    }
   }
 }
 
@@ -90,12 +147,34 @@ const tokenAuthAdapter = new TokenAuthAdapter(new UnconfiguredHostedTokenVerifie
 const clerkAuthAdapter = new ClerkAuthAdapter();
 
 export const authAdapter: AuthAdapter = {
-  authenticate(request) {
-    return (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") &&
-      process.env.HOSTED_AUTH_FIXTURE_MODE === "true"
-      ? new DeterministicAuthAdapter(true).authenticate(request)
-      : process.env.CLERK_SECRET_KEY
-        ? clerkAuthAdapter.authenticate(request)
-        : tokenAuthAdapter.authenticate(request);
+  async authenticate(request) {
+    const isFixtureMode =
+      (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") &&
+      process.env.HOSTED_AUTH_FIXTURE_MODE === "true";
+
+    if (isFixtureMode) {
+      return new DeterministicAuthAdapter(true).authenticate(request);
+    }
+
+    if (process.env.NODE_ENV === "production" && process.env.HOSTED_AUTH_FIXTURE_MODE === "true") {
+      throw new AuthError(
+        "UNAUTHENTICATED",
+        "Deterministic fixture authentication is rejected in production mode."
+      );
+    }
+
+    const authHeader = request.headers.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      if (process.env.CLERK_SECRET_KEY) {
+        return new TokenAuthAdapter(new ClerkTokenVerifier()).authenticate(request);
+      }
+      return tokenAuthAdapter.authenticate(request);
+    }
+
+    if (process.env.CLERK_SECRET_KEY) {
+      return clerkAuthAdapter.authenticate(request);
+    }
+
+    return tokenAuthAdapter.authenticate(request);
   },
 };

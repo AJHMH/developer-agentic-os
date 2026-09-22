@@ -23,6 +23,7 @@ export type HostedErrorCode =
   | "PERSISTENCE_UNAVAILABLE"
   | "PERSISTENCE_UNCONFIGURED"
   | "MIGRATION_INCOMPLETE"
+  | "FEATURE_DISABLED"
   | "INTERNAL_ERROR";
 
 export type HostedErrorEnvelope = {

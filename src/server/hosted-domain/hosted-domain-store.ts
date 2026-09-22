@@ -3,16 +3,15 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { readJsonFile, writeJsonFile } from "../local-store/json-file";
+import { emitTelemetry } from "@/server/telemetry/logger";
 import { withStateLock } from "../local-store/state-lock";
 import {
   HostedWorkspaceStore,
   hostedWorkspaceStoreForTenant,
 } from "../hosted-workspaces/hosted-workspace-store";
-import {
-  LocalHostedObjectStore,
-  RejectingHostedObjectStore,
-  type HostedObjectStore,
-} from "./hosted-object-store";
+import { LocalHostedObjectStore, type HostedObjectStore } from "./hosted-object-store";
+import { NeonHostedObjectStore } from "./neon-hosted-object-store";
+import { assertHostedInternalOwnerEnabled } from "../hosted-flags/feature-flags";
 import {
   DeterministicLocalStoreExportAdapter,
   type LocalStoreExportAdapter,
@@ -38,7 +37,11 @@ export type HostedRecordKind =
   | "automationRuns"
   | "approvals"
   | "artifacts"
-  | "skillRuns";
+  | "skillRuns"
+  | "audit"
+  | "syncConflicts"
+  | "legacyMigrations";
+
 export type ConnectorCapability = "git.read" | "filesystem.read" | "filesystem.write";
 export type Freshness = "fresh" | "stale";
 
@@ -75,6 +78,21 @@ export type HostedConnector = {
   repositoryIds: string[];
   capabilities: Record<string, HostedCapabilityGrant[]>;
 };
+export type RetainedRecordVersion = {
+  version: number;
+  value: Record<string, unknown>;
+  supersededAt: string;
+  reason: "mutation" | "sync_replace" | "domain_merge" | "concurrent_conflict";
+  provenance: {
+    source: "hosted" | "local-connector" | "migration";
+    actorId?: string;
+    connectorId?: string;
+    clientTimestamp?: string;
+    serverSeq?: number;
+    at?: string;
+  };
+};
+
 export type HostedSnapshot = {
   id: string;
   connectorId: string;
@@ -84,6 +102,8 @@ export type HostedSnapshot = {
   publishedAt: string;
   sourceCommit: string | null;
   data: Record<string, unknown>;
+  version?: number;
+  serverSeq?: number;
 };
 export type HostedCredentialMetadata = {
   id: string;
@@ -140,6 +160,35 @@ export type ProviderApproval = {
   evidenceSnapshotId?: string;
 };
 
+export type HostedSyncConflict = {
+  id: string;
+  workspaceId: string;
+  targetKind: HostedRecordKind;
+  targetRecordId: string;
+  reason: string;
+  status: "pending" | "resolved";
+  hostedVersion: number;
+  hostedRecord: any;
+  localRecord: any;
+  resolution?: {
+    resolvedAt: string;
+    resolvedBy: string;
+    decision: "use_hosted" | "use_local";
+  };
+  createdAt: string;
+  version?: number;
+  serverSeq?: number;
+  serverCreatedAt?: string;
+  serverUpdatedAt?: string;
+  provenance?: any;
+};
+
+export type HostedMergedAuditEvent = HostedAudit & {
+  source: "hosted" | "local";
+  ingestedAt?: string;
+  orderingRationale: string;
+};
+
 type HostedRecordMap = Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>;
 export type HostedState = {
   repositories: Record<string, HostedRepository[]>;
@@ -152,6 +201,7 @@ export type HostedState = {
   vercelProject?: HostedVercelProjectMapping | null;
   vercelProjectHistory?: HostedVercelProjectMapping[];
   githubRepositories?: HostedGitHubRepositoryRegistration[];
+  sequences?: Record<string, number>;
 };
 
 const emptyState = (): HostedState => ({
@@ -165,6 +215,7 @@ const emptyState = (): HostedState => ({
   vercelProject: null,
   vercelProjectHistory: [],
   githubRepositories: [],
+  sequences: {},
 });
 
 export interface HostedStateProvider {
@@ -216,7 +267,8 @@ export class DeterministicJsonHostedStateProvider implements HostedStateProvider
 
 export class HostedDomainError extends Error {
   constructor(
-    readonly code: "FORBIDDEN" | "NOT_FOUND" | "INVALID" | "STALE",
+    readonly code:
+      "FORBIDDEN" | "NOT_FOUND" | "INVALID" | "STALE" | "FEATURE_DISABLED" | "CONFLICT",
     message: string
   ) {
     super(message);
@@ -237,9 +289,31 @@ export class HostedDomainStore {
     ),
     private readonly secretStore: ProtectedSecretStore = new DeterministicProtectedSecretStore(),
     private readonly tenantId = "legacy"
-  ) {}
+  ) {
+    if (process.env.NODE_ENV === "production" && !isHostedJsonFixtureMode()) {
+      if (provider instanceof DeterministicJsonHostedStateProvider) {
+        throw new HostedDomainError(
+          "INVALID",
+          "Production mode cannot select deterministic fixture persistence."
+        );
+      }
+      if (objectStore instanceof LocalHostedObjectStore) {
+        throw new HostedDomainError(
+          "INVALID",
+          "Production mode cannot select local object storage."
+        );
+      }
+      if (secretStore instanceof DeterministicProtectedSecretStore) {
+        throw new HostedDomainError(
+          "INVALID",
+          "Production mode cannot select deterministic secret storage."
+        );
+      }
+    }
+  }
 
   async createWorkspace(userId: string, name: string) {
+    assertHostedInternalOwnerEnabled();
     return this.workspaceStore.create(userId, name);
   }
 
@@ -270,11 +344,155 @@ export class HostedDomainStore {
     });
   }
 
+  private recordSyncConflict(
+    state: HostedState,
+    workspaceId: string,
+    targetKind: HostedRecordKind,
+    targetRecordId: string,
+    hostedVersion: number,
+    hostedRecord: any,
+    localRecord: any,
+    provenance: any,
+    reason: string
+  ): void {
+    const conflicts = state.records[workspaceId] ?? {};
+    conflicts.syncConflicts ??= [];
+    state.records[workspaceId] = conflicts;
+
+    const serverSeq = this.nextServerSeq(state, workspaceId);
+    const now = new Date().toISOString();
+
+    const conflict: HostedSyncConflict = {
+      id: randomUUID(),
+      workspaceId,
+      targetKind,
+      targetRecordId,
+      reason,
+      status: "pending",
+      hostedVersion,
+      hostedRecord: this.cloneRecordForHistory(hostedRecord),
+      localRecord: { ...localRecord },
+      createdAt: now,
+      version: 1,
+      serverSeq,
+      serverCreatedAt: now,
+      serverUpdatedAt: now,
+      provenance,
+    };
+    conflicts.syncConflicts.push(conflict as any);
+    emitTelemetry("sync_conflict", {
+      workspaceId,
+      targetKind,
+      targetRecordId,
+      reason,
+      hostedVersion,
+      status: "pending",
+    });
+  }
+
+  private nextServerSeq(state: HostedState, workspaceId: string): number {
+    state.sequences ??= {};
+    let max = state.sequences[workspaceId] ?? 0;
+    if (max === 0) {
+      const records = state.records[workspaceId] ?? {};
+      for (const list of Object.values(records)) {
+        if (!Array.isArray(list)) continue;
+        for (const item of list) {
+          if (typeof item.serverSeq === "number" && item.serverSeq > max) {
+            max = item.serverSeq;
+          }
+        }
+      }
+      const snapshots = state.snapshots[workspaceId] ?? [];
+      for (const item of snapshots) {
+        if (typeof item.serverSeq === "number" && item.serverSeq > max) {
+          max = item.serverSeq;
+        }
+      }
+    }
+    const next = max + 1;
+    state.sequences[workspaceId] = next;
+    return next;
+  }
+
+  private cloneRecordForHistory(record: Record<string, unknown>): Record<string, unknown> {
+    const { supersededVersions: _supersededVersions, ...rest } = record;
+    return JSON.parse(JSON.stringify(rest));
+  }
+
+  private attemptDomainMerge(
+    kind: HostedRecordKind,
+    existing: Record<string, unknown>,
+    incomingUpdates: Record<string, unknown>,
+    baseVersion: number
+  ): { merged: boolean; updates: Record<string, unknown> } {
+    if (kind !== "workItems") {
+      return { merged: false, updates: {} };
+    }
+
+    const superseded = Array.isArray(existing.supersededVersions)
+      ? (existing.supersededVersions as Array<{ version: number; value: Record<string, unknown> }>)
+      : [];
+    const baseSnapshot = superseded.find((v) => v.version === baseVersion)?.value;
+
+    const mergedUpdates: Record<string, unknown> = {};
+    const ignoredKeys = new Set([
+      "id",
+      "workspaceId",
+      "createdAt",
+      "updatedAt",
+      "version",
+      "baseVersion",
+      "serverSeq",
+      "serverCreatedAt",
+      "serverUpdatedAt",
+      "provenance",
+      "supersededVersions",
+    ]);
+
+    for (const [key, incomingVal] of Object.entries(incomingUpdates)) {
+      if (ignoredKeys.has(key)) continue;
+      const existingVal = existing[key];
+
+      if (JSON.stringify(incomingVal) === JSON.stringify(existingVal)) {
+        continue;
+      }
+
+      if (baseSnapshot) {
+        const baseVal = baseSnapshot[key];
+        if (JSON.stringify(existingVal) === JSON.stringify(baseVal)) {
+          mergedUpdates[key] = incomingVal;
+          continue;
+        }
+        if (JSON.stringify(incomingVal) === JSON.stringify(baseVal)) {
+          continue;
+        }
+        return { merged: false, updates: {} };
+      } else {
+        if (existingVal !== undefined && existingVal !== null) {
+          return { merged: false, updates: {} };
+        }
+        mergedUpdates[key] = incomingVal;
+      }
+    }
+
+    return { merged: true, updates: mergedUpdates };
+  }
+
   async putRecord(
     userId: string,
     workspaceId: string,
     kind: HostedRecordKind,
-    value: Record<string, unknown>
+    value: Record<string, unknown>,
+    options?: {
+      provenance?: {
+        source?: "hosted" | "local-connector" | "migration";
+        connectorId?: string;
+        clientTimestamp?: string;
+      };
+      status?: string;
+      syncStatus?: string;
+    }
   ): Promise<Record<string, unknown> & { id: string }> {
     return this.withMutationLock(async () => {
       const state = await this.read();
@@ -287,11 +505,35 @@ export class HostedDomainStore {
         return existing as Record<string, unknown> & { id: string };
       const storedValue =
         kind === "artifacts" && "content" in value ? await this.externalizeArtifact(value) : value;
+      const serverSeq = this.nextServerSeq(state, workspaceId);
+      const now = new Date().toISOString();
+      const version = typeof storedValue.version === "number" ? storedValue.version : 1;
       const record = {
         ...storedValue,
-        id: randomUUID(),
+        id:
+          typeof storedValue.id === "string" && isUuid(storedValue.id)
+            ? storedValue.id
+            : randomUUID(),
         workspaceId,
-        createdAt: new Date().toISOString(),
+        version,
+        serverSeq,
+        createdAt: typeof storedValue.createdAt === "string" ? storedValue.createdAt : now,
+        serverCreatedAt: now,
+        serverUpdatedAt: now,
+        provenance: {
+          source:
+            options?.provenance?.source ?? (storedValue.provenance as any)?.source ?? "hosted",
+          actorId: userId,
+          connectorId:
+            options?.provenance?.connectorId ?? (storedValue.provenance as any)?.connectorId,
+          clientTimestamp:
+            options?.provenance?.clientTimestamp ??
+            (typeof storedValue.updatedAt === "string" ? storedValue.updatedAt : undefined),
+          serverSeq,
+        },
+        supersededVersions: Array.isArray(storedValue.supersededVersions)
+          ? storedValue.supersededVersions
+          : [],
       };
       list.push(record);
       await this.auditEvent(state, userId, workspaceId, `${kind}.created`, record.id);
@@ -305,7 +547,15 @@ export class HostedDomainStore {
     workspaceId: string,
     kind: HostedRecordKind,
     recordId: string,
-    updates: Record<string, unknown>
+    updates: Record<string, unknown>,
+    options?: {
+      baseVersion?: number;
+      provenance?: {
+        source?: "hosted" | "local-connector" | "migration";
+        connectorId?: string;
+        clientTimestamp?: string;
+      };
+    }
   ): Promise<Record<string, unknown>> {
     return this.withMutationLock(async () => {
       const state = await this.read();
@@ -315,18 +565,111 @@ export class HostedDomainStore {
       const index = list.findIndex((item) => item.id === recordId);
       if (index === -1) throw new HostedDomainError("NOT_FOUND", `${kind} record not found.`);
       const existing = list[index];
+
+      const currentVersion = typeof existing.version === "number" ? existing.version : 1;
+      const baseVersion = options?.baseVersion;
+      const now = new Date().toISOString();
+      const serverSeq = this.nextServerSeq(state, workspaceId);
+
+      const previousSnapshot = this.cloneRecordForHistory(existing);
+      const supersededVersions = Array.isArray(existing.supersededVersions)
+        ? [...existing.supersededVersions]
+        : [];
+
+      let mergeReason: "mutation" | "domain_merge" | "concurrent_conflict" = "mutation";
+      let resolvedUpdates = { ...updates };
+
+      if (baseVersion !== undefined && baseVersion !== currentVersion) {
+        const mergeResult = this.attemptDomainMerge(kind, existing, updates, baseVersion);
+        if (mergeResult.merged) {
+          mergeReason = "domain_merge";
+          resolvedUpdates = mergeResult.updates;
+        } else {
+          this.recordSyncConflict(
+            state,
+            workspaceId,
+            kind,
+            recordId,
+            currentVersion,
+            existing,
+            { ...updates, id: recordId, workspaceId },
+            {
+              source: options?.provenance?.source ?? "local-connector",
+              actorId: userId,
+              connectorId: options?.provenance?.connectorId,
+              clientTimestamp: options?.provenance?.clientTimestamp,
+              serverSeq,
+            } as any,
+            "concurrent_conflict"
+          );
+          await this.auditEvent(state, userId, workspaceId, `${kind}.conflict_recorded`, recordId);
+          await this.write(state);
+          return existing;
+        }
+      }
+
+      supersededVersions.push({
+        version: currentVersion,
+        value: previousSnapshot,
+        supersededAt: now,
+        reason: mergeReason,
+        provenance: (existing.provenance as any) ?? {
+          source: "hosted",
+          actorId: userId,
+          serverSeq: existing.serverSeq ?? serverSeq,
+          at: existing.updatedAt ?? existing.createdAt ?? now,
+        },
+      });
+
+      const nextVersion = currentVersion + 1;
       const updated = {
         ...existing,
-        ...updates,
+        ...resolvedUpdates,
         id: recordId,
         workspaceId,
-        updatedAt: new Date().toISOString(),
+        version: nextVersion,
+        serverSeq,
+        updatedAt: now,
+        serverUpdatedAt: now,
+        provenance: {
+          source: options?.provenance?.source ?? "hosted",
+          actorId: userId,
+          connectorId: options?.provenance?.connectorId,
+          clientTimestamp: options?.provenance?.clientTimestamp,
+          serverSeq,
+        },
+        supersededVersions,
       };
       list[index] = updated;
       await this.auditEvent(state, userId, workspaceId, `${kind}.updated`, recordId);
       await this.write(state);
       return updated;
     });
+  }
+
+  async getRecordHistory(
+    userId: string,
+    workspaceId: string,
+    kind: HostedRecordKind,
+    recordId: string
+  ): Promise<{
+    current: Record<string, unknown>;
+    supersededVersions: RetainedRecordVersion[];
+  }> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    const records = state.records[workspaceId]?.[kind] ?? [];
+    const record = records.find((item) => item.id === recordId);
+    if (!record) {
+      throw new HostedDomainError("NOT_FOUND", `${kind} record not found.`);
+    }
+    const { supersededVersions = [], ...current } = record;
+    return {
+      current,
+      supersededVersions: Array.isArray(supersededVersions)
+        ? (supersededVersions as RetainedRecordVersion[])
+        : [],
+    };
   }
 
   async listRecords(
@@ -338,11 +681,87 @@ export class HostedDomainStore {
     await this.assertWorkspace(userId, workspaceId);
     return state.records[workspaceId]?.[kind] ?? [];
   }
+
+  async getArtifact(
+    userId: string,
+    workspaceId: string,
+    artifactId: string
+  ): Promise<Record<string, unknown> | null> {
+    assertHostedInternalOwnerEnabled();
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    const artifacts = state.records[workspaceId]?.artifacts ?? [];
+    const record = artifacts.find((a) => a.id === artifactId);
+    if (!record) return null;
+    if (typeof record.objectReference === "string") {
+      const bytes = await this.objectStore.get(record.objectReference);
+      let content: unknown;
+      try {
+        content = JSON.parse(Buffer.from(bytes).toString("utf8"));
+      } catch {
+        content = Buffer.from(bytes).toString("utf8");
+      }
+      return {
+        ...record,
+        content,
+      };
+    }
+    return record;
+  }
+
+  async listSyncConflicts(userId: string, workspaceId: string): Promise<HostedSyncConflict[]> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    return (state.records[workspaceId]?.syncConflicts || []) as HostedSyncConflict[];
+  }
+
   async listAllRecords(userId: string, workspaceId: string): Promise<HostedRecordMap> {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
     return state.records[workspaceId] ?? {};
   }
+
+  async getLegacyMigrationMarker(userId: string, workspaceId: string): Promise<string | null> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+    if (!isUuid(workspaceId)) {
+      throw new HostedDomainError("INVALID", "Invalid workspace id.");
+    }
+    const markers = (state.records[workspaceId]?.legacyMigrations ?? []) as Array<{
+      correlationId: string;
+    }>;
+    return markers.length > 0 ? markers[0].correlationId : null;
+  }
+
+  async setLegacyMigrationMarker(
+    userId: string,
+    workspaceId: string,
+    correlationId: string
+  ): Promise<void> {
+    await this.withMutationLock(async () => {
+      const state = await this.read();
+      await this.assertWorkspace(userId, workspaceId);
+      if (!isUuid(workspaceId)) {
+        throw new HostedDomainError("INVALID", "Invalid workspace id.");
+      }
+      const records =
+        state.records[workspaceId] ??
+        (state.records[workspaceId] = Object.create(null) as HostedRecordMap);
+      records.legacyMigrations ??= [];
+      // Idempotent — only write if no marker exists for this workspace at all
+      if (records.legacyMigrations.length > 0) return;
+
+      (records.legacyMigrations as Array<Record<string, unknown>>).push({
+        id: correlationId,
+        correlationId,
+        markedAt: new Date().toISOString(),
+        workspaceId,
+      });
+      await this.auditEvent(state, userId, workspaceId, "legacy.migration.marked");
+      await this.write(state);
+    });
+  }
+
   async listRepositories(userId: string, workspaceId: string): Promise<HostedRepository[]> {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
@@ -581,7 +1000,7 @@ export class HostedDomainStore {
   ): Promise<HostedConnector> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector: HostedConnector = {
         id: randomUUID(),
         workspaceId,
@@ -606,7 +1025,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       this.assertConnectorRepository(state, connector, workspaceId, repositoryId);
       if (!connector.repositoryIds.includes(repositoryId))
@@ -631,7 +1050,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       this.assertConnectorRepository(state, connector, workspaceId, repositoryId);
       connector.repositoryIds = connector.repositoryIds.filter((id) => id !== repositoryId);
@@ -658,7 +1077,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       this.assertConnectorRepository(state, connector, workspaceId, repositoryId);
       if (capability !== "git.read" && (!skillId?.trim() || !allowedPaths?.length))
@@ -697,7 +1116,7 @@ export class HostedDomainStore {
   async revokeConnector(userId: string, workspaceId: string, connectorId: string): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       if (connector.workspaceId !== workspaceId)
         throw new HostedDomainError("FORBIDDEN", "Connector access denied.");
@@ -716,7 +1135,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       this.assertConnectorRepository(state, connector, workspaceId, repositoryId);
       const grants = connector.capabilities[repositoryId] ?? [];
@@ -742,7 +1161,7 @@ export class HostedDomainStore {
   ): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       if (connector.workspaceId !== workspaceId)
         throw new HostedDomainError("FORBIDDEN", "Connector access denied.");
@@ -760,7 +1179,7 @@ export class HostedDomainStore {
   ): Promise<HostedConnector> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const connector = this.connector(state, connectorId);
       if (connector.workspaceId !== workspaceId || connector.state === "revoked")
         throw new HostedDomainError("FORBIDDEN", "Connector cannot be reconnected.");
@@ -829,17 +1248,22 @@ export class HostedDomainStore {
         "git.read"
       );
       if (connector instanceof HostedDomainError) return { error: connector };
+      const serverSeq = this.nextServerSeq(state, workspaceId);
+      const snapshots = state.snapshots[workspaceId] ?? (state.snapshots[workspaceId] = []);
+      const repoSnapshots = snapshots.filter((item) => item.repositoryId === repositoryId);
+      const version = repoSnapshots.length + 1;
       const snapshot: HostedSnapshot = {
         id: randomUUID(),
         connectorId: connector.id,
         repositoryId,
         source: "local-connector",
         freshness: "fresh",
+        version,
+        serverSeq,
         publishedAt: new Date().toISOString(),
         sourceCommit: typeof data.commit === "string" ? data.commit : null,
         data,
       };
-      const snapshots = state.snapshots[workspaceId] ?? (state.snapshots[workspaceId] = []);
       snapshots
         .filter((item) => item.repositoryId === repositoryId)
         .forEach((item) => {
@@ -898,20 +1322,447 @@ export class HostedDomainStore {
       const connector = this.connector(state, connectorId);
       if (connector.workspaceId !== workspaceId || connector.state !== "connected")
         throw new HostedDomainError("FORBIDDEN", "Connector is not connected.");
-      const pending = (state.records[workspaceId]?.automationRuns ?? []).filter(
+
+      let resumedCount = 0;
+      const now = new Date().toISOString();
+
+      const pendingRuns = (state.records[workspaceId]?.automationRuns ?? []).filter(
         (record) =>
           record.status === "pending_offline" &&
-          typeof record.repositoryId === "string" &&
-          connector.repositoryIds.includes(record.repositoryId)
+          (typeof record.repositoryId !== "string" ||
+            connector.repositoryIds.includes(record.repositoryId))
       );
-      for (const record of pending) {
+      for (const record of pendingRuns) {
         record.status = "queued";
-        record.resumedAt = new Date().toISOString();
+        record.resumedAt = now;
+        resumedCount++;
       }
-      if (pending.length)
+
+      const records = state.records[workspaceId] ?? {};
+      for (const [kind, list] of Object.entries(records)) {
+        if (kind === "automationRuns" || !Array.isArray(list)) continue;
+        for (const item of list) {
+          if (
+            (item.status === "pending_offline" || item.syncStatus === "pending_offline") &&
+            (typeof item.repositoryId !== "string" ||
+              connector.repositoryIds.includes(item.repositoryId))
+          ) {
+            if (item.status === "pending_offline") {
+              item.status = "open";
+            }
+            item.syncStatus = "applied";
+            item.resumedAt = now;
+            item.serverUpdatedAt = now;
+            resumedCount++;
+          }
+        }
+      }
+
+      if (resumedCount > 0)
         await this.auditEvent(state, userId, workspaceId, "local-work.resumed", connectorId);
       await this.write(state);
-      return pending.length;
+      return resumedCount;
+    });
+  }
+
+  async resolveSyncConflict(
+    userId: string,
+    workspaceId: string,
+    conflictId: string,
+    decision: "use_hosted" | "use_local",
+    options?: { approvalId?: string; expectedVersion?: number }
+  ): Promise<HostedSyncConflict> {
+    return this.withMutationLock(async () => {
+      const _workspace = await this.assertWorkspace(userId, workspaceId, "admin");
+      const state = await this.read();
+      const conflicts = state.records[workspaceId]?.syncConflicts as
+        HostedSyncConflict[] | undefined;
+      if (!conflicts) throw new HostedDomainError("NOT_FOUND", "Conflict not found.");
+
+      const conflictIndex = conflicts.findIndex((c) => c.id === conflictId);
+      if (conflictIndex === -1) throw new HostedDomainError("NOT_FOUND", "Conflict not found.");
+
+      const conflict = conflicts[conflictIndex];
+      if (conflict.status === "resolved") {
+        throw new HostedDomainError("CONFLICT", "Conflict is already resolved.");
+      }
+
+      if (options?.expectedVersion !== undefined && conflict.version !== options.expectedVersion) {
+        throw new HostedDomainError("STALE", "Conflict version mismatch.");
+      }
+
+      // If the target record kind requires owner approval for mutation, we might need to consume an approval here.
+      // But updateRecord doesn't require owner approval directly, only specific things do.
+      // We will consume approval if provided, just to be safe, or leave it to standard action rules.
+      if (options?.approvalId) {
+        await await this.workspaceStore.consumeApproval(userId, workspaceId, options.approvalId, {
+          action: "sync.conflict.resolve" as any,
+          target: conflict.id,
+          version: String(conflict.version || 1),
+        });
+      }
+
+      const now = new Date().toISOString();
+      const serverSeq = this.nextServerSeq(state, workspaceId);
+
+      conflict.status = "resolved";
+      conflict.resolution = {
+        resolvedAt: now,
+        resolvedBy: userId,
+        decision,
+      };
+      conflict.version = (conflict.version || 1) + 1;
+      conflict.serverSeq = serverSeq;
+      conflict.serverUpdatedAt = now;
+
+      // If use_local, we need to update the actual record
+      if (decision === "use_local") {
+        const targetList = state.records[workspaceId]?.[conflict.targetKind];
+        if (targetList) {
+          const targetIndex = targetList.findIndex((r) => r.id === conflict.targetRecordId);
+          if (targetIndex !== -1) {
+            const existing = targetList[targetIndex];
+            const supersededVersions = Array.isArray(existing.supersededVersions)
+              ? [...existing.supersededVersions]
+              : [];
+            supersededVersions.push({
+              version: typeof existing.version === "number" ? existing.version : 1,
+              value: this.cloneRecordForHistory(existing),
+              supersededAt: now,
+              reason: "sync_replace",
+              provenance: existing.provenance ?? {
+                source: "hosted",
+                serverSeq,
+                at: now,
+              },
+            });
+            targetList[targetIndex] = {
+              ...existing,
+              ...conflict.localRecord,
+              id: existing.id,
+              workspaceId,
+              version: (typeof existing.version === "number" ? existing.version : 1) + 1,
+              serverSeq,
+              updatedAt: now,
+              serverUpdatedAt: now,
+              supersededVersions,
+              provenance: {
+                source: "local-connector",
+                actorId: userId,
+                serverSeq,
+                at: now,
+              },
+            };
+          }
+        }
+      }
+
+      await this.auditEvent(
+        state,
+        userId,
+        workspaceId,
+        "sync.conflict.resolved",
+        conflict.id,
+        undefined,
+        undefined,
+        "allowed"
+      );
+
+      emitTelemetry("sync_conflict", {
+        workspaceId,
+        targetKind: conflict.targetKind,
+        targetRecordId: conflict.targetRecordId,
+        decision,
+        status: "resolved",
+      });
+
+      await this.write(state);
+      return conflict;
+    });
+  }
+
+  async syncRecords(
+    userId: string,
+    workspaceId: string,
+    connectorId: string,
+    input: {
+      repositoryId?: string;
+      isOffline?: boolean;
+      records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>;
+    }
+  ): Promise<{
+    synced: number;
+    pendingOffline: number;
+    conflicts: number;
+    records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>;
+  }> {
+    return this.withMutationLock(async () => {
+      const state = await this.read();
+      await this.assertWorkspace(userId, workspaceId);
+      const connector = this.connector(state, connectorId);
+      if (connector.workspaceId !== workspaceId) {
+        throw new HostedDomainError("FORBIDDEN", "Connector does not belong to workspace.");
+      }
+      if (input.repositoryId) {
+        this.assertRepositoryMembership(state, workspaceId, input.repositoryId);
+        if (!connector.repositoryIds.includes(input.repositoryId)) {
+          throw new HostedDomainError("FORBIDDEN", "Repository not granted to connector.");
+        }
+      }
+
+      const isOffline = Boolean(input.isOffline) || connector.state === "offline";
+      let syncedCount = 0;
+      let pendingOfflineCount = 0;
+      let conflictCount = 0;
+      const resultRecords: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>> = {};
+
+      const now = new Date().toISOString();
+      const recordsMap = state.records[workspaceId] ?? (state.records[workspaceId] = {});
+
+      for (const [kindKey, incomingList] of Object.entries(input.records ?? {})) {
+        const kind = kindKey as HostedRecordKind;
+        if (!Array.isArray(incomingList)) continue;
+        const list = recordsMap[kind] ?? (recordsMap[kind] = []);
+        resultRecords[kind] = [];
+
+        for (const item of incomingList) {
+          if (!isRecord(item)) continue;
+
+          if (isOffline) {
+            const serverSeq = this.nextServerSeq(state, workspaceId);
+            const pendingRecord = {
+              ...item,
+              id: typeof item.id === "string" && isUuid(item.id) ? item.id : randomUUID(),
+              workspaceId,
+              repositoryId: item.repositoryId ?? input.repositoryId,
+              status:
+                item.status === "pending_offline"
+                  ? "pending_offline"
+                  : (item.status ?? "pending_offline"),
+              syncStatus: "pending_offline",
+              version: typeof item.version === "number" ? item.version : 1,
+              serverSeq,
+              createdAt: typeof item.createdAt === "string" ? item.createdAt : now,
+              serverCreatedAt: now,
+              serverUpdatedAt: now,
+              provenance: {
+                source: "local-connector",
+                connectorId: connector.id,
+                offline: true,
+                clientTimestamp: typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                serverSeq,
+              },
+              supersededVersions: Array.isArray(item.supersededVersions)
+                ? item.supersededVersions
+                : [],
+            };
+            list.push(pendingRecord);
+            resultRecords[kind]!.push(pendingRecord);
+            pendingOfflineCount++;
+            continue;
+          }
+
+          const isAppendOnly =
+            kind === "incomingSignals" ||
+            kind === "artifacts" ||
+            kind === "skillRuns" ||
+            kind === "approvals" ||
+            kind === "audit";
+
+          const identity =
+            typeof item.externalId === "string" && item.externalId.trim()
+              ? item.externalId
+              : typeof item.id === "string" && item.id.trim()
+                ? item.id
+                : typeof item.sourceId === "string" && item.sourceId.trim()
+                  ? item.sourceId
+                  : null;
+
+          const existingIndex = identity
+            ? list.findIndex(
+                (existing) =>
+                  existing.id === identity ||
+                  existing.externalId === identity ||
+                  (kind === "incomingSignals" && existing.sourceId === identity)
+              )
+            : -1;
+
+          if (isAppendOnly) {
+            if (existingIndex !== -1) {
+              resultRecords[kind]!.push(list[existingIndex]);
+              syncedCount++;
+            } else {
+              const serverSeq = this.nextServerSeq(state, workspaceId);
+              const newRecord = {
+                ...item,
+                id: typeof item.id === "string" && isUuid(item.id) ? item.id : randomUUID(),
+                workspaceId,
+                version: 1,
+                serverSeq,
+                createdAt: typeof item.createdAt === "string" ? item.createdAt : now,
+                serverCreatedAt: now,
+                serverUpdatedAt: now,
+                provenance: {
+                  source: "local-connector",
+                  connectorId: connector.id,
+                  clientTimestamp: typeof item.createdAt === "string" ? item.createdAt : undefined,
+                  serverSeq,
+                },
+                supersededVersions: [],
+              };
+              list.push(newRecord);
+              resultRecords[kind]!.push(newRecord);
+              syncedCount++;
+            }
+          } else {
+            if (existingIndex === -1) {
+              const serverSeq = this.nextServerSeq(state, workspaceId);
+              const newRecord = {
+                ...item,
+                id: typeof item.id === "string" && isUuid(item.id) ? item.id : randomUUID(),
+                workspaceId,
+                version: 1,
+                serverSeq,
+                createdAt: typeof item.createdAt === "string" ? item.createdAt : now,
+                serverCreatedAt: now,
+                serverUpdatedAt: now,
+                provenance: {
+                  source: "local-connector",
+                  connectorId: connector.id,
+                  clientTimestamp: typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                  serverSeq,
+                },
+                supersededVersions: [],
+              };
+              list.push(newRecord);
+              resultRecords[kind]!.push(newRecord);
+              syncedCount++;
+            } else {
+              const existing = list[existingIndex];
+              const currentVersion = typeof existing.version === "number" ? existing.version : 1;
+              const baseVersion =
+                typeof item.baseVersion === "number"
+                  ? item.baseVersion
+                  : typeof item.version === "number"
+                    ? item.version
+                    : undefined;
+              const serverSeq = this.nextServerSeq(state, workspaceId);
+              const previousSnapshot = this.cloneRecordForHistory(existing);
+              const supersededVersions = Array.isArray(existing.supersededVersions)
+                ? [...existing.supersededVersions]
+                : [];
+
+              if (baseVersion !== undefined && baseVersion !== currentVersion) {
+                const mergeResult = this.attemptDomainMerge(kind, existing, item, baseVersion);
+                if (mergeResult.merged) {
+                  supersededVersions.push({
+                    version: currentVersion,
+                    value: previousSnapshot,
+                    supersededAt: now,
+                    reason: "domain_merge",
+                    provenance: (existing.provenance as any) ?? {
+                      source: "hosted",
+                      serverSeq,
+                      at: now,
+                    },
+                  });
+                  const updated = {
+                    ...existing,
+                    ...mergeResult.updates,
+                    version: currentVersion + 1,
+                    serverSeq,
+                    updatedAt: now,
+                    serverUpdatedAt: now,
+                    provenance: {
+                      source: "local-connector",
+                      connectorId: connector.id,
+                      clientTimestamp:
+                        typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                      serverSeq,
+                    },
+                    supersededVersions,
+                  };
+                  list[existingIndex] = updated;
+                  resultRecords[kind]!.push(updated);
+                  syncedCount++;
+                } else {
+                  this.recordSyncConflict(
+                    state,
+                    workspaceId,
+                    kind,
+                    existing.id as string,
+                    currentVersion,
+                    existing,
+                    { ...item, id: existing.id, workspaceId },
+                    {
+                      source: "local-connector",
+                      connectorId: connector.id,
+                      clientTimestamp:
+                        typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                      serverSeq,
+                    } as any,
+                    "concurrent_conflict"
+                  );
+                  resultRecords[kind]!.push(existing);
+                  conflictCount++;
+                }
+              } else {
+                supersededVersions.push({
+                  version: currentVersion,
+                  value: previousSnapshot,
+                  supersededAt: now,
+                  reason: "sync_replace",
+                  provenance: (existing.provenance as any) ?? {
+                    source: "hosted",
+                    serverSeq,
+                    at: now,
+                  },
+                });
+                const updated = {
+                  ...existing,
+                  ...item,
+                  id: existing.id,
+                  workspaceId,
+                  version: currentVersion + 1,
+                  serverSeq,
+                  updatedAt: now,
+                  serverUpdatedAt: now,
+                  provenance: {
+                    source: "local-connector",
+                    connectorId: connector.id,
+                    clientTimestamp:
+                      typeof item.updatedAt === "string" ? item.updatedAt : undefined,
+                    serverSeq,
+                  },
+                  supersededVersions,
+                };
+                list[existingIndex] = updated;
+                resultRecords[kind]!.push(updated);
+                syncedCount++;
+              }
+            }
+          }
+        }
+      }
+
+      await this.auditEvent(
+        state,
+        userId,
+        workspaceId,
+        "state.synced",
+        connectorId,
+        input.repositoryId,
+        undefined,
+        "allowed"
+      );
+      await this.write(state);
+
+      return {
+        synced: syncedCount,
+        pendingOffline: pendingOfflineCount,
+        conflicts: conflictCount,
+        records: resultRecords,
+      };
     });
   }
   async hostedSafeWork(
@@ -1042,7 +1893,7 @@ export class HostedDomainStore {
   async listConnectorStatus(userId: string, workspaceId: string): Promise<HostedConnector[]> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       let changed = false;
       for (const connector of state.connectors.filter((item) => item.workspaceId === workspaceId))
         if (connector.state === "connected" && Date.parse(connector.expiresAt) <= Date.now()) {
@@ -1091,7 +1942,7 @@ export class HostedDomainStore {
   ): Promise<HostedCredentialMetadata> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const secretReference = await this.secretStore.put(input.secret);
       const credential: HostedCredentialRecord = {
         id: randomUUID(),
@@ -1113,7 +1964,7 @@ export class HostedDomainStore {
   }
   async listCredentials(userId: string, workspaceId: string): Promise<HostedCredentialMetadata[]> {
     const state = await this.read();
-    await this.assertWorkspace(userId, workspaceId);
+    await this.assertWorkspace(userId, workspaceId, "admin");
     return state.credentials
       .filter((item) => item.workspaceId === workspaceId)
       .map((item) => this.publicCredential(item));
@@ -1121,7 +1972,7 @@ export class HostedDomainStore {
   async revokeCredential(userId: string, workspaceId: string, credentialId: string): Promise<void> {
     return this.withMutationLock(async () => {
       const state = await this.read();
-      await this.assertWorkspace(userId, workspaceId);
+      await this.assertWorkspace(userId, workspaceId, "admin");
       const credential = state.credentials.find(
         (item) => item.id === credentialId && item.workspaceId === workspaceId
       );
@@ -1132,10 +1983,57 @@ export class HostedDomainStore {
     });
   }
 
-  async exportBackup(userId: string, workspaceId: string): Promise<HostedBackup> {
+  async exportBackup(
+    userId: string,
+    workspaceId: string,
+    options?: { approvalId?: string; version?: string }
+  ): Promise<HostedBackup> {
+    const workspace = await this.assertWorkspace(userId, workspaceId);
+    const member = await this.workspaceStore.assertMember(userId, workspaceId);
+    if (member.role !== "owner") {
+      if (member.role !== "admin") {
+        throw new HostedDomainError(
+          "FORBIDDEN",
+          "This operation requires owner role or admin with owner approval."
+        );
+      }
+      const policy = await this.workspaceStore.getPolicy(userId, workspaceId);
+      if (policy.requireApprovalForExport) {
+        if (!options?.approvalId) {
+          throw new HostedDomainError(
+            "FORBIDDEN",
+            "Admins require owner approval to export full backup."
+          );
+        }
+        try {
+          await this.workspaceStore.consumeApproval(userId, workspaceId, options.approvalId, {
+            action: "domain.export_full",
+            target: workspaceId,
+            version: options?.version ?? String(workspace.createdAt || "v1"),
+          });
+        } catch (error) {
+          if (error instanceof Error && error.name === "HostedWorkspaceError") {
+            const err = error as unknown as { code: string; message: string };
+            if (err.code === "FORBIDDEN") {
+              throw new HostedDomainError("FORBIDDEN", err.message);
+            }
+            if (err.code === "NOT_FOUND") {
+              throw new HostedDomainError("NOT_FOUND", err.message);
+            }
+            if (err.code === "CONFLICT") {
+              throw new HostedDomainError("CONFLICT", err.message);
+            }
+            if (err.code === "STALE") {
+              throw new HostedDomainError("STALE", err.message);
+            }
+          }
+          throw error;
+        }
+      }
+    }
+
     return this.withMutationLock(async () => {
       const state = await this.read();
-      const workspace = await this.assertWorkspace(userId, workspaceId);
       if (this.normalizeExpiredConnectors(state, workspaceId)) await this.write(state);
       const credentials = state.credentials
         .filter((item) => item.workspaceId === workspaceId)
@@ -1226,6 +2124,9 @@ export class HostedDomainStore {
         if (!existing) repositories.push(target);
         if (repository.id) repositoryIds.set(repository.id, target.id);
       }
+      if (workspaceId === "__proto__" || workspaceId === "constructor") {
+        throw new HostedDomainError("INVALID", "Invalid workspace ID.");
+      }
       let imported = 0;
       const recordIds = new Map<string, string>();
       for (const [kind, records] of Object.entries(packageData.records)) {
@@ -1293,6 +2194,45 @@ export class HostedDomainStore {
       return { imported, warnings };
     });
   }
+
+  async mergedAudit(userId: string, workspaceId: string): Promise<HostedMergedAuditEvent[]> {
+    const state = await this.read();
+    await this.assertWorkspace(userId, workspaceId);
+
+    const hostedEvents: HostedMergedAuditEvent[] = state.audit
+      .filter((e) => e.workspaceId === workspaceId)
+      .map((e) => ({
+        ...e,
+        source: "hosted",
+        orderingRationale: "hosted_authoritative",
+      }));
+
+    const localAuditRecords = (state.records[workspaceId]?.["audit"] || []) as any[];
+    const localEvents: HostedMergedAuditEvent[] = localAuditRecords.map((r) => {
+      return {
+        id: r.id,
+        workspaceId: r.workspaceId,
+        userId: r.userId || r.actorId || "unknown",
+        action: r.action || "unknown",
+        occurredAt: r.occurredAt || r.createdAt || r.clientTimestamp || new Date(0).toISOString(),
+        subjectId: r.subjectId,
+        correlationId: r.correlationId,
+        source: "local",
+        ingestedAt: r.serverCreatedAt || r.serverUpdatedAt,
+        orderingRationale: "client_timestamp_best_effort",
+      };
+    });
+
+    return [...hostedEvents, ...localEvents].sort((a, b) => {
+      // Sort by occurredAt primarily, then ingestedAt if ties, then source
+      const timeA = a.occurredAt || a.ingestedAt || "";
+      const timeB = b.occurredAt || b.ingestedAt || "";
+      if (timeA !== timeB) return timeA.localeCompare(timeB);
+      if (a.source !== b.source) return a.source === "hosted" ? -1 : 1;
+      return a.id.localeCompare(b.id);
+    });
+  }
+
   async audit(userId: string, workspaceId: string): Promise<HostedAudit[]> {
     const state = await this.read();
     await this.assertWorkspace(userId, workspaceId);
@@ -1376,11 +2316,28 @@ export class HostedDomainStore {
   }
   private async assertWorkspace(
     userId: string,
-    workspaceId: string
+    workspaceId: string,
+    requiredLevel?: "member" | "admin" | "owner"
   ): Promise<import("@/types/hosted-workspace").HostedWorkspace> {
     const workspaces = await this.workspaceStore.list(userId);
     const workspace = workspaces.find((item) => item.id === workspaceId);
     if (!workspace) throw new HostedDomainError("NOT_FOUND", "Workspace not found.");
+
+    if (requiredLevel && requiredLevel !== "member") {
+      let role: import("@/types/hosted-workspace").WorkspaceRole | null = null;
+      if (typeof this.workspaceStore.getRole === "function") {
+        role = await this.workspaceStore.getRole(userId, workspaceId);
+      }
+      if (!role) {
+        role = workspace.ownerId === userId ? "owner" : "member";
+      }
+      if (requiredLevel === "owner" && role !== "owner") {
+        throw new HostedDomainError("FORBIDDEN", "This operation requires workspace owner role.");
+      }
+      if (requiredLevel === "admin" && role !== "owner" && role !== "admin") {
+        throw new HostedDomainError("FORBIDDEN", "This operation requires admin or owner role.");
+      }
+    }
     return workspace;
   }
   private workspaceOwner(workspaceId: string): Promise<string> {
@@ -1465,6 +2422,7 @@ export class HostedDomainStore {
   private async externalizeArtifact(
     value: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
+    assertHostedInternalOwnerEnabled();
     const content = value.content;
     const object = await this.objectStore.put(JSON.stringify(content), "application/json");
     const metadata = Object.fromEntries(Object.entries(value).filter(([key]) => key !== "content"));
@@ -1544,6 +2502,17 @@ export class HostedDomainStore {
 
 const tenantDomainStores = new Map<string, HostedDomainStore>();
 
+export function setHostedDomainStoreForTenant(
+  tenantId: string,
+  store: HostedDomainStore | null
+): void {
+  if (store) {
+    tenantDomainStores.set(tenantId, store);
+  } else {
+    tenantDomainStores.delete(tenantId);
+  }
+}
+
 export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore {
   const existing = tenantDomainStores.get(tenantId);
   if (existing) return existing;
@@ -1563,7 +2532,7 @@ export function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore 
       process.cwd(),
       workspaceStore,
       new NeonHostedStateProvider(tenantId),
-      new RejectingHostedObjectStore(),
+      new NeonHostedObjectStore(tenantId),
       undefined,
       secretStore,
       tenantId
@@ -1637,4 +2606,11 @@ function mergeRelationships(
     seen.add(key);
     return true;
   });
+}
+
+function isUuid(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  );
 }

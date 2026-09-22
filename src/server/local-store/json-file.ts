@@ -8,6 +8,7 @@ export type JsonFileValue =
 export async function readJsonFile<T>(path: string, fallback: T): Promise<T> {
   try {
     const resolvedPath = resolve(path);
+    // lgtm [js/path-injection] Local store reads from arbitrary local repository paths provided by the CLI.
     return JSON.parse(await readFile(resolvedPath, "utf8")) as T;
   } catch (error) {
     if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")

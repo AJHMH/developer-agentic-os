@@ -26,6 +26,8 @@ const views = [
   "snapshots",
   "connectors",
   "audit",
+  "record-history",
+  "sync-conflicts",
 ] as const;
 
 type HostedDomainBody = {
@@ -47,6 +49,9 @@ type HostedDomainBody = {
   notes?: unknown;
   priority?: unknown;
   dueAt?: unknown;
+  conflictId?: unknown;
+  decision?: unknown;
+  expectedVersion?: unknown;
   provider?: unknown;
   scopes?: unknown;
   secret?: unknown;
@@ -55,7 +60,17 @@ type HostedDomainBody = {
   grantId?: unknown;
   requestedPath?: unknown;
   approval?: unknown;
+  approvalId?: unknown;
+  version?: unknown;
   providerAction?: unknown;
+  isOffline?: unknown;
+  records?: unknown;
+  kind?: unknown;
+  recordId?: unknown;
+  updates?: unknown;
+  baseVersion?: unknown;
+  source?: unknown;
+  clientTimestamp?: unknown;
 };
 
 export async function GET(request: Request) {
@@ -70,10 +85,15 @@ export async function GET(request: Request) {
   if (view && !views.includes(view as (typeof views)[number]))
     return NextResponse.json({ error: "Unknown hosted domain view." }, { status: 400 });
   try {
-    if (url.searchParams.get("view") === "backup")
+    if (url.searchParams.get("view") === "backup") {
+      const approvalId =
+        url.searchParams.get("approvalId") ?? request.headers.get("x-approval-id") ?? undefined;
       return NextResponse.json({
-        backup: await hostedDomainStore.exportBackup(identity.userId, workspaceId),
+        backup: await hostedDomainStore.exportBackup(identity.userId, workspaceId, {
+          approvalId: approvalId ?? undefined,
+        }),
       });
+    }
     if (url.searchParams.get("view") === "migration")
       return NextResponse.json({
         package: await hostedDomainStore.exportMigration(identity.userId, workspaceId),
@@ -110,6 +130,21 @@ export async function GET(request: Request) {
       return NextResponse.json({
         connectors: await hostedDomainStore.listConnectorStatus(identity.userId, workspaceId),
       });
+    if (url.searchParams.get("view") === "sync-conflicts")
+      return NextResponse.json({
+        conflicts: await hostedDomainStore.listSyncConflicts(identity.userId, workspaceId),
+      });
+    if (url.searchParams.get("view") === "record-history") {
+      const kind = url.searchParams.get("kind") as HostedRecordKind;
+      const recordId = url.searchParams.get("recordId");
+      if (!kind || !recordId)
+        return NextResponse.json({ error: "kind and recordId are required." }, { status: 400 });
+      if (!recordKinds.includes(kind as (typeof recordKinds)[number]))
+        return NextResponse.json({ error: "Unknown record kind." }, { status: 400 });
+      return NextResponse.json(
+        await hostedDomainStore.getRecordHistory(identity.userId, workspaceId, kind, recordId)
+      );
+    }
     if (url.searchParams.get("view") === "audit" || !url.searchParams.get("view"))
       return NextResponse.json({
         audit: await hostedDomainStore.audit(identity.userId, workspaceId),
@@ -352,6 +387,82 @@ export async function POST(request: Request) {
             body.selectedRepositoryIds as string[] | undefined
           ),
         });
+      case "export-backup":
+      case "export_backup": {
+        const approvalId =
+          (typeof body.approval === "string"
+            ? body.approval
+            : typeof body.approvalId === "string"
+              ? body.approvalId
+              : undefined) ??
+          request.headers.get("x-approval-id") ??
+          undefined;
+        return NextResponse.json(
+          {
+            backup: await hostedDomainStore.exportBackup(
+              identity.userId,
+              body.workspaceId as string,
+              { approvalId }
+            ),
+          },
+          { status: 200 }
+        );
+      }
+      case "sync":
+      case "sync-records":
+        return NextResponse.json(
+          await hostedDomainStore.syncRecords(
+            identity.userId,
+            body.workspaceId as string,
+            body.connectorId as string,
+            {
+              repositoryId: typeof body.repositoryId === "string" ? body.repositoryId : undefined,
+              isOffline: Boolean(body.isOffline),
+              records:
+                (body.records as Record<HostedRecordKind, Array<Record<string, unknown>>>) ?? {},
+            }
+          ),
+          { status: 200 }
+        );
+      case "update-record":
+        return NextResponse.json(
+          {
+            record: await hostedDomainStore.updateRecord(
+              identity.userId,
+              body.workspaceId as string,
+              body.kind as HostedRecordKind,
+              body.recordId as string,
+              (body.updates as Record<string, unknown>) ?? {},
+              {
+                baseVersion: typeof body.baseVersion === "number" ? body.baseVersion : undefined,
+                provenance: {
+                  source: (body.source as any) ?? "hosted",
+                  connectorId: typeof body.connectorId === "string" ? body.connectorId : undefined,
+                  clientTimestamp:
+                    typeof body.clientTimestamp === "string" ? body.clientTimestamp : undefined,
+                },
+              }
+            ),
+          },
+          { status: 200 }
+        );
+      case "resolve-sync-conflict":
+        return NextResponse.json(
+          {
+            conflict: await hostedDomainStore.resolveSyncConflict(
+              identity.userId,
+              body.workspaceId as string,
+              body.conflictId as string,
+              body.decision as "use_hosted" | "use_local",
+              {
+                approvalId: (body.approval as any)?.runId,
+                expectedVersion:
+                  typeof body.expectedVersion === "number" ? body.expectedVersion : undefined,
+              }
+            ),
+          },
+          { status: 200 }
+        );
       default:
         return NextResponse.json({ error: "Unknown hosted domain action." }, { status: 400 });
     }
@@ -398,6 +509,10 @@ function validateBody(body: HostedDomainBody): string | null {
         "save-credential",
         "revoke-credential",
         "import-migration",
+        "sync",
+        "sync-records",
+        "update-record",
+        "resolve-sync-conflict",
       ] as const
     ).includes(action as never)
   )
@@ -420,6 +535,9 @@ function validateBody(body: HostedDomainBody): string | null {
     "save-credential",
     "revoke-credential",
     "import-migration",
+    "sync",
+    "sync-records",
+    "update-record",
   ].filter(
     (candidate) =>
       ![
@@ -428,6 +546,9 @@ function validateBody(body: HostedDomainBody): string | null {
         "import-migration",
         "hosted-safe-work",
         "queue-local-work",
+        "create-work-item",
+        "update-record",
+        "resolve-sync-conflict",
       ].includes(candidate)
   );
   if (action === "register-repository" && !requiredString(body, "localPath"))
@@ -552,6 +673,28 @@ function validateBody(body: HostedDomainBody): string | null {
     !isStringArray(body.selectedRepositoryIds, true)
   )
     return "selectedRepositoryIds is invalid.";
+  if (
+    ["sync", "sync-records"].includes(action) &&
+    body.records !== undefined &&
+    !isRecord(body.records)
+  )
+    return "records must be an object.";
+  if (action === "resolve-sync-conflict") {
+    if (!requiredString(body, "conflictId")) return "conflictId is required.";
+    if (body.decision !== "use_hosted" && body.decision !== "use_local")
+      return "decision must be use_hosted or use_local.";
+  }
+  if (action === "update-record") {
+    if (
+      !requiredString(body, "kind") ||
+      !recordKinds.includes(body.kind as (typeof recordKinds)[number])
+    )
+      return "kind is invalid.";
+    if (!requiredString(body, "recordId")) return "recordId is required.";
+    if (!isRecord(body.updates)) return "updates must be an object.";
+    if (body.baseVersion !== undefined && typeof body.baseVersion !== "number")
+      return "baseVersion must be a number.";
+  }
   if (
     body.approval !== undefined &&
     (!isRecord(body.approval) ||

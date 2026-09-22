@@ -1,6 +1,6 @@
 # src/server/hosted-domain/hosted-domain-store.ts
 
-- HostedRecordKind · type · L33-L41 — type HostedRecordKind = | "repositories" | "workItems" | "incomingSignals" | "incidents" | "automationRuns" | "approvals" | "artifacts" | "skillRuns";
+- HostedRecordKind · type · L31-L41 — type HostedRecordKind = | "repositories" | "workItems" | "incomingSignals" | "incidents" | "automationRuns" | "approvals" | "artifacts" | "skillRuns" | "audit" | "syncConflicts";
 - ConnectorCapability · type · L42-L42 — type ConnectorCapability = "git.read" | "filesystem.read" | "filesystem.write";
 - Freshness · type · L43-L43 — type Freshness = "fresh" | "stale";
 - HostedRepository · type · L45-L50 — type HostedRepository = { id: string; localPath: string; pathIdentity: string; createdAt: string; };
@@ -9,94 +9,111 @@
 - HostedDeploymentState · type · L58-L62 — type HostedDeploymentState = { vercelProject: HostedVercelProjectMapping | null; vercelProjectHistory: HostedVercelProjectMapping[]; githubRepositories: HostedGitHubRepositoryRegistration[]; };
 - HostedCapabilityGrant · type · L63-L68 — type HostedCapabilityGrant = { id: string; capability: ConnectorCapability; skillId?: string; allowedPaths?: string[]; };
 - HostedConnector · type · L69-L77 — type HostedConnector = { id: string; workspaceId: string; createdAt: string; expiresAt: string; state: "connected" | "offline" | "revoked"; repositoryIds: string[]; capabilities: Record<string, HostedCapabilityGrant[]>; };
-- HostedSnapshot · type · L78-L87 — type HostedSnapshot = { id: string; connectorId: string; repositoryId: string; source: "local-connector"; freshness: Freshness; publishedAt: string; sourceCommit: string | null; data: Record<string, unknown>; };
-- HostedCredentialMetadata · type · L88-L97 — type HostedCredentialMetadata = { id: string; provider: string; scopes: string[]; status: "active" | "revoked"; expiresAt: string | null; identity: string | null; health: "unknown" | "healthy" | "unhealthy"; createdAt: string; };
-- HostedCredentialRecord · type · L98-L101 — type HostedCredentialRecord = HostedCredentialMetadata & { workspaceId: string; secretReference: string; };
-- HostedAudit · type · L102-L112 — type HostedAudit = { id: string; userId: string; workspaceId?: string; action: string; subjectId?: string; repositoryId?: string; capability?: string; outcome?: "allowed" | "denied"; occurredAt: string; };
-- HostedBackup · type · L113-L126 — type HostedBackup = { version: 1; exportedAt: string; workspaceId: string; workspace: { id: string; name: string; ownerId: string }; restorationIdentity: { workspaceId: string; ownerId: string }; repositories: HostedRepository[]; records: Record<HostedRecordKind, Array<Record<string, unknown>>>; relationships: Array<{ from: string; to: string; kind: string }>; snapshots: HostedSnapshot[]; credentials: HostedCredentialMetadata[]; connectors: HostedConnector[]; audit: HostedAudit[]; };
-- MigrationPackage · type · L127-L134 — type MigrationPackage = { version: 1; exportedAt: string; repositories: Array<{ id?: string; localPath: string; pathIdentity: string }>; records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>; relationships: Array<{ from: string; to: string; kind: string }>; warnings: string[]; };
-- ProviderApproval · type · L135-L141 — type ProviderApproval = { approved?: boolean; runId?: string; reason?: string; action?: string; evidenceSnapshotId?: string; };
-- HostedRecordMap · type · L143-L143 — type HostedRecordMap = Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>;
-- HostedState · type · L144-L155 — type HostedState = { repositories: Record<string, HostedRepository[]>; records: Record<string, HostedRecordMap>; relationships: Record<string, Array<{ from: string; to: string; kind: string }>>; snapshots: Record<string, HostedSnapshot[]>; connectors: HostedConnector[]; credentials: HostedCredentialRecord[]; audit: HostedAudit[]; vercelProject?: HostedVercelProjectMapping | null; vercelProjectHistory?: HostedVercelProjectMapping[]; githubRepositories?: HostedGitHubRepositoryRegistration[]; };
-- emptyState · function · L157-L168 — emptyState = (): HostedState
-- HostedStateProvider · interface · L170-L177 — interface HostedStateProvider
-- ProtectedSecretStore · interface · L179-L181 — interface ProtectedSecretStore
-- DeterministicProtectedSecretStore · class · L183-L188 — class DeterministicProtectedSecretStore implements ProtectedSecretStore
-- put · method · L184-L187 — async put(secret: string): Promise<string>
-- DeterministicJsonHostedStateProvider · class · L190-L215 — class DeterministicJsonHostedStateProvider implements HostedStateProvider
-- constructor · method · L193-L196 — constructor(root = process.cwd())
-- read · method · L197-L200 — async read(): Promise<HostedState>
-- write · method · L201-L204 — async write(state: HostedState): Promise<void>
-- assertFixtureOnly · method · L205-L214 — private assertFixtureOnly(): void
-- HostedDomainError · class · L217-L225 — class HostedDomainError extends Error
-- constructor · method · L218-L224 — constructor( readonly code: "FORBIDDEN" | "NOT_FOUND" | "INVALID" | "STALE", message: string )
-- HostedDomainStore · class · L227-L1509 — class HostedDomainStore
-- constructor · method · L228-L240 — constructor( private readonly root = process.cwd(), private readonly workspaceStore = new HostedWorkspaceStore(root), private readonly provider: HostedStateProvider = new DeterministicJsonHostedStateProvider(root), private readonly objectStore: HostedObjectStore = new LocalHostedObjectStore( join(root, ".developer-agentic-os", "hosted-objects") ), private readonly localExport: LocalStoreExportAdapter = new DeterministicLocalStoreExportAdapter( root ), private readonly secretStore: ProtectedSecretStore = new DeterministicProtectedSecretStore(), private readonly tenantId = "legacy" )
-- createWorkspace · method · L242-L244 — async createWorkspace(userId: string, name: string)
-- registerRepository · method · L246-L271 — async registerRepository( userId: string, workspaceId: string, localPath: string ): Promise<HostedRepository>
-- putRecord · method · L273-L301 — async putRecord( userId: string, workspaceId: string, kind: HostedRecordKind, value: Record<string, unknown> ): Promise<Record<string, unknown> & { id: string }>
-- updateRecord · method · L303-L330 — async updateRecord( userId: string, workspaceId: string, kind: HostedRecordKind, recordId: string, updates: Record<string, unknown> ): Promise<Record<string, unknown>>
-- listRecords · method · L332-L340 — async listRecords( userId: string, workspaceId: string, kind: HostedRecordKind ): Promise<Array<Record<string, unknown>>>
-- listAllRecords · method · L341-L345 — async listAllRecords(userId: string, workspaceId: string): Promise<HostedRecordMap>
-- listRepositories · method · L346-L350 — async listRepositories(userId: string, workspaceId: string): Promise<HostedRepository[]>
-- getVercelProject · method · L352-L359 — async getVercelProject( userId: string, workspaceId: string ): Promise<HostedVercelProjectMapping | null>
-- setVercelProject · method · L361-L394 — async setVercelProject( userId: string, workspaceId: string, input: DeploymentProjectMapping, webhookSecret?: string ): Promise<HostedVercelProjectMapping>
-- removeVercelProject · method · L396-L406 — async removeVercelProject(userId: string, workspaceId: string): Promise<void>
-- setVercelWebhookSecret · method · L408-L425 — async setVercelWebhookSecret(userId: string, workspaceId: string, secret: string): Promise<void>
-- registerGitHubRepository · method · L427-L468 — async registerGitHubRepository( userId: string, workspaceId: string, input: Omit<HostedGitHubRepositoryRegistration, "id" | "createdAt" | "tenantId"> ): Promise<HostedGitHubRepositoryRegistration>
-- listGitHubRepositories · method · L470-L477 — async listGitHubRepositories( userId: string, workspaceId: string ): Promise<HostedGitHubRepositoryRegistration[]>
-- deploymentRegistry · method · L479-L497 — deploymentRegistry(): DeploymentRegistry
-- recordDeploymentResolution · method · L499-L533 — async recordDeploymentResolution( userId: string, outcome: "allowed" | "denied", subjectId?: string, target?: DeploymentProjectMapping, workspaceId?: string ): Promise<void>
-- listSnapshots · method · L534-L541 — async listSnapshots(userId: string, workspaceId: string): Promise<HostedSnapshot[]>
-- registerConnector · method · L543-L565 — async registerConnector( userId: string, workspaceId: string, ttlMs: number ): Promise<HostedConnector>
-- grantRepository · method · L567-L591 — async grantRepository( userId: string, workspaceId: string, connectorId: string, repositoryId: string ): Promise<void>
-- revokeRepository · method · L592-L615 — async revokeRepository( userId: string, workspaceId: string, connectorId: string, repositoryId: string ): Promise<void>
-- grantCapability · method · L616-L662 — async grantCapability( userId: string, workspaceId: string, connectorId: string, repositoryId: string, capability: ConnectorCapability, skillId?: string, allowedPaths?: string[] ): Promise<void>
-- revokeConnector · method · L663-L675 — async revokeConnector(userId: string, workspaceId: string, connectorId: string): Promise<void>
-- revokeCapability · method · L676-L703 — async revokeCapability( userId: string, workspaceId: string, connectorId: string, repositoryId: string, grantId: string ): Promise<void>
-- setConnectorOffline · method · L704-L720 — async setConnectorOffline( userId: string, workspaceId: string, connectorId: string ): Promise<void>
-- reconnectConnector · method · L721-L739 — async reconnectConnector( userId: string, workspaceId: string, connectorId: string, ttlMs: number ): Promise<HostedConnector>
-- connectorRequest · method · L741-L778 — async connectorRequest( userId: string, connectorId: string, workspaceId: string, repositoryId: string, capability: ConnectorCapability, skillId?: string, requestedPath?: string ): Promise<{ allowed: true }>
-- publishSnapshot · method · L780-L828 — async publishSnapshot( userId: string, connectorId: string, workspaceId: string, repositoryId: string, data: Record<string, unknown> ): Promise<HostedSnapshot>
-- queueLocalWork · method · L829-L855 — async queueLocalWork( userId: string, workspaceId: string, repositoryId: string, description: string ): Promise<{ id: string; status: "pending_offline" }>
-- resumePendingLocalWork · method · L856-L882 — async resumePendingLocalWork( userId: string, workspaceId: string, connectorId: string ): Promise<number>
-- hostedSafeWork · method · L883-L894 — async hostedSafeWork( userId: string, workspaceId: string, description: string ): Promise<{ id: string; status: "completed" }>
-- authorizeProviderMutation · method · L895-L957 — async authorizeProviderMutation( userId: string, workspaceId: string, repositoryId: string, providerAction: string, approval?: ProviderApproval ): Promise<void>
-- runReadOnlySkill · method · L959-L1006 — async runReadOnlySkill( userId: string, workspaceId: string, connectorId: string, repositoryId: string, skillId: string ): Promise<Record<string, unknown>>
-- listConnectorStatus · method · L1008-L1022 — async listConnectorStatus(userId: string, workspaceId: string): Promise<HostedConnector[]>
-- listRepositoryGrants · method · L1023-L1031 — async listRepositoryGrants( userId: string, workspaceId: string ): Promise<Array<{ connectorId: string; repositoryIds: string[] }>>
-- listCapabilityGrants · method · L1032-L1045 — async listCapabilityGrants( userId: string, workspaceId: string ): Promise< Array<{ connectorId: string; repositoryId: string; grants: HostedCapabilityGrant[] }> >
-- saveCredential · method · L1047-L1079 — async saveCredential( userId: string, workspaceId: string, input: { provider: string; scopes: string[]; secret: string; expiresAt?: string | null; identity?: string | null; } ): Promise<HostedCredentialMetadata>
-- listCredentials · method · L1080-L1086 — async listCredentials(userId: string, workspaceId: string): Promise<HostedCredentialMetadata[]>
-- revokeCredential · method · L1087-L1099 — async revokeCredential(userId: string, workspaceId: string, credentialId: string): Promise<void>
-- exportBackup · method · L1101-L1126 — async exportBackup(userId: string, workspaceId: string): Promise<HostedBackup>
-- exportMigration · method · L1127-L1154 — async exportMigration(userId: string, workspaceId: string): Promise<MigrationPackage>
-- importMigration · method · L1155-L1261 — async importMigration( userId: string, workspaceId: string, packageData: MigrationPackage, selectedKinds?: HostedRecordKind[], selectedRepositoryIds?: string[] ): Promise<{ imported: number; warnings: string[] }>
-- audit · method · L1262-L1268 — async audit(userId: string, workspaceId: string): Promise<HostedAudit[]>
-- mutateAudit · method · L1269-L1272 — async mutateAudit(id: string): Promise<never>
-- recordDenied · method · L1274-L1293 — private async recordDenied( state: HostedState, userId: string, connector: HostedConnector, workspaceId: string, repositoryId: string, capability: ConnectorCapability ): Promise<void>
-- assertConnectorAccess · method · L1294-L1335 — private async assertConnectorAccess( state: HostedState, userId: string, connectorId: string, workspaceId: string, repositoryId: string, capability: ConnectorCapability, skillId?: string, requestedPath?: string ): Promise<HostedConnector | HostedDomainError>
-- connector · method · L1336-L1342 — private connector(state: HostedState, id: string): HostedConnector
-- assertWorkspace · method · L1343-L1351 — private async assertWorkspace( userId: string, workspaceId: string ): Promise<import("@/types/hosted-workspace").HostedWorkspace>
-- workspaceOwner · method · L1352-L1354 — private workspaceOwner(workspaceId: string): Promise<string>
-- markSnapshotsStale · method · L1355-L1362 — private markSnapshotsStale( state: HostedState, workspaceId: string, connector: HostedConnector ): void
-- normalizeExpiredConnectors · method · L1363-L1372 — private normalizeExpiredConnectors(state: HostedState, workspaceId: string): boolean
-- assertRepositoryMembership · method · L1373-L1384 — private assertRepositoryMembership( state: HostedState, workspaceId: string, repositoryId: unknown ): void
-- assertRepository · method · L1385-L1393 — private async assertRepository( userId: string, workspaceId: string, repositoryId: string ): Promise<void>
-- assertConnectorRepository · method · L1394-L1403 — private assertConnectorRepository( state: HostedState, connector: HostedConnector, workspaceId: string, repositoryId: string ): void
-- pathAllowed · method · L1404-L1416 — private pathAllowed( repositoryRoot: string, allowedPaths: string[] | undefined, requestedPath: string | undefined ): boolean
-- canonicalPath · method · L1417-L1422 — private canonicalPath(path: string): string
-- assertWithinRepository · method · L1423-L1430 — private assertWithinRepository(repositoryRoot: string, path: string): string
-- externalizeArtifact · method · L1431-L1443 — private async externalizeArtifact( value: Record<string, unknown> ): Promise<Record<string, unknown>>
-- publicCredential · method · L1444-L1455 — private publicCredential(credential: HostedCredentialRecord): HostedCredentialMetadata
-- auditEvent · method · L1456-L1477 — private async auditEvent( state: HostedState, userId: string, workspaceId: string | undefined, action: string, subjectId?: string, repositoryId?: string, capability?: string, outcome?: "allowed" | "denied" ): Promise<void>
-- withMutationLock · method · L1478-L1482 — private withMutationLock<T>(operation: () => Promise<T>): Promise<T>
-- read · method · L1483-L1485 — private read(): Promise<HostedState>
-- write · method · L1486-L1488 — private write(state: HostedState): Promise<void>
-- readDeploymentState · method · L1489-L1497 — private async readDeploymentState(state?: HostedState): Promise<HostedDeploymentState>
-- writeDeploymentState · method · L1498-L1508 — private writeDeploymentState( state: HostedState, deploymentState: HostedDeploymentState ): Promise<void>
-- hostedDomainStoreForTenant · function · L1513-L1558 — function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore
-- get · method · L1561-L1565 — get(_target, property, receiver)
-- isRecord · function · L1568-L1570 — function isRecord(value: unknown): value is Record<string, unknown>
-- mergeRecordMaps · function · L1572-L1593 — function mergeRecordMaps( left: Record<string, Array<Record<string, unknown>>>, right: HostedRecordMap ): HostedRecordMap
-- mergeRelationships · function · L1595-L1606 — function mergeRelationships( left: Array<{ from: string; to: string; kind: string }>, right: Array<{ from: string; to: string; kind: string }> ): Array<{ from: string; to: string; kind: string }>
+- RetainedRecordVersion · type · L78-L91 — type RetainedRecordVersion = { version: number; value: Record<string, unknown>; supersededAt: string; reason: "mutation" | "sync_replace" | "domain_merge" | "concurrent_conflict"; provenance: { source: "hosted" | "local-connector" | "migration"; actorId?: string; connectorId?: string; clientTimestamp?: string; serverSeq?: number; at?: string; }; };
+- HostedSnapshot · type · L93-L104 — type HostedSnapshot = { id: string; connectorId: string; repositoryId: string; source: "local-connector"; freshness: Freshness; publishedAt: string; sourceCommit: string | null; data: Record<string, unknown>; version?: number; serverSeq?: number; };
+- HostedCredentialMetadata · type · L105-L114 — type HostedCredentialMetadata = { id: string; provider: string; scopes: string[]; status: "active" | "revoked"; expiresAt: string | null; identity: string | null; health: "unknown" | "healthy" | "unhealthy"; createdAt: string; };
+- HostedCredentialRecord · type · L115-L118 — type HostedCredentialRecord = HostedCredentialMetadata & { workspaceId: string; secretReference: string; };
+- HostedAudit · type · L119-L129 — type HostedAudit = { id: string; userId: string; workspaceId?: string; action: string; subjectId?: string; repositoryId?: string; capability?: string; outcome?: "allowed" | "denied"; occurredAt: string; };
+- HostedBackup · type · L130-L143 — type HostedBackup = { version: 1; exportedAt: string; workspaceId: string; workspace: { id: string; name: string; ownerId: string }; restorationIdentity: { workspaceId: string; ownerId: string }; repositories: HostedRepository[]; records: Record<HostedRecordKind, Array<Record<string, unknown>>>; relationships: Array<{ from: string; to: string; kind: string }>; snapshots: HostedSnapshot[]; credentials: HostedCredentialMetadata[]; connectors: HostedConnector[]; audit: HostedAudit[]; };
+- MigrationPackage · type · L144-L151 — type MigrationPackage = { version: 1; exportedAt: string; repositories: Array<{ id?: string; localPath: string; pathIdentity: string }>; records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>; relationships: Array<{ from: string; to: string; kind: string }>; warnings: string[]; };
+- ProviderApproval · type · L152-L158 — type ProviderApproval = { approved?: boolean; runId?: string; reason?: string; action?: string; evidenceSnapshotId?: string; };
+- HostedSyncConflict · type · L160-L181 — type HostedSyncConflict = { id: string; workspaceId: string; targetKind: HostedRecordKind; targetRecordId: string; reason: string; status: "pending" | "resolved"; hostedVersion: number; hostedRecord: any; localRecord: any; resolution?: { resolvedAt: string; resolvedBy: string; decision: "use_hosted" | "use_local"; }; createdAt: string; version?: number; serverSeq?: number; serverCreatedAt?: string; serverUpdatedAt?: string; provenance?: any; };
+- HostedMergedAuditEvent · type · L183-L187 — type HostedMergedAuditEvent = HostedAudit & { source: "hosted" | "local"; ingestedAt?: string; orderingRationale: string; };
+- HostedRecordMap · type · L189-L189 — type HostedRecordMap = Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>;
+- HostedState · type · L190-L202 — type HostedState = { repositories: Record<string, HostedRepository[]>; records: Record<string, HostedRecordMap>; relationships: Record<string, Array<{ from: string; to: string; kind: string }>>; snapshots: Record<string, HostedSnapshot[]>; connectors: HostedConnector[]; credentials: HostedCredentialRecord[]; audit: HostedAudit[]; vercelProject?: HostedVercelProjectMapping | null; vercelProjectHistory?: HostedVercelProjectMapping[]; githubRepositories?: HostedGitHubRepositoryRegistration[]; sequences?: Record<string, number>; };
+- emptyState · function · L204-L216 — emptyState = (): HostedState
+- HostedStateProvider · interface · L218-L225 — interface HostedStateProvider
+- ProtectedSecretStore · interface · L227-L229 — interface ProtectedSecretStore
+- DeterministicProtectedSecretStore · class · L231-L236 — class DeterministicProtectedSecretStore implements ProtectedSecretStore
+- put · method · L232-L235 — async put(secret: string): Promise<string>
+- DeterministicJsonHostedStateProvider · class · L238-L263 — class DeterministicJsonHostedStateProvider implements HostedStateProvider
+- constructor · method · L241-L244 — constructor(root = process.cwd())
+- read · method · L245-L248 — async read(): Promise<HostedState>
+- write · method · L249-L252 — async write(state: HostedState): Promise<void>
+- assertFixtureOnly · method · L253-L262 — private assertFixtureOnly(): void
+- HostedDomainError · class · L265-L274 — class HostedDomainError extends Error
+- constructor · method · L266-L273 — constructor( readonly code: "FORBIDDEN" | "NOT_FOUND" | "INVALID" | "STALE" | "FEATURE_DISABLED" | "CONFLICT", message: string )
+- HostedDomainStore · class · L276-L2437 — class HostedDomainStore
+- constructor · method · L277-L310 — constructor( private readonly root = process.cwd(), private readonly workspaceStore = new HostedWorkspaceStore(root), private readonly provider: HostedStateProvider = new DeterministicJsonHostedStateProvider(root), private readonly objectStore: HostedObjectStore = new LocalHostedObjectStore( join(root, ".developer-agentic-os", "hosted-objects") ), private readonly localExport: LocalStoreExportAdapter = new DeterministicLocalStoreExportAdapter( root ), private readonly secretStore: ProtectedSecretStore = new DeterministicProtectedSecretStore(), private readonly tenantId = "legacy" )
+- createWorkspace · method · L312-L315 — async createWorkspace(userId: string, name: string)
+- registerRepository · method · L317-L342 — async registerRepository( userId: string, workspaceId: string, localPath: string ): Promise<HostedRepository>
+- recordSyncConflict · method · L344-L380 — private recordSyncConflict( state: HostedState, workspaceId: string, targetKind: HostedRecordKind, targetRecordId: string, hostedVersion: number, hostedRecord: any, localRecord: any, provenance: any, reason: string ): void
+- nextServerSeq · method · L382-L405 — private nextServerSeq(state: HostedState, workspaceId: string): number
+- cloneRecordForHistory · method · L407-L410 — private cloneRecordForHistory(record: Record<string, unknown>): Record<string, unknown>
+- attemptDomainMerge · method · L412-L469 — private attemptDomainMerge( kind: HostedRecordKind, existing: Record<string, unknown>, incomingUpdates: Record<string, unknown>, baseVersion: number ): { merged: boolean; updates: Record<string, unknown> }
+- putRecord · method · L471-L532 — async putRecord( userId: string, workspaceId: string, kind: HostedRecordKind, value: Record<string, unknown>, options?: { provenance?: { source?: "hosted" | "local-connector" | "migration"; connectorId?: string; clientTimestamp?: string; }; status?: string; syncStatus?: string; } ): Promise<Record<string, unknown> & { id: string }>
+- updateRecord · method · L534-L637 — async updateRecord( userId: string, workspaceId: string, kind: HostedRecordKind, recordId: string, updates: Record<string, unknown>, options?: { baseVersion?: number; provenance?: { source?: "hosted" | "local-connector" | "migration"; connectorId?: string; clientTimestamp?: string; }; } ): Promise<Record<string, unknown>>
+- getRecordHistory · method · L639-L662 — async getRecordHistory( userId: string, workspaceId: string, kind: HostedRecordKind, recordId: string ): Promise<{ current: Record<string, unknown>; supersededVersions: RetainedRecordVersion[]; }>
+- listRecords · method · L664-L672 — async listRecords( userId: string, workspaceId: string, kind: HostedRecordKind ): Promise<Array<Record<string, unknown>>>
+- getArtifact · method · L674-L699 — async getArtifact( userId: string, workspaceId: string, artifactId: string ): Promise<Record<string, unknown> | null>
+- listSyncConflicts · method · L701-L705 — async listSyncConflicts(userId: string, workspaceId: string): Promise<HostedSyncConflict[]>
+- listAllRecords · method · L707-L711 — async listAllRecords(userId: string, workspaceId: string): Promise<HostedRecordMap>
+- listRepositories · method · L712-L716 — async listRepositories(userId: string, workspaceId: string): Promise<HostedRepository[]>
+- getVercelProject · method · L718-L725 — async getVercelProject( userId: string, workspaceId: string ): Promise<HostedVercelProjectMapping | null>
+- listVercelProjectHistory · method · L727-L734 — async listVercelProjectHistory( userId: string, workspaceId: string ): Promise<HostedVercelProjectMapping[]>
+- setVercelProject · method · L736-L769 — async setVercelProject( userId: string, workspaceId: string, input: DeploymentProjectMapping, webhookSecret?: string ): Promise<HostedVercelProjectMapping>
+- removeVercelProject · method · L771-L781 — async removeVercelProject(userId: string, workspaceId: string): Promise<void>
+- setVercelWebhookSecret · method · L783-L800 — async setVercelWebhookSecret(userId: string, workspaceId: string, secret: string): Promise<void>
+- registerGitHubRepository · method · L802-L843 — async registerGitHubRepository( userId: string, workspaceId: string, input: Omit<HostedGitHubRepositoryRegistration, "id" | "createdAt" | "tenantId"> ): Promise<HostedGitHubRepositoryRegistration>
+- listGitHubRepositories · method · L845-L852 — async listGitHubRepositories( userId: string, workspaceId: string ): Promise<HostedGitHubRepositoryRegistration[]>
+- deploymentRegistry · method · L854-L872 — deploymentRegistry(): DeploymentRegistry
+- recordDeploymentResolution · method · L874-L908 — async recordDeploymentResolution( userId: string, outcome: "allowed" | "denied", subjectId?: string, target?: DeploymentProjectMapping, workspaceId?: string ): Promise<void>
+- recordFallbackCredentialEvent · method · L910-L932 — async recordFallbackCredentialEvent(input: { userId: string; action: string; workspaceId?: string; credentialId?: string; repositoryId?: string; outcome?: "allowed" | "denied"; }): Promise<void>
+- listSnapshots · method · L934-L941 — async listSnapshots(userId: string, workspaceId: string): Promise<HostedSnapshot[]>
+- registerConnector · method · L943-L965 — async registerConnector( userId: string, workspaceId: string, ttlMs: number ): Promise<HostedConnector>
+- grantRepository · method · L967-L991 — async grantRepository( userId: string, workspaceId: string, connectorId: string, repositoryId: string ): Promise<void>
+- revokeRepository · method · L992-L1015 — async revokeRepository( userId: string, workspaceId: string, connectorId: string, repositoryId: string ): Promise<void>
+- grantCapability · method · L1016-L1062 — async grantCapability( userId: string, workspaceId: string, connectorId: string, repositoryId: string, capability: ConnectorCapability, skillId?: string, allowedPaths?: string[] ): Promise<void>
+- revokeConnector · method · L1063-L1075 — async revokeConnector(userId: string, workspaceId: string, connectorId: string): Promise<void>
+- revokeCapability · method · L1076-L1103 — async revokeCapability( userId: string, workspaceId: string, connectorId: string, repositoryId: string, grantId: string ): Promise<void>
+- setConnectorOffline · method · L1104-L1120 — async setConnectorOffline( userId: string, workspaceId: string, connectorId: string ): Promise<void>
+- reconnectConnector · method · L1121-L1139 — async reconnectConnector( userId: string, workspaceId: string, connectorId: string, ttlMs: number ): Promise<HostedConnector>
+- connectorRequest · method · L1141-L1178 — async connectorRequest( userId: string, connectorId: string, workspaceId: string, repositoryId: string, capability: ConnectorCapability, skillId?: string, requestedPath?: string ): Promise<{ allowed: true }>
+- publishSnapshot · method · L1180-L1233 — async publishSnapshot( userId: string, connectorId: string, workspaceId: string, repositoryId: string, data: Record<string, unknown> ): Promise<HostedSnapshot>
+- queueLocalWork · method · L1234-L1260 — async queueLocalWork( userId: string, workspaceId: string, repositoryId: string, description: string ): Promise<{ id: string; status: "pending_offline" }>
+- resumePendingLocalWork · method · L1261-L1313 — async resumePendingLocalWork( userId: string, workspaceId: string, connectorId: string ): Promise<number>
+- resolveSyncConflict · method · L1315-L1421 — async resolveSyncConflict( userId: string, workspaceId: string, conflictId: string, decision: "use_hosted" | "use_local", options?: { approvalId?: string; expectedVersion?: number } ): Promise<HostedSyncConflict>
+- syncRecords · method · L1423-L1706 — async syncRecords( userId: string, workspaceId: string, connectorId: string, input: { repositoryId?: string; isOffline?: boolean; records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>; } ): Promise<{ synced: number; pendingOffline: number; conflicts: number; records: Partial<Record<HostedRecordKind, Array<Record<string, unknown>>>>; }>
+- hostedSafeWork · method · L1707-L1718 — async hostedSafeWork( userId: string, workspaceId: string, description: string ): Promise<{ id: string; status: "completed" }>
+- authorizeProviderMutation · method · L1719-L1781 — async authorizeProviderMutation( userId: string, workspaceId: string, repositoryId: string, providerAction: string, approval?: ProviderApproval ): Promise<void>
+- runReadOnlySkill · method · L1783-L1830 — async runReadOnlySkill( userId: string, workspaceId: string, connectorId: string, repositoryId: string, skillId: string ): Promise<Record<string, unknown>>
+- listConnectorStatus · method · L1832-L1846 — async listConnectorStatus(userId: string, workspaceId: string): Promise<HostedConnector[]>
+- listRepositoryGrants · method · L1847-L1855 — async listRepositoryGrants( userId: string, workspaceId: string ): Promise<Array<{ connectorId: string; repositoryIds: string[] }>>
+- listCapabilityGrants · method · L1856-L1869 — async listCapabilityGrants( userId: string, workspaceId: string ): Promise< Array<{ connectorId: string; repositoryId: string; grants: HostedCapabilityGrant[] }> >
+- saveCredential · method · L1871-L1903 — async saveCredential( userId: string, workspaceId: string, input: { provider: string; scopes: string[]; secret: string; expiresAt?: string | null; identity?: string | null; } ): Promise<HostedCredentialMetadata>
+- listCredentials · method · L1904-L1910 — async listCredentials(userId: string, workspaceId: string): Promise<HostedCredentialMetadata[]>
+- revokeCredential · method · L1911-L1923 — async revokeCredential(userId: string, workspaceId: string, credentialId: string): Promise<void>
+- exportBackup · method · L1925-L1997 — async exportBackup( userId: string, workspaceId: string, options?: { approvalId?: string; version?: string } ): Promise<HostedBackup>
+- exportMigration · method · L1998-L2025 — async exportMigration(userId: string, workspaceId: string): Promise<MigrationPackage>
+- importMigration · method · L2026-L2132 — async importMigration( userId: string, workspaceId: string, packageData: MigrationPackage, selectedKinds?: HostedRecordKind[], selectedRepositoryIds?: string[] ): Promise<{ imported: number; warnings: string[] }>
+- mergedAudit · method · L2134-L2170 — async mergedAudit(userId: string, workspaceId: string): Promise<HostedMergedAuditEvent[]>
+- audit · method · L2172-L2178 — async audit(userId: string, workspaceId: string): Promise<HostedAudit[]>
+- mutateAudit · method · L2179-L2182 — async mutateAudit(id: string): Promise<never>
+- recordDenied · method · L2184-L2203 — private async recordDenied( state: HostedState, userId: string, connector: HostedConnector, workspaceId: string, repositoryId: string, capability: ConnectorCapability ): Promise<void>
+- assertConnectorAccess · method · L2204-L2245 — private async assertConnectorAccess( state: HostedState, userId: string, connectorId: string, workspaceId: string, repositoryId: string, capability: ConnectorCapability, skillId?: string, requestedPath?: string ): Promise<HostedConnector | HostedDomainError>
+- connector · method · L2246-L2252 — private connector(state: HostedState, id: string): HostedConnector
+- assertWorkspace · method · L2253-L2278 — private async assertWorkspace( userId: string, workspaceId: string, requiredLevel?: "member" | "admin" | "owner" ): Promise<import("@/types/hosted-workspace").HostedWorkspace>
+- workspaceOwner · method · L2279-L2281 — private workspaceOwner(workspaceId: string): Promise<string>
+- markSnapshotsStale · method · L2282-L2289 — private markSnapshotsStale( state: HostedState, workspaceId: string, connector: HostedConnector ): void
+- normalizeExpiredConnectors · method · L2290-L2299 — private normalizeExpiredConnectors(state: HostedState, workspaceId: string): boolean
+- assertRepositoryMembership · method · L2300-L2311 — private assertRepositoryMembership( state: HostedState, workspaceId: string, repositoryId: unknown ): void
+- assertRepository · method · L2312-L2320 — private async assertRepository( userId: string, workspaceId: string, repositoryId: string ): Promise<void>
+- assertConnectorRepository · method · L2321-L2330 — private assertConnectorRepository( state: HostedState, connector: HostedConnector, workspaceId: string, repositoryId: string ): void
+- pathAllowed · method · L2331-L2343 — private pathAllowed( repositoryRoot: string, allowedPaths: string[] | undefined, requestedPath: string | undefined ): boolean
+- canonicalPath · method · L2344-L2349 — private canonicalPath(path: string): string
+- assertWithinRepository · method · L2350-L2357 — private assertWithinRepository(repositoryRoot: string, path: string): string
+- externalizeArtifact · method · L2358-L2371 — private async externalizeArtifact( value: Record<string, unknown> ): Promise<Record<string, unknown>>
+- publicCredential · method · L2372-L2383 — private publicCredential(credential: HostedCredentialRecord): HostedCredentialMetadata
+- auditEvent · method · L2384-L2405 — private async auditEvent( state: HostedState, userId: string, workspaceId: string | undefined, action: string, subjectId?: string, repositoryId?: string, capability?: string, outcome?: "allowed" | "denied" ): Promise<void>
+- withMutationLock · method · L2406-L2410 — private withMutationLock<T>(operation: () => Promise<T>): Promise<T>
+- read · method · L2411-L2413 — private read(): Promise<HostedState>
+- write · method · L2414-L2416 — private write(state: HostedState): Promise<void>
+- readDeploymentState · method · L2417-L2425 — private async readDeploymentState(state?: HostedState): Promise<HostedDeploymentState>
+- writeDeploymentState · method · L2426-L2436 — private writeDeploymentState( state: HostedState, deploymentState: HostedDeploymentState ): Promise<void>
+- setHostedDomainStoreForTenant · function · L2441-L2450 — function setHostedDomainStoreForTenant( tenantId: string, store: HostedDomainStore | null ): void
+- hostedDomainStoreForTenant · function · L2452-L2497 — function hostedDomainStoreForTenant(tenantId: string): HostedDomainStore
+- get · method · L2500-L2504 — get(_target, property, receiver)
+- isRecord · function · L2507-L2509 — function isRecord(value: unknown): value is Record<string, unknown>
+- mergeRecordMaps · function · L2511-L2532 — function mergeRecordMaps( left: Record<string, Array<Record<string, unknown>>>, right: HostedRecordMap ): HostedRecordMap
+- mergeRelationships · function · L2534-L2545 — function mergeRelationships( left: Array<{ from: string; to: string; kind: string }>, right: Array<{ from: string; to: string; kind: string }> ): Array<{ from: string; to: string; kind: string }>
+- isUuid · function · L2547-L2552 — function isUuid(value: unknown): value is string
