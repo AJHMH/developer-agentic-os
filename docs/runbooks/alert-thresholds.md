@@ -1,8 +1,8 @@
 # Alert Thresholds & Routing
 
-This document defines the routing rules and thresholds for operational telemetry emitted by Developer Agentic OS hosted environments. 
+This document defines the routing rules and thresholds for operational telemetry emitted by Developer Agentic OS hosted environments.
 
-*(Note: Telemetry has no configured alert integration by default. emitTelemetry writes to stderr. To produce actionable alerts, Datadog or an equivalent external collector must be configured out of band).*
+_(Note: Telemetry has no configured alert integration by default. emitTelemetry writes to stderr. To produce actionable alerts, Datadog or an equivalent external collector must be configured out of band)._
 
 ## 1. Actionable Provider Outages
 
