@@ -17,7 +17,9 @@ import {
   currentApiVersion,
   currentCorrelationId,
   runWithHostedContext,
+  hostedRequestContextStorage,
 } from "@/server/hosted-api/context";
+import { emitTelemetry } from "@/server/telemetry/logger";
 import { evaluateIdempotency, HostedIdempotencyStore } from "@/server/hosted-api/idempotency";
 
 export const migrationIncompleteResponse = {
@@ -263,6 +265,13 @@ export async function executeHostedRoute(
   return runWithHostedContext({ correlationId, apiVersion: version }, async () => {
     try {
       const identity = await authAdapter.authenticate(request);
+
+      const contextStore = hostedRequestContextStorage.getStore();
+      if (contextStore) {
+        contextStore.tenantId = identity.tenantId;
+        contextStore.userId = identity.userId;
+      }
+
       const workspaceStore = hostedWorkspaceStoreForTenant(identity.tenantId);
       await workspaceStore.recordIdentity(identity);
       const domainStore = hostedDomainStoreForTenant(identity.tenantId);
@@ -327,7 +336,25 @@ export async function executeHostedRoute(
 
       return nextResponse;
     } catch (error) {
-      return formatHostedError(error, correlationId, version, isVersioned);
+      const response = formatHostedError(error, correlationId, version, isVersioned);
+      let errorCode = "INTERNAL_ERROR";
+      try {
+        const cloned = response.clone();
+        const json = await cloned.json();
+        if (json.error?.code) {
+          errorCode = json.error.code;
+        } else if (json.code) {
+          errorCode = json.code;
+        }
+      } catch {
+        // Fallback
+      }
+      emitTelemetry("operational_failure", {
+        code: errorCode,
+        message: error instanceof Error ? error.message : "Unknown error",
+        error,
+      });
+      return response;
     }
   });
 }

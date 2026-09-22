@@ -23,6 +23,7 @@ async function createGitRepo() {
   await execFileAsync("git", ["init", "-b", "main"], { cwd: root });
   await execFileAsync("git", ["config", "user.name", "Test User"], { cwd: root });
   await execFileAsync("git", ["config", "user.email", "test@example.com"], { cwd: root });
+  await execFileAsync("git", ["config", "commit.gpgsign", "false"], { cwd: root });
   await writeFile(join(root, "README.md"), "hello\n", "utf8");
   await writeFile(join(root, "CONTEXT.md"), "# Context\n", "utf8");
   await mkdir(join(root, "src"));

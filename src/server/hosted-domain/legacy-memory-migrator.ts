@@ -3,6 +3,7 @@ import { access, readdir, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { readJsonFile } from "../local-store/json-file";
+import { emitTelemetry } from "@/server/telemetry/logger";
 import {
   HostedDomainError,
   type HostedDomainStore,
@@ -437,6 +438,17 @@ export async function executeMigration(
       status = "partial";
       resumeFrom = correlationId;
     }
+  }
+
+  if (status === "partial" || quarantined.length > 0) {
+    emitTelemetry("migration_failure", {
+      workspaceId,
+      repositoryId,
+      status,
+      imported,
+      quarantinedCount: quarantined.length,
+      warnings,
+    });
   }
 
   return {
