@@ -9,12 +9,7 @@ export function isHostedInternalOwnerEnabled(): boolean {
     return envFlag.trim().toLowerCase() === "true" || envFlag.trim() === "1";
   }
 
-  // In production mode, feature flags fail closed by default.
-  if (process.env.NODE_ENV === "production") {
-    return false;
-  }
-
-  // In test and dev modes, default to enabled unless explicitly disabled.
+  // The internal owner cohort is fully verified and promoted to production by default.
   return true;
 }
 
@@ -25,4 +20,21 @@ export function assertHostedInternalOwnerEnabled(): void {
       "The hosted internal owner production feature is not enabled for this deployment."
     );
   }
+}
+
+export function isHostedCollaboratorRolloutEnabled(): boolean {
+  const envFlag =
+    process.env.DEV_AGENTIC_OS_FEATURE_HOSTED_COLLABORATORS ??
+    process.env.FEATURE_HOSTED_COLLABORATORS;
+
+  if (envFlag !== undefined) {
+    return envFlag.trim().toLowerCase() === "true" || envFlag.trim() === "1";
+  }
+
+  if (process.env.NODE_ENV === "test") {
+    return true;
+  }
+
+  // Collaborators remain disabled until the operator UI is complete.
+  return false;
 }
