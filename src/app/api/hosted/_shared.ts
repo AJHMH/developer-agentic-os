@@ -346,19 +346,6 @@ export async function executeHostedRoute(
       return nextResponse;
     } catch (error) {
       const response = formatHostedError(error, correlationId, version, isVersioned);
-      let errorCode = "INTERNAL_ERROR";
-      try {
-        const cloned = response.clone();
-        const json = await cloned.json();
-        if (json.error?.code) {
-          errorCode = json.error.code;
-        } else if (json.code) {
-          errorCode = json.code;
-        }
-      } catch {
-        // Fallback
-      }
-
       return response;
     }
   });
