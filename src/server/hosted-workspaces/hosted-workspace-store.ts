@@ -22,7 +22,7 @@ import {
   isHostedNeonConfigured,
   NeonHostedWorkspaceStateProvider,
 } from "../hosted-persistence/neon-hosted-provider";
-import { assertHostedInternalOwnerEnabled } from "../hosted-flags/feature-flags";
+import { assertHostedInternalOwnerEnabled, isHostedCollaboratorRolloutEnabled } from "../hosted-flags/feature-flags";
 
 type HostedUserState = {
   workspaces: HostedWorkspace[];
@@ -320,6 +320,12 @@ export class HostedWorkspaceStore {
       expiresInSeconds?: number;
     }
   ): Promise<WorkspaceInvitation> {
+    if (!isHostedCollaboratorRolloutEnabled()) {
+      throw new HostedWorkspaceError(
+        "FORBIDDEN",
+        "Collaborator invitations are currently disabled."
+      );
+    }
     await this.assertMember(userId, workspaceId, "admin");
     const email = input.recipientEmail.trim().toLowerCase();
     if (!email || !email.includes("@")) {
@@ -397,6 +403,12 @@ export class HostedWorkspaceStore {
     invitationId: string,
     userEmail?: string
   ): Promise<{ workspace: HostedWorkspace; member: WorkspaceMember }> {
+    if (!isHostedCollaboratorRolloutEnabled()) {
+      throw new HostedWorkspaceError(
+        "FORBIDDEN",
+        "Collaborator invitations are currently disabled."
+      );
+    }
     return this.mutate((state) => {
       let foundInvitation: WorkspaceInvitation | null = null;
       let targetWorkspaceId: string | null = null;
