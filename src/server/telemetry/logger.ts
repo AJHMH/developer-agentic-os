@@ -9,7 +9,7 @@ export type TelemetryEvent =
 
 export function emitTelemetry(event: TelemetryEvent, details: Record<string, unknown>) {
   const context = hostedRequestContextStorage.getStore();
-  const payload = {
+  const payload: Record<string, unknown> = {
     type: "hosted_telemetry",
     event,
     correlationId: context?.correlationId,
