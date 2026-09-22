@@ -15,7 +15,7 @@ This document records the execution and outcomes of routine operational drills i
 - **Follow-up:** None.
 
 ## Drill: Interrupted Migration Resume (2026-09)
-- **Objective:** Simulate a crash during legacy memory migration and verify the `resumeFrom` correlation token successfully idempotently continues the process.
+- **Objective:** Simulate a crash during legacy memory migration and verify that retrying the same request idempotently continues the process; record the returned correlation and `resumeFrom` values for operator tracking.
 - **Outcome:** Success.
 - **Limitations:** Quarantined items are skipped entirely.
 - **Follow-up:** None.
@@ -27,7 +27,7 @@ This document records the execution and outcomes of routine operational drills i
 - **Follow-up:** Add command-centre UI for revocation.
 
 ## Drill: Sync Conflict Recovery (2026-09)
-- **Objective:** Simulate a concurrent `git push` modifying the same artifact as a hosted automation run, verify the conflict is recorded, and resolve it using `force_hosted`.
+- **Objective:** Simulate a concurrent `git push` modifying the same artifact as a hosted automation run, verify the conflict is recorded, and resolve it through `POST /api/hosted/domain` with `decision: "use_hosted"`.
 - **Outcome:** Success.
 - **Limitations:** None.
 - **Follow-up:** None.

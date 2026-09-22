@@ -1,6 +1,8 @@
 # Alert Thresholds & Routing
 
-This document defines the routing rules and thresholds for operational telemetry emitted by Developer Agentic OS hosted environments.
+This document defines the routing rules and thresholds for operational telemetry emitted by Developer Agentic OS hosted environments. 
+
+*(Note: Telemetry has no configured alert integration by default. emitTelemetry writes to stderr. To produce actionable alerts, Datadog or an equivalent external collector must be configured out of band).*
 
 ## 1. Actionable Provider Outages
 
@@ -25,14 +27,14 @@ This document defines the routing rules and thresholds for operational telemetry
 
 ## 4. Unresolved Conflicts
 
-- **Metric:** `hosted_telemetry` with `event: "sync_conflict"`.
+- **Metric:** `hosted_telemetry` with `event: "sync_conflict"` and `status: "pending"`.
 - **Threshold:** > 20 occurrences for a single `tenantId` in 1 hour.
 - **Routing:** Log to `#ops-alerts` channel.
 - **Action:** Follow `docs/runbooks/sync-conflict-recovery.md`. Verify if the client connector is stuck in a bad state.
 
 ## 5. Recovery Failures
 
-- **Metric:** `hosted_telemetry` where `details.action` contains `recovery` or `rollback` and event is `operational_failure`.
-- **Threshold:** > 0 occurrences (Any failure during a recovery runbook).
+- **Metric:** `hosted_telemetry` with `event: "operational_failure"` originating from a recovery runbook execution endpoint.
+- **Threshold:** > 0 occurrences.
 - **Routing:** Page primary on-call engineer immediately.
 - **Action:** Manual intervention required to un-brick the target environment.

@@ -386,6 +386,7 @@ export class HostedDomainStore {
       targetRecordId,
       reason,
       hostedVersion,
+      status: "pending",
     });
   }
 
@@ -1466,6 +1467,14 @@ export class HostedDomainStore {
         undefined,
         "allowed"
       );
+
+      emitTelemetry("sync_conflict", {
+        workspaceId,
+        targetKind: conflict.targetKind,
+        targetRecordId: conflict.targetRecordId,
+        decision,
+        status: "resolved",
+      });
 
       await this.write(state);
       return conflict;

@@ -12,8 +12,8 @@
 Use Neon's branch/restore feature to restore the database state to a specific Point-in-Time (PITR).
 
 ## Verification
-- Run the health check endpoint `GET /api/hosted/health` to verify database connectivity.
-- Verify that recent telemetry reflects the expected older state (no new mutations after the PITR timestamp).
+- Run authenticated `GET /api/hosted/workspaces/ws_123` to verify hosted persistence connectivity and workspace access.
+- Verify the absence of post-restore mutations via a database/audit query.
 
 ## Audit Checks
 - Provider-level audit logs (Neon) will record the restore operation.

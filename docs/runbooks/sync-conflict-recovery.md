@@ -3,21 +3,24 @@
 ## Prerequisites
 - Knowledge of the conflict ID.
 - Target workspace must be active.
-- Access required: Hosted Workspace Owner or system Admin with `sync.conflict.resolve` approval.
+- Access required: Hosted Workspace Owner or system Admin.
 
 ## Least-Privilege Access
-- Resolving conflicts requires `POST /api/hosted/workspaces/:workspaceId/conflicts/:conflictId/resolve`.
+- Resolving conflicts requires `POST /api/hosted/domain`.
 
 ## Execution
 ### Request
 ```http
-POST /api/hosted/workspaces/ws_123/conflicts/conf_789/resolve HTTP/1.1
+POST /api/hosted/domain HTTP/1.1
 Authorization: Bearer ***
 X-API-Version: 2026-09-01
 Content-Type: application/json
 
 {
-  "resolution": "force_hosted",
+  "action": "resolve-sync-conflict",
+  "workspaceId": "ws_123",
+  "conflictId": "conf_789",
+  "decision": "use_hosted",
   "expectedVersion": 2
 }
 ```
@@ -25,17 +28,18 @@ Content-Type: application/json
 ### Expected Response
 ```json
 {
-  "ok": true,
-  "status": "resolved",
-  "resolution": {
-    "action": "force_hosted",
-    "resolvedAt": "2026-09-21T14:00:00Z"
+  "conflict": {
+    "id": "conf_789",
+    "status": "resolved",
+    "resolution": {
+      "decision": "use_hosted"
+    }
   }
 }
 ```
 
 ## Verification
-- Fetch conflicts using `GET /api/hosted/workspaces/ws_123/conflicts`. The resolved conflict should no longer appear.
+- Fetch conflicts using `GET /api/hosted/domain?workspaceId=ws_123&view=sync-conflicts`. The resolved conflict should be present with `status: "resolved"` and the expected `resolution.decision`.
 
 ## Audit Checks
 - Check the `hosted_workspace_audit` logs for an event with `action: "sync.conflict.resolved"`.

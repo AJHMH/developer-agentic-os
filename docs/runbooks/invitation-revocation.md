@@ -5,13 +5,13 @@
 - Access required: Hosted Workspace Owner or system Admin.
 
 ## Least-Privilege Access
-- Revocation must be performed using the `DELETE /api/hosted/workspaces/:workspaceId/invitations/:invitationId` endpoint to ensure proper audit logging.
+- Revocation must be performed using the `POST /api/hosted/invitations/:invitationId/revoke` endpoint to ensure proper audit logging.
 - Do not manually delete records from the Postgres `hosted_workspace_invitations` table.
 
 ## Execution
 ### Request
 ```http
-DELETE /api/hosted/workspaces/ws_123/invitations/inv_456 HTTP/1.1
+POST /api/hosted/invitations/inv_456/revoke HTTP/1.1
 Authorization: Bearer ***
 X-API-Version: 2026-09-01
 ```
@@ -19,16 +19,18 @@ X-API-Version: 2026-09-01
 ### Expected Response
 ```json
 {
-  "ok": true,
-  "status": "revoked"
+  "invitation": {
+    "id": "inv_456",
+    "status": "revoked"
+  }
 }
 ```
 
 ## Verification
-- Fetch the invitation list using `GET /api/hosted/workspaces/ws_123/invitations`. The revoked invitation should no longer appear.
+- Fetch the invitation list using `GET /api/hosted/workspaces/ws_123/invitations` and verify that `inv_456` is present with `status: "revoked"`.
 
 ## Audit Checks
 - Check the `hosted_workspace_audit` logs for an event with `action: "invitation.revoked"`.
 
 ## Rollback
-- Invitations cannot be un-revoked. To rollback, issue a new invitation using `POST /api/hosted/workspaces/ws_123/invitations`.
+- Invitations cannot be un-revoked. To replace one, issue `POST /api/hosted/workspaces/ws_123/invitations` with `{"recipientEmail":"user@example.com","role":"member"}`.
