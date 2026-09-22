@@ -22,7 +22,10 @@ import {
   isHostedNeonConfigured,
   NeonHostedWorkspaceStateProvider,
 } from "../hosted-persistence/neon-hosted-provider";
-import { assertHostedInternalOwnerEnabled, isHostedCollaboratorRolloutEnabled } from "../hosted-flags/feature-flags";
+import {
+  assertHostedInternalOwnerEnabled,
+  isHostedCollaboratorRolloutEnabled,
+} from "../hosted-flags/feature-flags";
 
 type HostedUserState = {
   workspaces: HostedWorkspace[];
